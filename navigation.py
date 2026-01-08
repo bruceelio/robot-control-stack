@@ -1,37 +1,23 @@
 # navigation.py
-from motion import drive_for_time, rotate_for_time
-from config import (
-    drive_factor, rotate_factor,
-    rotate_delay, rotate_time_90,
-    drive_delay, drive_time_1000
-)
+from motion import drive_distance, rotate_angle
 import math
 
 # --- Rotation Utilities ---
-def rotate_degrees(robot, degrees, power=0.4):
+def rotate_degrees(robot, degrees):
     """
     Rotate robot by a given number of degrees.
+    Positive = clockwise, negative = counter-clockwise.
+    Uses calibrated rotation duration and power.
     """
-    duration = (abs(degrees) / 90.0) * rotate_time_90
-    duration += rotate_delay
-    duration *= rotate_factor
-
-    direction = 1 if degrees >= 0 else -1
-    rotate_for_time(robot, power=power * direction, duration=duration)
+    rotate_angle(robot, degrees)
 
 
 # --- Drive Utilities ---
-def drive_distance(robot, distance_mm, power=0.5):
+def drive_step(robot, distance_mm):
     """
-    Drive forward a specific distance in mm.
+    Drive forward a specific distance in mm using calibrated drive duration.
     """
-    # Calculate time to drive the distance
-    duration = (distance_mm / 1000.0) * drive_time_1000
-    duration += drive_delay
-    duration *= drive_factor
-
-    drive_for_time(robot, power=power, duration=duration)
-
+    drive_distance(robot, distance_mm)
 
 # --- Navigation Logic ---
 def angle_to_target(current_pos, target_pos):

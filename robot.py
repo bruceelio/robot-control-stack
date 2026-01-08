@@ -1,9 +1,10 @@
 # robot.py
 from sr.robot3 import Robot
-from motion import drive_for_time, rotate_for_time
+from motion import drive_distance, rotate_angle
 from navigation import drive_to_coordinate
 from location import marker_location, find_location
-from config import distance_scale, rotate_factor, drive_factor, rotate_delay, rotate_time_90, drive_delay, drive_time_1000
+from calibration import drive_duration, rotate_duration
+from config import distance_scale
 import itertools
 import math
 
@@ -13,6 +14,24 @@ robot = Robot()
 ARENA_SIZE = 6000               # Set to 6000 if marker_location expects 0->6000
 MARKERS = marker_location(ARENA_SIZE)
 SLEEP_TIME = 0.5
+
+# --- Calibration log at startup ---
+def print_calibration_summary():
+    print("=== Calibration Summary ===")
+
+    # Short drive (250 mm)
+    d_short, p_short = drive_duration(250)
+    print(f"Short drive (250 mm): duration={d_short:.2f}s, power={p_short:.2f}")
+
+    # Long drive (1000 mm)
+    d_long, p_long = drive_duration(1000)
+    print(f"Long drive (1000 mm): duration={d_long:.2f}s, power={p_long:.2f}")
+
+    # Rotation 90 degrees
+    r90, rpwr = rotate_duration(90)
+    print(f"Rotation 90°: duration={r90:.2f}s, power={rpwr:.2f}")
+
+print_calibration_summary()
 
 
 # --- Functions ---
@@ -90,7 +109,11 @@ elif MODE == "run_all":
     # e.g., move robot, manipulate objects, etc.
     # Make sure to call read_markers(robot) whenever you want an updated reading
 
-    drive_for_time(robot, power=1 * drive_factor, duration=0.9)
-#    rotate_for_time(robot, power=0.51 * rotate_factor, duration=0.17)
+    # --- Example moves using distance/angle ---
+    # Drive x mm forward
+    drive_distance(robot, 999)
+
+    # Rotate y degrees clockwise
+    # rotate_angle(robot, 90)
 
     read_markers(robot)
