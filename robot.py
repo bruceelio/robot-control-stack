@@ -1,12 +1,11 @@
 # robot.py
 from sr.robot3 import Robot
+from motion import drive_for_time, rotate_for_time
+from navigation import drive_to_coordinate
 from location import marker_location, find_location
+from config import distance_scale, rotate_factor, drive_factor, rotate_delay, rotate_time_90, drive_delay, drive_time_1000
 import itertools
 import math
-
-# --- Calibration factors ---
-rotate_factor = 1.0  # multiplier for rotation commands
-drive_factor = 1.0   # multiplier for drive distances
 
 
 # --- Setup ---
@@ -14,7 +13,7 @@ robot = Robot()
 ARENA_SIZE = 6000               # Set to 6000 if marker_location expects 0->6000
 MARKERS = marker_location(ARENA_SIZE)
 SLEEP_TIME = 0.5
-DISTANCE_SCALE = 1.327          # Adjust simulation distances to match true arena scale
+
 
 # --- Functions ---
 
@@ -54,8 +53,8 @@ def read_markers(robot):
             A = MARKERS[m1.id]
             B = MARKERS[m2.id]
             # Apply distance scaling for simulation calibration
-            AC = m1.position.distance * DISTANCE_SCALE
-            BC = m2.position.distance * DISTANCE_SCALE
+            AC = m1.position.distance * distance_scale
+            BC = m2.position.distance * distance_scale
             try:
                 C1, C2 = find_location(A, B, AC, BC)
                 valid_positions = filter_inside_arena(C1, C2)
@@ -71,70 +70,16 @@ def read_markers(robot):
 
     return visible, all_positions
 
-def drive_to_coordinate(robot, target_x, target_y, step_distance=300, stop_distance=100):
-    """
-    Drive robot to (target_x, target_y) using small steps and rotation.
-    Robot stops and reads markers after each step.
-    """
-    print(f"Driving towards ({target_x}, {target_y})...")
-
-    while True:
-        # --- Step 1: read current position ---
-        visible, positions = read_markers(robot)
-        if not positions:
-            print("No valid positions yet, waiting...")
-            robot.sleep(0.5)
-            continue
-
-        # Compute average position
-        x = sum(p[0] for p in positions) / len(positions)
-        y = sum(p[1] for p in positions) / len(positions)
-
-        dx = target_x - x
-        dy = target_y - y
-        distance = math.hypot(dx, dy)
-
-        if distance < stop_distance:
-            print(f"Reached target! Distance remaining: {distance:.1f} mm")
-            robot.stop()
-            break
-
-        # --- Step 2: compute angle to target ---
-        target_angle = math.degrees(math.atan2(dy, dx))  # in degrees
-        print(f"Current pos: ({x:.1f}, {y:.1f}), distance={distance:.1f}, rotate to {target_angle:.1f}°")
-
-        # --- Step 3: rotate robot to face target ---
-        robot.turn_to(target_angle * rotate_factor)  # apply rotation factor
-        robot.sleep(0.2)
-
-        # Optional: verify heading with markers here if desired
-
-        # --- Step 4: drive a short step ---
-        step = min(step_distance, distance) * drive_factor  # apply drive factor
-        vx = step * math.cos(math.radians(target_angle))
-        vy = step * math.sin(math.radians(target_angle))
-
-        # Normalize vx, vy for drive fraction
-        max_step = max(abs(vx), abs(vy))
-        fx = vx / max_step if max_step != 0 else 0
-        fy = vy / max_step if max_step != 0 else 0
-
-        robot.drive_xy(fx, fy)
-        robot.sleep(1.0)  # adjust time for simulation vs real life
-        robot.stop()
-
-        # --- Step 5: pause to read markers again ---
-        robot.sleep(0.2)
-
 
 # --- Modes ---
-MODE = "run_all"   # Change to "run_all" for full program
+MODE = "run_all"   # run_all, marker_test
 
 if MODE == "marker_test":
     print("=== Marker Test Mode ===")
-    while True:
+    for _ in range(20):  # read markers 20 times
         read_markers(robot)
         robot.sleep(SLEEP_TIME)
+
 
 elif MODE == "run_all":
     print("=== Full Run Mode ===")
@@ -145,12 +90,7 @@ elif MODE == "run_all":
     # e.g., move robot, manipulate objects, etc.
     # Make sure to call read_markers(robot) whenever you want an updated reading
 
-    robot.motor_board.motors[0].power = 0.25
-    robot.motor_board.motors[1].power = 0.25
-
-    robot.sleep(6)   # run motors for x seconds
-
-    robot.motor_board.motors[0].power = 0
-    robot.motor_board.motors[1].power = 0
+    drive_for_time(robot, power=1 * drive_factor, duration=0.9)
+#    rotate_for_time(robot, power=0.51 * rotate_factor, duration=0.17)
 
     read_markers(robot)
