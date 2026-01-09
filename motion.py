@@ -2,10 +2,18 @@
 import math
 from config import drive_factor, rotate_factor, motor_polarity
 from calibration import drive_duration, rotate_duration
+from sr.robot3 import INPUT
+from iomap import Hardware
+
 
 # -----------------------------
 # Helper functions
 # -----------------------------
+
+def is_front_bumper_pressed(robot):
+    # returns True if either front switch is pressed
+    return robot.arduino.pins[10].digital_read() or robot.arduino.pins[11].digital_read()
+
 
 def _clamp(value, low=-1.0, high=1.0):
     """Clamp a value to the motor power range."""
@@ -35,34 +43,58 @@ def stop(robot):
 # Motion commands
 # -----------------------------
 
-def drive_distance(robot, distance_mm, position=(0.0, 0.0), heading=0.0):
+
+def drive_distance(robot, distance_mm, position=(0.0, 0.0), heading=0.0, step_mm=50):
     """
-    Drive straight for a specified distance (mm) and update local position.
-    Returns new position.
+    Drive straight for a specified distance in small steps.
+    Stops immediately if the front bumper is pressed.
+
+    Args:
+        robot      : Robot instance
+        distance_mm: distance to drive (positive = forward, negative = backward)
+        position   : current (x, y) tuple
+        heading    : current heading in radians
+        step_mm    : distance per incremental step for calibration
+
+    Returns:
+        new_position : updated (x, y) tuple
     """
-    duration, power = drive_duration(abs(distance_mm))
 
-    # Apply direction
-    if distance_mm < 0:
-        power = -power
-
-    print(f"Driving {distance_mm} mm at power {power:.2f} for {duration * drive_factor:.2f}s")
-
-    # Set motors
-    _set_drive_power(robot, power, power)
-
-    # Sleep for movement
-    robot.sleep(duration * drive_factor)
-
-    # Stop motors
-    stop(robot)
-
-    # Update position
+    remaining = distance_mm
     x, y = position
-    dx = distance_mm * math.cos(heading)
-    dy = distance_mm * math.sin(heading)
-    new_position = (x + dx, y + dy)
-    return new_position
+
+    while abs(remaining) > 0:
+        step = min(abs(remaining), step_mm) * (1 if remaining > 0 else -1)
+
+        # Get calibrated duration and power from your existing function
+        duration, power = drive_duration(abs(step))
+        if step < 0:
+            power = -power
+
+        # Start driving continuously
+        _set_drive_power(robot, power, power)
+
+        # Monitor bumper in a tight loop during this step
+        start_time = robot.time()
+        while robot.time() - start_time < duration:
+            if is_front_bumper_pressed(robot):
+                stop(robot)
+                print("Front bumper pressed! Stopping drive.")
+                return (x, y)
+            robot.sleep(0.01)
+
+        # Stop at the end of step
+        stop(robot)
+
+        # Update position
+        dx = step * math.cos(heading)
+        dy = step * math.sin(heading)
+        x += dx
+        y += dy
+        remaining -= step
+
+    return (x, y)
+
 
 def rotate_angle(robot, angle_deg, heading=0.0):
     """
