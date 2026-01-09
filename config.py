@@ -1,5 +1,12 @@
 # config.py
 
+ARENA_SIZE = 6000  # mm
+
+# --- Strategy / Collection Mode ---
+# Choose which type of markers the robot should try to collect first
+# Options: "acidic" or "basic"
+DEFAULT_COLLECT_MODE = "acidic"
+
 # =========================
 # SELECTIONS
 # =========================
@@ -12,13 +19,6 @@ ROBOT_ID = "sim"   # sim, sr1, sr2, practice
 # =========================
 # Base calibration factors
 # =========================
-default_power = 0.5
-
-# Delays / times (seconds)
-drive_delay = 0.1        # delay time until acceleration at 1.0 power
-drive_time_1000 = 0.6        # time in seconds to drive 1000 mm at 1.0 power
-rotate_delay = 0.06       # delay time until acceleration starts at 0.51 power
-rotate_time_90 = 0.44        # time in seconds to rotate 90 deg at 0.51 power
 
 # Base factors
 BASE_ROTATE_FACTOR = 1.0

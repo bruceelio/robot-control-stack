@@ -1,19 +1,25 @@
 # robot.py
 from sr.robot3 import Robot
 from motion import drive_distance, rotate_angle
-from navigation import drive_to_coordinate
+from navigation import seek_and_collect
 from location import marker_location, find_location
 from calibration import drive_duration, rotate_duration
-from config import distance_scale
+from config import distance_scale, ARENA_SIZE, DEFAULT_COLLECT_MODE
+from perception import Perception, sense
 import itertools
 import math
 
-
 # --- Setup ---
 robot = Robot()
-ARENA_SIZE = 6000               # Set to 6000 if marker_location expects 0->6000
 MARKERS = marker_location(ARENA_SIZE)
 SLEEP_TIME = 0.5
+
+def inside_arena(pos):
+    """
+    Returns True if the position (x, y) is inside the arena bounds.
+    """
+    half = ARENA_SIZE / 2
+    return -half <= pos[0] <= half and -half <= pos[1] <= half
 
 # --- Calibration log at startup ---
 def print_calibration_summary():
@@ -43,15 +49,6 @@ def read_markers(robot):
     and filters positions inside the arena bounds.
     """
 
-    def filter_inside_arena(C1, C2):
-        """Return the points that lie inside the arena bounds."""
-        half = ARENA_SIZE / 2  # uses the global ARENA_SIZE
-        points = []
-        for x, y in [C1, C2]:
-            if -half <= x <= half and -half <= y <= half:
-                points.append((x, y))
-        return points
-
     markers = robot.camera.see()
     # Only keep arena markers with ID < 20
     visible = [m for m in markers if m.id < 20]
@@ -76,7 +73,7 @@ def read_markers(robot):
             BC = m2.position.distance * distance_scale
             try:
                 C1, C2 = find_location(A, B, AC, BC)
-                valid_positions = filter_inside_arena(C1, C2)
+                valid_positions = [p for p in [C1, C2] if inside_arena(p)]
                 if valid_positions:
                     print(f"Markers {m1.id}, {m2.id} -> Valid robot positions inside arena:")
                     for x, y in valid_positions:
@@ -89,31 +86,77 @@ def read_markers(robot):
 
     return visible, all_positions
 
+# --- Example event routines ---
+def grab_object():
+    """Perform object grabbing."""
+    print("[ACTION] Grabbing object...")
+    # TODO: insert motor/servo commands here
+    robot.sleep(1)  # simulate time to grab
+
+
+def return_to_base():
+    """Return robot to a base or home position."""
+    print("[ACTION] Returning to base...")
+    # TODO: insert navigation commands
+    drive_distance(robot, 500)  # example forward move
+    rotate_angle(robot, 180)    # example rotate
+    robot.sleep(0.5)
+
+
+# --- Main loop ---
+def main_loop():
+    perception = Perception()
+
+    # Initial positioning
+    position = (0.0, 0.0)
+    heading = 0.0
+
+    # drive forward
+    position = drive_distance(robot, 200, position, heading)
+
+    # rotate
+    heading = rotate_angle(robot, 20, heading)
+
+    while True:
+        # Read markers and update pose
+        read_markers(robot)
+        pose, objects = sense(robot, perception)
+
+        # --- Event overrides ---
+        # if hasattr(robot, "bumped") and robot.bumped():
+        #    print("[EVENT] Bumper hit, grabbing object...")
+        #    grab_object()
+        #    return_to_base()
+        #    continue  # resume main loop
+
+        # Layer 1: Reactive
+        if seek_and_collect(robot, perception, kind=DEFAULT_COLLECT_MODE):
+            print("[L1] Chasing acidic target (reactive)")
+            robot.sleep(0.1)
+
+        # Layer 2: Global recovery
+        elif pose is not None:
+            print("[L2] Pose known, reorienting")
+            rotate_angle(robot, 45)
+            robot.sleep(0.1)
+
+        # Lost / search
+        else:
+            print("[SEARCH] No targets, no pose — rotating")
+            rotate_angle(robot, 30)
+            robot.sleep(0.1)
+
 
 # --- Modes ---
-MODE = "run_all"   # run_all, marker_test
+MODE = "run_all"  # run_all, marker_test
 
 if MODE == "marker_test":
     print("=== Marker Test Mode ===")
-    for _ in range(20):  # read markers 20 times
+    for _ in range(20):
         read_markers(robot)
         robot.sleep(SLEEP_TIME)
 
-
 elif MODE == "run_all":
     print("=== Full Run Mode ===")
-    # Example run: read markers once at start
     read_markers(robot)
-
-    # --- Rest of your competition code goes here ---
-    # e.g., move robot, manipulate objects, etc.
-    # Make sure to call read_markers(robot) whenever you want an updated reading
-
-    # --- Example moves using distance/angle ---
-    # Drive x mm forward
-    drive_distance(robot, 999)
-
-    # Rotate y degrees clockwise
-    # rotate_angle(robot, 90)
-
-    read_markers(robot)
+    main_loop()

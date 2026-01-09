@@ -13,7 +13,6 @@ ACIDIC_RANGE = range(100, 140)
 BASIC_RANGE  = range(140, 180)
 
 MEMORY_TIMEOUT = 5.0      # seconds before forgetting an object
-POSITION_JUMP_MM = 300    # warn if object jumps this much
 DEBUG = True
 
 # =========================
@@ -45,21 +44,10 @@ def sense(robot, perception: Perception, stop_robot=True):
     """
     now = time.time()
 
-    # 1. Stop robot for accurate bearings
     if stop_robot:
-        time.sleep(0.05)  # small pause to let the simulator stabilize
+        time.sleep(0.05)  # small pause for stability
 
     seen = robot.camera.see()  # returns list of markers
-    if seen:
-        m = seen[0]
-        print("DEBUG MARKER dir:", dir(m))  # list all attributes
-        print("DEBUG MARKER id:", m.id)
-        print("DEBUG MARKER position:", m.position)
-        # If position has attributes, print them too
-        if hasattr(m.position, "x") and hasattr(m.position, "y"):
-            print("DEBUG MARKER position x,y:", m.position.x, m.position.y)
-        if hasattr(m.position, "distance") and hasattr(m.position, "angle"):
-            print("DEBUG MARKER distance,angle:", m.position.distance, m.position.angle)
 
     arena_markers, acidic_markers, basic_markers = classify_markers(seen)
     pose = estimate_pose(arena_markers, perception)
@@ -123,7 +111,7 @@ def estimate_pose(arena_markers, perception: Perception):
 
     x = sum(p[0] for p in positions) / len(positions)
     y = sum(p[1] for p in positions) / len(positions)
-    perception.last_pose = (x, y)
+    perception.last_pose = (x, y, 0.0)  # assume heading=0 if unknown
 
     log("POSE", f"x={x:.0f} y={y:.0f} using {len(arena_markers)} markers")
     return perception.last_pose
@@ -136,56 +124,31 @@ def inside_arena(pos):
 # Object tracking
 # =========================
 
-def get_marker_relative_xy(m):
-    """
-    Returns (dx, dy) in robot coordinates as floats.
-    Works with both old distance/angle or new x/y API.
-    """
-    pos = m.position
-
-    # If x/y exist
-    if hasattr(pos, "x") and hasattr(pos, "y"):
-        return float(pos.x), float(pos.y)
-
-    # Fallback to distance/angle
-    if hasattr(pos, "distance") and hasattr(pos, "angle"):
-        angle_rad = math.radians(float(pos.angle or 0.0))
-        dx = float(pos.distance) * math.cos(angle_rad)
-        dy = float(pos.distance) * math.sin(angle_rad)
-        return dx, dy
-
-    # Last resort: assume straight ahead
-    try:
-        return float(pos), 0.0
-    except Exception:
-        return 0.0, 0.0
-
-
 def update_objects(obj_type, markers, robot_pose, perception: Perception, now, distance_scale=1.0):
-    """
-    Updates the perception dictionary for objects of type `obj_type`.
-    Supports new Marker.position API.
-    """
     if robot_pose is None:
-        # Can't compute arena positions without robot pose
-        log("WARN", f"Skipping {obj_type} update — no robot pose")
+        for m in markers:
+            perception.objects[obj_type][m.id] = {
+                "distance": float(m.position.distance),
+                "bearing": math.degrees(float(m.position.horizontal_angle)),
+                "last_seen": now,
+                "relative": True,
+            }
+            log(obj_type.upper(), f"id={m.id} REL dist={m.position.distance:.0f}")
         return
 
     if obj_type not in perception.objects:
         perception.objects[obj_type] = {}
 
-    rx, ry = robot_pose[0], robot_pose[1]
-    rtheta = robot_pose[2] if len(robot_pose) > 2 else 0.0  # default heading
+    rx, ry, rtheta = robot_pose  # robot's arena position and heading
 
     for m in markers:
-        # Get dx/dy safely
+        # Convert relative marker position to arena coordinates
         try:
             dx = float(m.position.distance) * math.cos(float(m.position.horizontal_angle)) * distance_scale
             dy = float(m.position.distance) * math.sin(float(m.position.horizontal_angle)) * distance_scale
         except Exception:
             dx, dy = 0.0, 0.0
 
-        # Rotate to arena coordinates
         arena_dx = dx * math.cos(rtheta) - dy * math.sin(rtheta)
         arena_dy = dx * math.sin(rtheta) + dy * math.cos(rtheta)
 
@@ -195,11 +158,13 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
         perception.objects[obj_type][m.id] = {
             "x": ax,
             "y": ay,
-            "last_seen": now
+            "distance": math.hypot(ax - rx, ay - ry),
+            "bearing": math.degrees(float(m.position.horizontal_angle)),
+            "last_seen": now,
+            "relative": False,
         }
 
         log(obj_type.upper(), f"id={m.id} pos=({ax:.1f}, {ay:.1f})")
-
 
 def prune_objects(perception: Perception, now):
     for kind in ("acidic", "basic"):
