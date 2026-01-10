@@ -33,6 +33,24 @@ class Perception:
         self.objects = {"acidic": {}, "basic": {}}
         self.last_pose = None
 
+    def has_target(self, kind, grace_frames=3):
+        memory = self.objects.get(kind, {})
+        for obj in memory.values():
+            if obj.get("age", 0) <= grace_frames:
+                return True
+        return False
+
+
+def age_objects(perception: Perception):
+    """
+    Increment age (in frames) for all remembered objects.
+    Seen objects will be reset to age=0 later in this frame.
+    """
+    for kind in perception.objects.values():
+        for obj in kind.values():
+            obj["age"] = obj.get("age", 0) + 1
+
+
 # =========================
 # Main sensing API
 # =========================
@@ -43,6 +61,8 @@ def sense(robot, perception: Perception, stop_robot=True):
     estimate pose, update memory, prune old objects.
     """
     now = time.time()
+
+    age_objects(perception)
 
     if stop_robot:
         time.sleep(0.05)  # small pause for stability
@@ -131,8 +151,10 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
                 "distance": float(m.position.distance),
                 "bearing": math.degrees(float(m.position.horizontal_angle)),
                 "last_seen": now,
+                "age": 0,
                 "relative": True,
             }
+
             log(obj_type.upper(), f"id={m.id} REL dist={m.position.distance:.0f}")
         return
 
@@ -161,6 +183,7 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
             "distance": math.hypot(ax - rx, ay - ry),
             "bearing": math.degrees(float(m.position.horizontal_angle)),
             "last_seen": now,
+            "age": 0,
             "relative": False,
         }
 

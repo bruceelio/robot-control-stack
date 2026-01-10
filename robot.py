@@ -118,6 +118,7 @@ def return_to_base(position, heading):
 # --- Main loop ---
 def main_loop():
     perception = Perception()
+    search_cooldown = 0
 
     # Initial positioning
     position = (0.0, 0.0)
@@ -135,6 +136,10 @@ def main_loop():
         read_markers(robot)
         pose, objects = sense(robot, perception)
 
+        # Reset search cooldown if we see a target (with hysteresis)
+        if perception.has_target(DEFAULT_COLLECT_MODE, grace_frames=3):
+            search_cooldown = 0
+
         # --- Event overrides ---
         # if hasattr(robot, "bumped") and robot.bumped():
         #    print("[EVENT] Bumper hit, grabbing object...")
@@ -142,29 +147,29 @@ def main_loop():
         #    return_to_base()
         #    continue  # resume main loop
 
-        # Layer 1: Reactive
+        # Layer 1: Reactive (target-based)
         found, position, heading = seek_and_collect(
             lvl2, perception, position, heading, kind=DEFAULT_COLLECT_MODE
         )
         if found:
             print("Target Reached - stopping at target.")
-            # Stop all motors
-            lvl2.DRIVE(0, 0, 0)  # immediate stop
-            # At this point, the robot is at the target and ready to grab
-            break  # exit main_loop to allow next action (grab)
+            lvl2.DRIVE(0, 0, 0)
+            break
 
-        # Layer 2: Global recovery
-        elif pose is not None:
+        # Layer 2: Pose-based recovery (ONLY if no target)
+        elif pose is not None and not perception.has_target(DEFAULT_COLLECT_MODE):
             print("[L2] Pose known, reorienting")
             heading = ROTATE_FOR(lvl2, 15, heading)
             robot.sleep(0.1)
-            continue
 
-        # Lost / search
-        else:
-            print("[SEARCH] No targets, no pose — rotating")
-            heading = ROTATE_FOR(lvl2, 30, heading)
-            robot.sleep(0.1)
+        # Layer 3: Search (ONLY if no target AND no pose)
+        elif not perception.has_target(DEFAULT_COLLECT_MODE, grace_frames=3):
+            if search_cooldown == 0:
+                print("[SEARCH] No targets — rotating")
+                heading = ROTATE_FOR(lvl2, 30, heading)
+                search_cooldown = 3  # wait 3 cycles before rotating again
+            else:
+                search_cooldown -= 1
 
 
 # --- Modes ---
