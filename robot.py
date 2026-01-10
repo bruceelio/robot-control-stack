@@ -6,12 +6,7 @@ from location import marker_location, find_location
 from calibration import drive_duration, rotate_duration
 from config import distance_scale, ARENA_SIZE, DEFAULT_COLLECT_MODE
 from perception import Perception, sense
-from tests import (
-    test_digital_inputs,
-    test_analog_inputs,
-    test_digital_outputs,
-    test_level2_drive,   # ← ADD THIS
-)
+from tests import run_tests
 from iomap import Hardware
 from level2_canonical import Level2
 import itertools
@@ -181,14 +176,8 @@ if MODE == "marker_test":
 
 elif MODE == "tests":
     print("=== Hardware Tests Mode ===")
-
-    # --- Level 1 tests (I/O mapping sanity) ---
-    test_digital_inputs(robot)
-    test_analog_inputs(robot)
-    # test_digital_outputs(robot)
-
-    # --- Level 2 tests (should visibly move robot in sim) ---
-    test_level2_drive(robot)
+    # run_tests(robot, category="io")  # only IO tests
+    run_tests(only="test_virtual_front_bumper")
 
 
 elif MODE == "run_all":

@@ -13,10 +13,10 @@
 # ---------------------------
 # Digital Inputs (DI)
 # ---------------------------
-DI_FRONT_BUMPER        = None  # Front bumper switch
-DI_REAR_BUMPER         = None  # Rear bumper switch
-DI_LEFT_BUMPER         = None  # Left bumper
-DI_RIGHT_BUMPER        = None  # Right bumper
+DI_BUMPER_FRONT_LEFT   = None  # Front bumper switch
+DI_BUMPER_FRONT_RIGHT  = None  # Rear bumper switch
+DI_BUMPER_REAR_LEFT    = None  # Left bumper
+DI_BUMPER_REAR_RIGHT   = None  # Right bumper
 DI_ARM_LIMIT_TOP       = None  # Arm upper limit switch
 DI_ARM_LIMIT_BOTTOM    = None  # Arm lower limit switch
 DI_GRIPPER_CLOSED      = None  # Gripper fully closed
@@ -84,8 +84,25 @@ AO_GRIPPER_PWM         = None  # Optional gripper speed PWM
 # ---------------------------
 # Software / Virtual Inputs (SI)
 # ---------------------------
+SI_BUMPER_FRONT  = None  # True if front left OR front right bumper is pressed
+SI_BUMPER_REAR   = None  # True if rear left OR rear right bumper is pressed
 SI_ESTIMATED_POSITION  = None  # Odometry / estimated position
 SI_ESTIMATED_HEADING   = None  # Orientation from encoders / IMU
 SI_TARGET_DISTANCE     = None  # Distance to a target (e.g., marker)
 SI_ARM_LOAD            = None  # Derived from motor current
 SI_SCISSOR_LOAD        = None  # Derived from scissor current
+
+# ---------------------------
+# Helper function to update virtual bumpers
+# ---------------------------
+def update_virtual_bumpers(read_di):
+    """
+    Update SI bumpers based on physical DI bumper states.
+
+    :param read_di: function that accepts a DI_* constant and returns True/False
+    :return: dict with updated SI_BUMPER_FRONT and SI_BUMPER_REAR
+    """
+    return {
+        SI_BUMPER_FRONT: read_di(DI_BUMPER_FRONT_LEFT) or read_di(DI_BUMPER_FRONT_RIGHT),
+        SI_BUMPER_REAR:  read_di(DI_BUMPER_REAR_LEFT)  or read_di(DI_BUMPER_REAR_RIGHT),
+    }
