@@ -128,7 +128,7 @@ def main_loop():
     position = (position[0] + dx, position[1] + dy)
 
     # rotate
-    heading = ROTATE_FOR(lvl2, 20, heading)
+    heading = ROTATE_FOR(lvl2, 15, heading)
 
     while True:
         # Read markers and update pose
@@ -147,14 +147,16 @@ def main_loop():
             lvl2, perception, position, heading, kind=DEFAULT_COLLECT_MODE
         )
         if found:
-            print("[L1] Chasing target (reactive)")
-            robot.sleep(0.1)
-            continue
+            print("Target Reached - stopping at target.")
+            # Stop all motors
+            lvl2.DRIVE(0, 0, 0)  # immediate stop
+            # At this point, the robot is at the target and ready to grab
+            break  # exit main_loop to allow next action (grab)
 
         # Layer 2: Global recovery
         elif pose is not None:
             print("[L2] Pose known, reorienting")
-            heading = ROTATE_FOR(lvl2, 45, heading)
+            heading = ROTATE_FOR(lvl2, 15, heading)
             robot.sleep(0.1)
             continue
 

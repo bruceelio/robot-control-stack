@@ -68,47 +68,6 @@ def stop(robot):
 # Motion commands
 # -----------------------------
 
-
-def DRIVE_FOR(lvl2: Level2, distance_mm: float, heading_rad: float = 0.0, step_mm: float = 50):
-    """
-    Drive straight for a specified distance using lvl2.DRIVE.
-    Stops immediately if front bumper pressed.
-    Returns cumulative dx, dy relative to starting point.
-    """
-    remaining = distance_mm
-    dx_total = 0.0
-    dy_total = 0.0
-
-    while abs(remaining) > 0:
-        step = min(abs(remaining), step_mm) * (1 if remaining > 0 else -1)
-
-        # calibrated duration & power
-        duration, power = drive_duration(abs(step))
-        if step < 0:
-            power = -power
-
-        # execute step via lvl2
-        lvl2.DRIVE(power, power, duration)
-
-        # monitor bumper during step
-        start_time = time.time()
-        while time.time() - start_time < duration:
-            if is_front_bumper_pressed(lvl2.robot):
-                lvl2._stop_motors()
-                print("Front bumper pressed! Stopping DRIVE_FOR.")
-                return dx_total, dy_total
-            time.sleep(0.01)
-
-        # update remaining distance
-        remaining -= step
-
-        # update dx/dy
-        dx_total += step * math.cos(heading_rad)
-        dy_total += step * math.sin(heading_rad)
-
-    return dx_total, dy_total
-
-
 def ROTATE_FOR(lvl2: Level2, angle_deg: float, heading_rad: float = 0.0):
     """
     Rotate in place by a specified angle (degrees) using lvl2.ROTATE.
@@ -117,3 +76,28 @@ def ROTATE_FOR(lvl2: Level2, angle_deg: float, heading_rad: float = 0.0):
     lvl2.ROTATE(angle_deg)
     new_heading = (heading_rad + math.radians(angle_deg)) % (2 * math.pi)
     return new_heading
+
+
+def DRIVE_FOR(lvl2: Level2, distance_mm: float, heading_rad: float = 0.0):
+    """
+    Drive straight for a given distance.
+    Returns cumulative dx, dy relative to starting point.
+
+    - lvl2: Level2 interface
+    - distance_mm: distance to drive
+    - heading_rad: direction of travel
+    """
+    # Get calibrated duration & power for this distance
+    duration, power = drive_duration(abs(distance_mm))
+    if distance_mm < 0:
+        power = -power
+
+    # Execute drive
+    lvl2.DRIVE(power, power, duration)
+
+    # Compute displacement
+    dx = distance_mm * math.cos(heading_rad)
+    dy = distance_mm * math.sin(heading_rad)
+
+    return dx, dy
+
