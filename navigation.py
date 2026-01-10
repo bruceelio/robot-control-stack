@@ -19,7 +19,7 @@ def get_closest_target(perception, kind="acidic"):
 # Navigation utilities
 # =========================
 
-def drive_to_target(robot, target, max_drive_mm=500, tolerance_mm=50):
+def drive_to_target(robot, target, max_drive_mm=300, tolerance_mm=50):
     """
     Drive toward a target object using bearing and distance.
 

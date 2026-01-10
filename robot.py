@@ -6,13 +6,28 @@ from location import marker_location, find_location
 from calibration import drive_duration, rotate_duration
 from config import distance_scale, ARENA_SIZE, DEFAULT_COLLECT_MODE
 from perception import Perception, sense
+from tests import (
+    test_digital_inputs,
+    test_analog_inputs,
+    test_digital_outputs,
+    test_level2_drive,   # ← ADD THIS
+)
+from iomap import Hardware
 import itertools
 import math
 
 # --- Setup ---
 robot = Robot()
+
+
+
 MARKERS = marker_location(ARENA_SIZE)
 SLEEP_TIME = 0.5
+
+# Prints out configuration for Arduino
+# print("Arduino API:")
+# print(dir(robot.arduino))
+
 
 def inside_arena(pos):
     """
@@ -112,7 +127,7 @@ def main_loop():
     heading = 0.0
 
     # drive forward
-    position = drive_distance(robot, 200, position, heading)
+    position = drive_distance(robot, 150, position, heading)
 
     # rotate
     heading = rotate_angle(robot, 20, heading)
@@ -148,13 +163,25 @@ def main_loop():
 
 
 # --- Modes ---
-MODE = "run_all"  # run_all, marker_test
+MODE = "tests"  # run_all, marker_test, tests
 
 if MODE == "marker_test":
     print("=== Marker Test Mode ===")
     for _ in range(20):
         read_markers(robot)
         robot.sleep(SLEEP_TIME)
+
+elif MODE == "tests":
+    print("=== Hardware Tests Mode ===")
+
+    # --- Level 1 tests (I/O mapping sanity) ---
+    test_digital_inputs(robot)
+    test_analog_inputs(robot)
+    # test_digital_outputs(robot)
+
+    # --- Level 2 tests (should visibly move robot in sim) ---
+    test_level2_drive(robot)
+
 
 elif MODE == "run_all":
     print("=== Full Run Mode ===")

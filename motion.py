@@ -1,18 +1,43 @@
 # motion.py
 import math
+import time
 from config import drive_factor, rotate_factor, motor_polarity
 from calibration import drive_duration, rotate_duration
-from sr.robot3 import INPUT
-from iomap import Hardware
+from sr.robot3 import INPUT, INPUT_PULLUP
+from level2_canonical import Level2
 
 
 # -----------------------------
 # Helper functions
 # -----------------------------
 
+def init_sensors(robot, use_pullup=True):
+    """
+    Initialize the Arduino pins for the bump switches.
+    - use_pullup: set True for real robot with pull-ups, False for simulator
+    """
+    pin_mode = INPUT_PULLUP if use_pullup else INPUT
+    for pin in [10, 11]:  # front left and right bumpers
+        robot.arduino.pins[pin].mode = pin_mode
+
 def is_front_bumper_pressed(robot):
-    # returns True if either front switch is pressed
-    return robot.arduino.pins[10].digital_read() or robot.arduino.pins[11].digital_read()
+    """
+    Returns True if either front bumper is pressed.
+    Handles simulator (normal INPUT) or real robot (INPUT_PULLUP).
+    """
+    # check if pins are using pull-ups
+    pin0_mode = getattr(robot.arduino.pins[10], 'mode', INPUT)
+    pullup = pin0_mode == INPUT_PULLUP
+
+    left = robot.arduino.pins[10].digital_read()
+    right = robot.arduino.pins[11].digital_read()
+
+    if pullup:
+        # pressed = LOW when using INPUT_PULLUP
+        return not left or not right
+    else:
+        # pressed = HIGH for simulator
+        return left or right
 
 
 def _clamp(value, low=-1.0, high=1.0):
@@ -48,18 +73,7 @@ def drive_distance(robot, distance_mm, position=(0.0, 0.0), heading=0.0, step_mm
     """
     Drive straight for a specified distance in small steps.
     Stops immediately if the front bumper is pressed.
-
-    Args:
-        robot      : Robot instance
-        distance_mm: distance to drive (positive = forward, negative = backward)
-        position   : current (x, y) tuple
-        heading    : current heading in radians
-        step_mm    : distance per incremental step for calibration
-
-    Returns:
-        new_position : updated (x, y) tuple
     """
-
     remaining = distance_mm
     x, y = position
 
