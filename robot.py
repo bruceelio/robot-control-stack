@@ -1,6 +1,6 @@
 # robot.py
 from sr.robot3 import Robot
-from motion import drive_distance, rotate_angle
+from motion import DRIVE_FOR, ROTATE_FOR
 from navigation import seek_and_collect
 from location import marker_location, find_location
 from calibration import drive_duration, rotate_duration
@@ -13,12 +13,13 @@ from tests import (
     test_level2_drive,   # ← ADD THIS
 )
 from iomap import Hardware
+from level2_canonical import Level2
 import itertools
 import math
 
 # --- Setup ---
 robot = Robot()
-
+lvl2 = Level2(robot)  # Level2 semantic interface
 
 
 MARKERS = marker_location(ARENA_SIZE)
@@ -109,13 +110,14 @@ def grab_object():
     robot.sleep(1)  # simulate time to grab
 
 
-def return_to_base():
+def return_to_base(position, heading):
     """Return robot to a base or home position."""
     print("[ACTION] Returning to base...")
-    # TODO: insert navigation commands
-    drive_distance(robot, 500)  # example forward move
-    rotate_angle(robot, 180)    # example rotate
+    dx, dy = DRIVE_FOR(lvl2, 500, heading)
+    heading = ROTATE_FOR(lvl2, 180, heading)
+    position = (position[0]+dx, position[1]+dy)
     robot.sleep(0.5)
+    return position, heading
 
 
 # --- Main loop ---
@@ -127,10 +129,11 @@ def main_loop():
     heading = 0.0
 
     # drive forward
-    position = drive_distance(robot, 150, position, heading)
+    dx, dy = DRIVE_FOR(lvl2, 150, heading)
+    position = (position[0] + dx, position[1] + dy)
 
     # rotate
-    heading = rotate_angle(robot, 20, heading)
+    heading = ROTATE_FOR(lvl2, 20, heading)
 
     while True:
         # Read markers and update pose
@@ -145,25 +148,30 @@ def main_loop():
         #    continue  # resume main loop
 
         # Layer 1: Reactive
-        if seek_and_collect(robot, perception, kind=DEFAULT_COLLECT_MODE):
-            print("[L1] Chasing acidic target (reactive)")
+        found, position, heading = seek_and_collect(
+            lvl2, perception, position, heading, kind=DEFAULT_COLLECT_MODE
+        )
+        if found:
+            print("[L1] Chasing target (reactive)")
             robot.sleep(0.1)
+            continue
 
         # Layer 2: Global recovery
         elif pose is not None:
             print("[L2] Pose known, reorienting")
-            rotate_angle(robot, 45)
+            heading = ROTATE_FOR(lvl2, 45, heading)
             robot.sleep(0.1)
+            continue
 
         # Lost / search
         else:
             print("[SEARCH] No targets, no pose — rotating")
-            rotate_angle(robot, 30)
+            heading = ROTATE_FOR(lvl2, 30, heading)
             robot.sleep(0.1)
 
 
 # --- Modes ---
-MODE = "tests"  # run_all, marker_test, tests
+MODE = "run_all"  # run_all, marker_test, tests
 
 if MODE == "marker_test":
     print("=== Marker Test Mode ===")
