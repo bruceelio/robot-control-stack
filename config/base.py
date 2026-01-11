@@ -52,3 +52,6 @@ ROBOT_CONFIGS = {
         },
     },
 }
+# Motion backend selection
+VALID_MOTION_BACKENDS = ("timed", "encoder")
+MOTION_BACKEND = "timed"   # "timed" | "encoder" | "trajectory"

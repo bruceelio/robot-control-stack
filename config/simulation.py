@@ -9,3 +9,5 @@ SURFACE = "simulation"
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"
 ROBOT_ID = "sim"
+
+MOTION_BACKEND = "timed"
