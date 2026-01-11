@@ -1,11 +1,19 @@
-# behaviors/seek_and_collect.py
+import time
 
 from behaviors.base import Behavior, BehaviorStatus
-from primitives.motion import Rotate
+from primitives.motion import Rotate, Drive
 from primitives.manipulation import Grab
 from primitives.base import PrimitiveStatus
+from navigation import get_closest_target
 
-from navigation import get_closest_target, drive_to_target
+from config.base import (
+    ALIGN_THRESHOLD_DEG,
+    MAX_ROTATE_DEG,
+    MIN_DRIVE_MM,
+    MAX_DRIVE_MM,
+    GRAB_DISTANCE_MM,
+    CAMERA_SETTLE_TIME,
+)
 
 
 class SeekAndCollect(Behavior):
@@ -17,6 +25,8 @@ class SeekAndCollect(Behavior):
         self.state = None
         self.target = None
         self.active_primitive = None
+        self.last_action = None  # "rotate" or "drive"
+        self.settle_until = None
 
     def start(self, *, kind="acidic"):
         self.state = "SEARCHING"
@@ -30,7 +40,7 @@ class SeekAndCollect(Behavior):
             return self._search(perception, motion_backend)
 
         if self.state == "APPROACHING":
-            return self._approach(lvl2, localisation)
+            return self._approach(perception, motion_backend)
 
         if self.state == "GRABBING":
             return self._grab(lvl2)
@@ -65,27 +75,73 @@ class SeekAndCollect(Behavior):
 
         return self.status
 
-    def _approach(self, lvl2, localisation):
-        distance = self.target["distance"]
+    def _approach(self, perception, motion_backend):
+        # --- Settling after drive ---
+        if self.settle_until is not None:
+            if time.time() < self.settle_until:
+                return self.status
+            self.settle_until = None
 
-        if distance <= self.tolerance_mm:
-            self.state = "GRABBING"
+        # If no active primitive, decide next action
+        if self.active_primitive is None:
+            self.target = get_closest_target(perception, self.kind)
+
+            if self.target is None:
+                # Temporary vision loss → wait and retry
+                return self.status
+
+            distance = self.target["distance"]
+            bearing = self.target["bearing"]
+
+            # --- Stop condition ---
+            if distance <= GRAB_DISTANCE_MM:
+                self.state = "GRABBING"
+                return self.status
+
+            # --- ROTATE phase ---
+            if abs(bearing) > ALIGN_THRESHOLD_DEG:
+                angle = max(
+                    -MAX_ROTATE_DEG,
+                    min(MAX_ROTATE_DEG, bearing)
+                )
+
+                self.active_primitive = Rotate(angle_deg=angle)
+                self.last_action = "rotate"
+                self.active_primitive.start(
+                    motion_backend=motion_backend
+                )
+                return self.status
+
+            # --- DRIVE phase ---
+            drive_mm = max(
+                MIN_DRIVE_MM,
+                min(MAX_DRIVE_MM, distance - GRAB_DISTANCE_MM)
+            )
+
+            self.active_primitive = Drive(distance_mm=drive_mm)
+            self.last_action = "drive"
+            self.active_primitive.start(
+                motion_backend=motion_backend
+            )
             return self.status
 
-        # Legacy drive (unchanged for now)
-        position, heading = drive_to_target(
-            lvl2,
-            self.target,
-            localisation.position,
-            localisation.heading,
-            max_drive_mm=self.max_drive_mm,
-            tolerance_mm=self.tolerance_mm,
+        # --- Primitive running ---
+        prim_status = self.active_primitive.update(
+            motion_backend=motion_backend
         )
 
-        localisation.position = position
-        localisation.heading = heading
+        if prim_status == PrimitiveStatus.SUCCEEDED:
+            self.active_primitive = None
+
+            if self.last_action == "drive":
+                self.settle_until = time.time() + CAMERA_SETTLE_TIME
+
+        if prim_status == PrimitiveStatus.FAILED:
+            self.active_primitive = None
+            self.status = BehaviorStatus.FAILED
 
         return self.status
+
 
     def _grab(self, lvl2):
         if self.active_primitive is None:

@@ -1,7 +1,6 @@
 import time
 from calibration import drive_duration, rotate_duration
-
-
+from config import MIN_ROTATE_DEG, MIN_DRIVE_MM
 
 class TimedMotionBackend:
     """
@@ -19,24 +18,38 @@ class TimedMotionBackend:
     # ---------------------
 
     def drive(self, *, distance_mm: float):
-        duration, power = drive_duration(distance_mm)
+        # Ignore tiny moves
+        if abs(distance_mm) < MIN_DRIVE_MM:
+            self.mode = None
+            self.end_time = None
+            return
+
+        duration, power = drive_duration(abs(distance_mm))
 
         self.end_time = time.time() + duration
         self.mode = "drive"
 
-        self.lvl2.DRIVE(power, power, duration)
+        # Forward or backward
+        direction = 1 if distance_mm >= 0 else -1
+        self.lvl2.DRIVE(
+            direction * power,
+            direction * power,
+            duration
+        )
 
     def rotate(self, angle_deg: float):
-        duration, power = rotate_duration(abs(angle_deg))
+        if abs(angle_deg) < MIN_ROTATE_DEG:
+            self.mode = None
+            self.end_time = None
+            return
 
+        duration, power = rotate_duration(abs(angle_deg))
         self.end_time = time.time() + duration
         self.mode = "rotate"
 
         if angle_deg > 0:
-            # CCW
             self.lvl2.DRIVE(power, -power, duration)
         else:
-            # CW
             self.lvl2.DRIVE(-power, power, duration)
 
     def is_busy(self) -> bool:

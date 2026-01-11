@@ -2,6 +2,18 @@
 
 ARENA_SIZE = 6000  # mm
 
+CAMERA_SETTLE_TIME = 0.15  # seconds (tune later)
+
+MIN_ROTATE_DEG = 3.0
+MAX_ROTATE_DEG     = 20.0
+
+MIN_DRIVE_MM   = 5.0
+MAX_DRIVE_MM   = 500
+
+ALIGN_THRESHOLD_DEG = 6.0
+GRAB_DISTANCE_MM   = 120
+
+
 # Supported options (validation only)
 VALID_SURFACES = ("simulation", "tile", "wood", "carpet")
 VALID_ENVIRONMENTS = ("simulation", "real")
