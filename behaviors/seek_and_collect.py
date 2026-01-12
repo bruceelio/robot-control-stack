@@ -27,6 +27,8 @@ class SeekAndCollect(Behavior):
         self.active_primitive = None
         self.last_action = None  # "rotate" or "drive"
         self.settle_until = None
+        self.last_target = None
+        self.last_target_time = None
 
     def start(self, *, kind="acidic"):
         self.state = "SEARCHING"
