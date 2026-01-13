@@ -5,9 +5,9 @@ from primitives.motion import Rotate, Drive
 from primitives.manipulation import Grab
 from primitives.base import PrimitiveStatus
 from navigation import get_closest_target
-
+from config.base import DEFAULT_TARGET_KIND
 from config.base import (
-    ALIGN_THRESHOLD_DEG,
+    MIN_ROTATE_DEG,
     MAX_ROTATE_DEG,
     MIN_DRIVE_MM,
     MAX_DRIVE_MM,
@@ -21,7 +21,6 @@ class SeekAndCollect(Behavior):
         super().__init__()
         self.tolerance_mm = tolerance_mm
         self.max_drive_mm = max_drive_mm
-
         self.state = None
         self.target = None
         self.active_primitive = None
@@ -29,12 +28,24 @@ class SeekAndCollect(Behavior):
         self.settle_until = None
         self.last_target = None
         self.last_target_time = None
+        self.last_seen_time = None
+        self.VISION_LOSS_TIMEOUT = 0.5  # seconds (config later)
+        self.pending_drive = False
+        self.drive_distance = None
+        self.cached_distance = None
+        self.cached_bearing = None
+        self.search_blocked_until = None
+        self.final_commit = False
+        self.approach_started = False
 
-    def start(self, *, kind="acidic"):
+    def start(self, *, kind=None):
         self.state = "SEARCHING"
-        self.kind = kind
+        self.kind = kind or DEFAULT_TARGET_KIND
+        print(f"[SEEK_AND_COLLECT][START] kind={self.kind}")
         self.target = None
         self.active_primitive = None
+        self.final_commit = False
+        self.approach_started = False
         self.status = BehaviorStatus.RUNNING
 
     def update(self, *, lvl2, perception, localisation, motion_backend):
@@ -54,6 +65,13 @@ class SeekAndCollect(Behavior):
     # -------------------------
 
     def _search(self, perception, motion_backend):
+        now = time.time()
+
+        if self.search_blocked_until is not None:
+            if now < self.search_blocked_until:
+                return self.status
+            self.search_blocked_until = None
+
         self.target = get_closest_target(perception, self.kind)
         if self.target is None:
             self.status = BehaviorStatus.FAILED
@@ -74,73 +92,208 @@ class SeekAndCollect(Behavior):
         if prim_status == PrimitiveStatus.SUCCEEDED:
             self.active_primitive = None
             self.state = "APPROACHING"
+            self.approach_started = False  # reset latch
 
         return self.status
 
     def _approach(self, perception, motion_backend):
-        # --- Settling after drive ---
-        if self.settle_until is not None:
-            if time.time() < self.settle_until:
-                return self.status
-            self.settle_until = None
-
-        # If no active primitive, decide next action
-        if self.active_primitive is None:
-            self.target = get_closest_target(perception, self.kind)
-
-            if self.target is None:
-                # Temporary vision loss → wait and retry
-                return self.status
-
-            distance = self.target["distance"]
-            bearing = self.target["bearing"]
-
-            # --- Stop condition ---
-            if distance <= GRAB_DISTANCE_MM:
-                self.state = "GRABBING"
-                return self.status
-
-            # --- ROTATE phase ---
-            if abs(bearing) > ALIGN_THRESHOLD_DEG:
-                angle = max(
-                    -MAX_ROTATE_DEG,
-                    min(MAX_ROTATE_DEG, bearing)
-                )
-
-                self.active_primitive = Rotate(angle_deg=angle)
-                self.last_action = "rotate"
-                self.active_primitive.start(
-                    motion_backend=motion_backend
-                )
-                return self.status
-
-            # --- DRIVE phase ---
-            drive_mm = max(
-                MIN_DRIVE_MM,
-                min(MAX_DRIVE_MM, distance - GRAB_DISTANCE_MM)
-            )
-
-            self.active_primitive = Drive(distance_mm=drive_mm)
-            self.last_action = "drive"
-            self.active_primitive.start(
-                motion_backend=motion_backend
-            )
+        # HARD GUARD — do not re-enter after state change
+        if self.state != "APPROACHING":
             return self.status
 
-        # --- Primitive running ---
-        prim_status = self.active_primitive.update(
-            motion_backend=motion_backend
+        now = time.time()
+
+        # =================================================
+        # SECTION 0 — SETTLING PHASE (AFTER DRIVE)
+        # =================================================
+        if self.settle_until is not None:
+            if now < self.settle_until:
+                print(
+                    f"[APPROACH][SETTLE] waiting "
+                    f"{self.settle_until - now:.2f}s"
+                )
+                return self.status
+
+            # ---- LOOP CLOSE: settle complete
+            print("[APPROACH][SETTLE] complete — plan consumed")
+
+            self.settle_until = None
+            self.cached_distance = None
+            self.cached_bearing = None
+            self.last_action = None
+
+            # reassessment allowed after this point
+
+        # =================================================
+        # SECTION 1 — ACTIVE PRIMITIVE (NO REASSESSMENT)
+        # =================================================
+
+        if self.active_primitive is not None:
+            prim_status = self.active_primitive.update(
+                motion_backend=motion_backend
+            )
+
+            if prim_status == PrimitiveStatus.SUCCEEDED:
+                print(f"[APPROACH][{self.last_action.upper()}] complete")
+
+                self.active_primitive = None
+
+                # ---------- LOOP CLOSE: ROTATE → DRIVE ----------
+                if self.last_action == "rotate":
+                    if self.final_commit:
+                        drive_mm = self.cached_distance
+                    else:
+                        drive_mm = max(
+                            MIN_DRIVE_MM,
+                            min(
+                                MAX_DRIVE_MM,
+                                self.cached_distance - GRAB_DISTANCE_MM
+                            )
+                        )
+
+                    print(f"[APPROACH][DRIVE] start distance={drive_mm:.0f}mm")
+
+                    self.active_primitive = Drive(distance_mm=drive_mm)
+                    self.last_action = "drive"
+                    self.active_primitive.start(
+                        motion_backend=motion_backend
+                    )
+                    return self.status
+
+                                # ---------- LOOP CLOSE: DRIVE ----------
+                if self.last_action == "drive":
+
+                    # FINAL COMMIT: drive ends → GRAB
+                    if self.final_commit:
+                        print("[APPROACH][FINAL] drive complete — entering GRABBING")
+
+                        self.active_primitive = None
+                        self.last_action = None
+                        self.cached_distance = None
+                        self.cached_bearing = None
+                        self.settle_until = None
+
+                        self.state = "GRABBING"
+                        return self.status
+
+                    # NORMAL DRIVE: settle + reassess
+                    self.settle_until = now + CAMERA_SETTLE_TIME
+                    print(f"[APPROACH][SETTLE] start {CAMERA_SETTLE_TIME:.2f}s")
+                    return self.status
+
+
+            elif prim_status == PrimitiveStatus.FAILED:
+                print(f"[APPROACH][{self.last_action.upper()}] FAILED")
+                self.active_primitive = None
+                self.last_action = None
+                self.cached_distance = None
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+            return self.status
+
+        # =================================================
+        # SECTION 2 — REASSESS TARGET (ONLY THINKING POINT)
+        # =================================================
+
+        target = get_closest_target(perception, self.kind)
+
+        if target is None:
+            print("[APPROACH][EXIT] no target — returning to SEARCHING")
+            self.state = "SEARCHING"
+            return self.status
+
+        # ---------- REL TARGET GUARD ----------
+        tid = target.get("id", "REL")
+
+        if not self.approach_started:
+            self.approach_started = True
+
+            # ---------- LATCH DEBUG (NAVIGATION-BASED, SAFE) ----------
+            acidic_t = get_closest_target(perception, "acidic")
+            basic_t = get_closest_target(perception, "basic")
+
+            acidic_min = acidic_t["distance"] if acidic_t else None
+            basic_min = basic_t["distance"] if basic_t else None
+
+            print(
+                "[APPROACH][LATCH] "
+                f"selected_kind={self.kind} "
+                f"acidic_min={acidic_min} "
+                f"basic_min={basic_min}"
+            )
+            # ---------- END LATCH DEBUG ----------
+
+            print("[APPROACH] approach accepted — locking target type")
+
+        # ---------- SAFE DEBUG PRINT ----------
+        print(
+            f"[APPROACH][TARGET] "
+            f"kind={self.kind} id={tid} "
+            f"dist={target['distance']:.0f}mm "
+            f"bearing={target['bearing']:.1f}°"
         )
 
-        if prim_status == PrimitiveStatus.SUCCEEDED:
-            self.active_primitive = None
+        # TARGET SEEN — SNAPSHOT
+        self.last_seen_time = now
 
-            if self.last_action == "drive":
-                self.settle_until = time.time() + CAMERA_SETTLE_TIME
+        # ---------- FINAL COMMIT DECISION ----------
+        distance = target["distance"]
+        bearing = target["bearing"]
 
-        if prim_status == PrimitiveStatus.FAILED:
-            self.active_primitive = None
-            self.status = BehaviorStatus.FAILED
+        if not self.final_commit and distance <= 500:
+            self.final_commit = True
+
+            final_drive_mm = distance + 20
+            print(
+                f"[APPROACH][FINAL] commit "
+                f"dist={distance:.0f}mm "
+                f"final_drive={final_drive_mm:.0f}mm"
+            )
+
+            # lock values — NO MORE VISION AFTER THIS
+            self.cached_distance = final_drive_mm
+            self.cached_bearing = bearing
+            self.last_action = "rotate"
+
+            angle = max(
+                -MAX_ROTATE_DEG,
+                min(MAX_ROTATE_DEG, bearing)
+            )
+
+            self.active_primitive = Rotate(angle_deg=angle)
+            self.active_primitive.start(motion_backend=motion_backend)
+
+            return self.status
+
+
+        # =================================================
+        # SECTION 3 — PLAN ATOMIC ROTATE → DRIVE
+        # =================================================
+
+        assert self.active_primitive is None
+        assert self.last_action is None
+
+        self.cached_bearing = bearing
+
+        angle = max(
+            -MAX_ROTATE_DEG,
+            min(MAX_ROTATE_DEG, self.cached_bearing)
+        )
+
+        self.cached_distance = distance  # <-- consumed once
+        self.last_action = "rotate"
+
+        print(
+            f"[APPROACH][ROTATE] start "
+            f"angle={angle:.1f}° "
+            f"(raw={bearing:.1f}°)"
+        )
+
+        self.active_primitive = Rotate(angle_deg=angle)
+        self.active_primitive.start(
+            motion_backend=motion_backend
+        )
 
         return self.status
 

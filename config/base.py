@@ -1,11 +1,13 @@
 # config/base.py
 
+DEFAULT_TARGET_KIND   = "basic"   # or "basic"
+
 ARENA_SIZE = 6000  # mm
 
 CAMERA_SETTLE_TIME = 0.15  # seconds (tune later)
 
 MIN_ROTATE_DEG = 3.0
-MAX_ROTATE_DEG     = 20.0
+MAX_ROTATE_DEG     = 90
 
 MIN_DRIVE_MM   = 5.0
 MAX_DRIVE_MM   = 500
