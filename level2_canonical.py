@@ -12,7 +12,8 @@ Level 2 merges multiple Level 1 I/O operations into a single semantic action.
 """
 
 import time
-from hal.unified import canonical_to_pin
+from hal.pinmap import canonical_to_pin
+from hal.hardware import is_sr
 
 
 class Level2:
@@ -210,23 +211,46 @@ class Level2:
     # GRIPPER
     # -----------------------------
 
-    def GRAB(self):
-        print("[Level2] GRAB")
-        if self.has_sr:
-            raise NotImplementedError("SR gripper wrapper not implemented")
+    # Vacuum
+
+    def VACUUM_ON(self):
+        print("[Level2] VACUUM_ON")
+        if is_sr():
+            from sr.robot3 import OUT_H0
+            self.robot.power_board.outputs[OUT_H0].is_enabled = True
         else:
-            pin = canonical_to_pin.get("GRIP_SOL")
+            pin = canonical_to_pin.get("DO_GRIPPER_SOLENOID")
             if pin:
                 pin.write(1)
 
-    def RELEASE(self):
-        print("[Level2] RELEASE")
-        if self.has_sr:
-            raise NotImplementedError("SR gripper wrapper not implemented")
+    def VACUUM_OFF(self):
+        print("[Level2] VACUUM_OFF")
+        if is_sr():
+            from sr.robot3 import OUT_H0
+            self.robot.power_board.outputs[OUT_H0].is_enabled = False
         else:
-            pin = canonical_to_pin.get("GRIP_SOL")
+            pin = canonical_to_pin.get("DO_GRIPPER_SOLENOID")
             if pin:
                 pin.write(0)
+
+    # Lift
+
+    def LIFT_DOWN(self):
+        print("[Level2] LIFT_DOWN")
+        if is_sr():
+            self.robot.servo_board.servos[0].position = -1
+            self.robot.sleep(0.4)
+
+    def LIFT_UP(self):
+        print("[Level2] LIFT_UP")
+        if is_sr():
+            self.robot.servo_board.servos[0].position = 1
+            self.robot.sleep(0.4)
+
+    def LIFT_DISABLE(self):
+        print("[Level2] LIFT_DISABLE")
+        if is_sr():
+            self.robot.servo_board.servos[0].position = None
 
     # -----------------------------
     # CAMERA

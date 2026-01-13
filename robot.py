@@ -1,4 +1,4 @@
-# robot.py  (SR / Webots entry point)
+# sr_board.py  (SR / Webots entry point)
 
 from sr.robot3 import Robot
 from robot_controller import Controller

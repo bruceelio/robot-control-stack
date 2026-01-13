@@ -6,7 +6,7 @@ class Hardware:
     Provides a unified interface for motors, sensors, bumpers, LEDs, servos, and camera.
     Safe for both simulation and real hardware.
     """
-    # in program robot.py can now do the following
+    # in program sr_board.py can now do the following
     #
     # hw = Hardware(robot)
     # sensors = hw.sense()

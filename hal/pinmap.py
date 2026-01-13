@@ -1,10 +1,10 @@
-# unified.py
+# pinmap.py
 """
 Unified canonical-to-pin mapping for all robot boards.
 Handles multiple boards and missing extra boards gracefully.
 """
 
-from .robot import sr_robot_io, SR_ROBOT_BOARD_NAME
+from .sr_board import sr_robot_io, SR_ROBOT_BOARD_NAME
 
 # Initialize unified mapping with SR Robot board
 canonical_to_pin = {}
@@ -12,7 +12,7 @@ board_mapping = {SR_ROBOT_BOARD_NAME: sr_robot_io}
 
 # Attempt to load extra boards if they exist
 try:
-    from .extra_board import extra_board_io, EXTRA_BOARD_NAME
+    from .aux_board import extra_board_io, EXTRA_BOARD_NAME
     board_mapping[EXTRA_BOARD_NAME] = extra_board_io
 except ImportError:
     print("No extra board found. Continuing with SR Robot only.")

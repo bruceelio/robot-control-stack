@@ -1,4 +1,4 @@
-# setup.py
+# init_pins.py
 """
 Universal I/O setup.
 - Sets pin modes for any Arduino/board using canonical mapping.
@@ -11,7 +11,7 @@ try:
 except ImportError:
     SR3_PRESENT = False
 
-from .unified import board_mapping
+from .pinmap import board_mapping
 
 # Track initialized pins to avoid duplicates
 _initialized_pins = set()
@@ -46,5 +46,4 @@ def initialize():
     """Call this at program start to setup all pins."""
     setup_boards()
 
-# Auto-run when imported
-initialize()
+

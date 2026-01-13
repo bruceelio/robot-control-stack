@@ -1,4 +1,4 @@
-# extra_board.py
+# aux_board.py
 # from .canonical import *
 
 # EXTRA_BOARD_NAME = "Arduino2"

@@ -45,7 +45,8 @@ def drive_duration(distance_mm):
 ROTATE_POWER = 0.5
 
 rotation_angles = np.array([90, 180, 270, 360])
-rotation_times  = np.array([0.48, 0.91, 1.365, 1.85])
+rotation_times  = np.array([0.60, 0.91, 1.365, 1.85])
+# rotation_times  = np.array([0.48, 0.91, 1.365, 1.85])
 m_rot, b_rot = np.polyfit(rotation_angles, rotation_times, 1)
 
 # Print calibration in intuitive units

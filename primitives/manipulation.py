@@ -65,3 +65,37 @@ class Release(Primitive):
 
         print("[Release] succeeded")
         return PrimitiveStatus.SUCCEEDED
+
+
+class StubGrabPrimitive(Primitive):
+    """
+    Temporary grab primitive used to allow SeekAndCollect
+    to complete in simulation before the real grabber is validated.
+    """
+
+    def __init__(self, duration=0.5):
+        super().__init__()
+        self.duration = duration
+        self.start_time = None
+
+    def start(self, *, lvl2, **_):
+        print("[StubGrab] start")
+        self.start_time = time.time()
+
+        # Optional: exercise actuator path
+        try:
+            if hasattr(lvl2, "GRAB"):
+                lvl2.GRAB()
+        except Exception as e:
+            print(f"[StubGrab] GRAB ignored ({e})")
+
+    def update(self, **_):
+        if self.start_time is None:
+            return PrimitiveStatus.FAILED
+
+        if time.time() - self.start_time < self.duration:
+            return PrimitiveStatus.RUNNING
+
+        print("[StubGrab] complete")
+        return PrimitiveStatus.SUCCEEDED
+
