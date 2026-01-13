@@ -1,11 +1,9 @@
-# io_setup.py
+# setup.py
 """
 Universal I/O setup.
 - Sets pin modes for any Arduino/board using canonical mapping.
 - Silent if SR3 API is being used (pins already handled).
 """
-
-import sys
 
 try:
     from sr.robot3 import Robot, INPUT, INPUT_PULLUP, OUTPUT
@@ -13,7 +11,7 @@ try:
 except ImportError:
     SR3_PRESENT = False
 
-from io_unified import canonical_to_pin, board_mapping
+from .unified import board_mapping
 
 # Track initialized pins to avoid duplicates
 _initialized_pins = set()

@@ -12,7 +12,7 @@ Level 2 merges multiple Level 1 I/O operations into a single semantic action.
 """
 
 import time
-from io_unified import canonical_to_pin
+from hal.unified import canonical_to_pin
 
 
 class Level2:

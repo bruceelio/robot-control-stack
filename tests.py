@@ -50,7 +50,7 @@ def run_tests(
     Run registered tests.
 
     only="test_name"     -> run a single test
-    category="io"        -> run tests in category
+    category="hal"        -> run tests in category
     """
     print("\n=== TEST RUN START ===")
 
@@ -81,10 +81,10 @@ def run_tests(
 # I/O TESTS (LEVEL 1)
 # ------------------------------------------------------------------
 
-@register_test(category="io", enabled=True)
+@register_test(category="hal", enabled=True)
 def test_digital_inputs(robot):
     """Reads all DI_* canonicals"""
-    from io_unified import canonical_to_pin
+    from hal.unified import canonical_to_pin
 
     print("Testing digital inputs...")
     found = False
@@ -102,10 +102,10 @@ def test_digital_inputs(robot):
         print("No digital inputs defined.")
 
 
-@register_test(category="io", enabled=True)
+@register_test(category="hal", enabled=True)
 def test_analog_inputs(robot):
     """Reads all AI_* canonicals"""
-    from io_unified import canonical_to_pin
+    from hal.unified import canonical_to_pin
 
     print("Testing analog inputs...")
     found = False
@@ -123,10 +123,10 @@ def test_analog_inputs(robot):
         print("No analog inputs defined.")
 
 
-@register_test(category="io", enabled=False)
+@register_test(category="hal", enabled=False)
 def test_digital_outputs(robot):
     """Toggles all DO_* canonicals"""
-    from io_unified import canonical_to_pin
+    from hal.unified import canonical_to_pin
 
     print("Testing digital outputs...")
 
@@ -169,7 +169,7 @@ def test_level2_drive(robot):
 @register_test(category="safety", enabled=True, requires_robot=False)
 def test_virtual_front_bumper():
     """Tests SI_BUMPER_FRONT logic"""
-    from io_canonical import (
+    from hal.canonical import (
         DI_BUMPER_FRONT_LEFT,
         DI_BUMPER_FRONT_RIGHT,
         SI_BUMPER_FRONT,
