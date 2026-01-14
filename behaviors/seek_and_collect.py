@@ -4,7 +4,7 @@ from behaviors.base import Behavior, BehaviorStatus
 from primitives.motion import Rotate, Drive
 from primitives.manipulation import Grab
 from primitives.base import PrimitiveStatus
-from navigation import get_closest_target
+from navigation.target_selection import get_closest_target
 from config.base import DEFAULT_TARGET_KIND
 from config.base import (
     MIN_ROTATE_DEG,
