@@ -2,7 +2,7 @@ import time
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.motion import Rotate, Drive
-from primitives.manipulation import Grab, StubGrabPrimitive
+from primitives.manipulation import Grab
 from primitives.base import PrimitiveStatus
 from navigation import get_closest_target
 from config.base import DEFAULT_TARGET_KIND
@@ -300,8 +300,7 @@ class SeekAndCollect(Behavior):
 
     def _grab(self, lvl2):
         if self.active_primitive is None:
-            # self.active_primitive = Grab()
-            self.active_primitive = StubGrabPrimitive()
+            self.active_primitive = Grab()
             self.active_primitive.start(lvl2=lvl2)
 
         prim_status = self.active_primitive.update()
