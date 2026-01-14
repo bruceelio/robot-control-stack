@@ -1,7 +1,8 @@
 # perception.py
 import time
 import math
-from location import find_location, marker_location
+from navigation.geometry import trilaterate_point
+from navigation.arena import marker_locations
 from config import distance_scale, ARENA_SIZE
 
 # =========================
@@ -29,7 +30,7 @@ def log(tag, msg):
 
 class Perception:
     def __init__(self):
-        self.arena_markers = marker_location(ARENA_SIZE)
+        self.arena_markers = marker_locations(ARENA_SIZE)
         self.objects = {"acidic": {}, "basic": {}}
         self.last_pose = None
 
@@ -118,7 +119,7 @@ def estimate_pose(arena_markers, perception: Perception):
             BC = m2.position.distance * distance_scale
 
             try:
-                C1, C2 = find_location(A, B, AC, BC)
+                C1, C2 = trilaterate_point(A, B, AC, BC)
                 for C in (C1, C2):
                     if inside_arena(C):
                         positions.append(C)
