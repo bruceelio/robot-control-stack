@@ -67,4 +67,7 @@ class Release(Primitive):
         print("[Release] succeeded")
         return PrimitiveStatus.SUCCEEDED
 
+class Lift(Primitive):
+    ...
+
 

@@ -1,4 +1,4 @@
-# calibration.py
+# calibration/base.py
 import numpy as np
 
 # -----------------------------
@@ -17,15 +17,6 @@ m_short, b_short = np.polyfit(short_distances, short_times, 1)
 long_distances = np.array([1000, 2000, 3000, 4000])
 long_times     = np.array([0.835, 1.615, 2.4, 3.16])
 m_long, b_long = np.polyfit(long_distances, long_times, 1)
-
-# Print calibration in intuitive units
-print(f"\n=== DRIVE CALIBRATION ===")
-print(f"Short distances (<{DRIVE_SWITCH_MM} mm, power={DRIVE_POWER_SHORT}):")
-print(f"  Time per 250 mm: {m_short * 250:.2f}s, offset: {b_short:.2f}s")
-
-print(f"Long distances (>= {DRIVE_SWITCH_MM} mm, power={DRIVE_POWER_LONG}):")
-print(f"  Time per 1000 mm: {m_long * 1000:.2f}s, offset: {b_long:.2f}s")
-
 
 def drive_duration(distance_mm):
     """Return (duration, power) for driving a distance_mm (mm)."""
@@ -48,11 +39,6 @@ rotation_angles = np.array([90, 180, 270, 360])
 rotation_times  = np.array([0.60, 0.91, 1.365, 1.85])
 # rotation_times  = np.array([0.48, 0.91, 1.365, 1.85])
 m_rot, b_rot = np.polyfit(rotation_angles, rotation_times, 1)
-
-# Print calibration in intuitive units
-print(f"\n=== ROTATION CALIBRATION ===")
-print(f"Rotation angles (power={ROTATE_POWER}):")
-print(f"  Time per 90°: {m_rot * 90:.2f}s, offset: {b_rot:.2f}s")
 
 
 def rotate_duration(angle_deg):

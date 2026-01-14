@@ -1,5 +1,5 @@
 import time
-from calibration import drive_duration, rotate_duration
+from calibration.base import drive_duration, rotate_duration
 from config import MIN_ROTATE_DEG, MIN_DRIVE_MM
 
 class TimedMotionBackend:
