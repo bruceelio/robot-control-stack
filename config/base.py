@@ -1,5 +1,21 @@
 # config/base.py
 
+from enum import Enum, auto
+
+class RunMode(Enum):
+    NORMAL = auto()
+    TESTS = auto()
+    DIAGNOSTICS = auto()
+
+# --------------------------------------------------
+# SELECT EXACTLY ONE
+# --------------------------------------------------
+
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.TESTS
+# RUN_MODE = RunMode.DIAGNOSTICS
+
+
 DEFAULT_TARGET_KIND   = "basic"   # or "basic"
 
 ARENA_SIZE = 6000  # mm
