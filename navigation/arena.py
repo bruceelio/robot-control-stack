@@ -7,6 +7,17 @@ Defines fixed world landmark positions.
 No robot state. No perception. No motion.
 """
 
+from enum import Enum
+import math
+
+
+class BaseID(Enum):
+    BASE_0 = 0
+    BASE_1 = 1
+    BASE_2 = 2
+    BASE_3 = 3
+
+
 def marker_locations(arena_size_mm: float):
     """
     Return world coordinates of arena markers.
@@ -47,4 +58,50 @@ def marker_locations(arena_size_mm: float):
 
     return markers
 
+def base_bounds(arena_size_mm: float, base: BaseID):
+    """
+    Return (xmin, xmax, ymin, ymax) for a base region.
+    """
+    half = arena_size_mm / 2
 
+    width = 2000.0   # long edge
+    height = 1000.0  # short edge
+
+    if base == BaseID.BASE_0:      # top-left
+        return (-half, -half + width,
+                half - height, half)
+
+    if base == BaseID.BASE_1:      # top-right
+        return (half - height, half,
+                half - width, half)
+
+    if base == BaseID.BASE_2:      # bottom-right
+        return (half - width, half,
+                -half, -half + height)
+
+    if base == BaseID.BASE_3:      # bottom-left
+        return (-half, -half + height,
+                -half, -half + width)
+
+    raise ValueError(base)
+
+def base_dock_pose(arena_size_mm: float, base: BaseID):
+    """
+    Canonical pose inside base: (x, y, heading_rad)
+    """
+    xmin, xmax, ymin, ymax = base_bounds(arena_size_mm, base)
+    margin = 300.0
+
+    if base == BaseID.BASE_0:
+        return xmin + margin, ymax - margin, -math.pi / 4
+
+    if base == BaseID.BASE_1:
+        return xmax - margin, ymax - margin, -3 * math.pi / 4
+
+    if base == BaseID.BASE_2:
+        return xmax - margin, ymin + margin, 3 * math.pi / 4
+
+    if base == BaseID.BASE_3:
+        return xmin + margin, ymin + margin, math.pi / 4
+
+    raise ValueError(base)
