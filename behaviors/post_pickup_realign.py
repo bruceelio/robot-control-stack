@@ -1,15 +1,15 @@
-# behaviors/rotateanddrive.py
+# behaviors/post_pickup_realign.py
 
 from behaviors.base import Behavior, BehaviorStatus
-from primitives.motion import Rotate, Drive
+from primitives.motion import Drive, Rotate
 from primitives.base import PrimitiveStatus
 
 
-class RotateAndDrive(Behavior):
+class PostPickupRealign(Behavior):
     """
-    Validation behavior:
-    - rotate 180 degrees
-    - drive forward 1000 mm
+    Post-pickup cleanup behavior:
+    - reverse to clear the marker / centre cluster
+    - rotate to re-establish a useful heading
     """
 
     def __init__(self):
@@ -18,15 +18,18 @@ class RotateAndDrive(Behavior):
         self.active_primitive = None
 
     def start(self, *, motion_backend, **_):
-        print("[ROTATE_AND_DRIVE] start")
-        self.phase = "ROTATE"
-        self.active_primitive = Rotate(angle_deg=180)
+        print("[POST_PICKUP_REALIGN] start")
+
+        self.phase = "REVERSE"
+        self.active_primitive = Drive(distance_mm=-200)
+
         self.active_primitive.start(
             motion_backend=motion_backend
         )
 
     def update(self, *, motion_backend, **_):
         if self.active_primitive is None:
+            print("[POST_PICKUP_REALIGN] no active primitive")
             return BehaviorStatus.FAILED
 
         status = self.active_primitive.update(
@@ -37,20 +40,22 @@ class RotateAndDrive(Behavior):
             return BehaviorStatus.RUNNING
 
         if status == PrimitiveStatus.FAILED:
-            print("[ROTATE_AND_DRIVE] primitive failed")
+            print(f"[POST_PICKUP_REALIGN] {self.phase} failed")
             return BehaviorStatus.FAILED
 
-        # ---------- ROTATE COMPLETE ----------
-        if self.phase == "ROTATE":
-            print("[ROTATE_AND_DRIVE] rotate complete")
-            self.phase = "DRIVE"
-            self.active_primitive = Drive(distance_mm=1000)
+        # ---------- REVERSE COMPLETE ----------
+        if self.phase == "REVERSE":
+            print("[POST_PICKUP_REALIGN] reverse complete")
+
+            self.phase = "ROTATE"
+            self.active_primitive = Rotate(angle_deg=90)
+
             self.active_primitive.start(
                 motion_backend=motion_backend
             )
             return BehaviorStatus.RUNNING
 
-        # ---------- DRIVE COMPLETE ----------
-        if self.phase == "DRIVE":
-            print("[ROTATE_AND_DRIVE] drive complete")
+        # ---------- ROTATE COMPLETE ----------
+        if self.phase == "ROTATE":
+            print("[POST_PICKUP_REALIGN] rotate complete")
             return BehaviorStatus.SUCCEEDED

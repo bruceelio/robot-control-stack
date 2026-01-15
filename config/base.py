@@ -16,9 +16,17 @@ RUN_MODE = RunMode.NORMAL
 # RUN_MODE = RunMode.DIAGNOSTICS
 
 
+ARENA_SIZE = 6000  # mm
+
 DEFAULT_TARGET_KIND   = "basic"   # or "basic"
 
-ARENA_SIZE = 6000  # mm
+# Marker height decision distances
+MARKER_HEIGHT_MAX_DISTANCE_MM = 1000   # beyond this, pitch unreliable
+FINAL_COMMIT_DISTANCE_MM      = 500    # blind execution threshold
+
+# Pitch thresholds (simulation tuned; robot overrides later)
+MARKER_PITCH_HIGH_DEG = 0.35   # platform markers cluster ~0.5
+MARKER_PITCH_LOW_DEG  = 0.10   # floor markers cluster ~0.0
 
 CAMERA_SETTLE_TIME = 0.15  # seconds (tune later)
 

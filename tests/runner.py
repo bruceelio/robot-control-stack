@@ -1,3 +1,5 @@
+# tests/runner.py
+
 from tests.registry import TESTS
 
 

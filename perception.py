@@ -149,6 +149,8 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
     if robot_pose is None:
         for m in markers:
             perception.objects[obj_type][m.id] = {
+                "id": m.id,
+                "marker": m,  # ← ADD
                 "distance": float(m.position.distance),
                 "bearing": math.degrees(float(m.position.horizontal_angle)),
                 "last_seen": now,
@@ -179,6 +181,8 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
         ay = ry + arena_dy
 
         perception.objects[obj_type][m.id] = {
+            "id": m.id,
+            "marker": m,  # ← ADD
             "x": ax,
             "y": ay,
             "distance": math.hypot(ax - rx, ay - ry),

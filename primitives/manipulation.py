@@ -67,7 +67,70 @@ class Release(Primitive):
         print("[Release] succeeded")
         return PrimitiveStatus.SUCCEEDED
 
-class Lift(Primitive):
-    ...
+
+class LiftUp(Primitive):
+    """
+    Raise the lift to the upper position.
+    """
+
+    def __init__(self, settle_time=0.5):
+        super().__init__()
+        self.settle_time = settle_time
+        self._start_time = None
+
+    def start(self, *, lvl2, **_):
+        print("[LiftUp] start")
+
+        try:
+            if hasattr(lvl2, "LIFT_UP"):
+                lvl2.LIFT_UP()
+            else:
+                print("[LiftUp] No lift available on this robot")
+        except Exception as e:
+            print(f"[LiftUp] ignored ({e})")
+
+        self._start_time = time.time()
+
+    def update(self, **_):
+        if self._start_time is None:
+            return PrimitiveStatus.FAILED
+
+        if time.time() - self._start_time < self.settle_time:
+            return PrimitiveStatus.RUNNING
+
+        print("[LiftUp] succeeded")
+        return PrimitiveStatus.SUCCEEDED
 
 
+class LiftDown(Primitive):
+    """
+    Lower the lift to the lower position.
+    """
+
+    def __init__(self, settle_time=0.5):
+        super().__init__()
+        self.settle_time = settle_time
+        self._start_time = None
+
+    def start(self, *, lvl2, **_):
+        print("[LiftDown] start")
+
+        try:
+            if hasattr(lvl2, "LIFT_DOWN"):
+                lvl2.LIFT_DOWN()
+            else:
+                print("[LiftDown] No lift available on this robot")
+        except Exception as e:
+            print(f"[LiftDown] ignored ({e})")
+
+        self._start_time = time.time()
+
+    def update(self, **_):
+        if self._start_time is None:
+            return PrimitiveStatus.FAILED
+
+        if time.time() - self._start_time < self.settle_time:
+            return PrimitiveStatus.RUNNING
+
+        print("[LiftDown] succeeded")
+        return PrimitiveStatus.SUCCEEDED

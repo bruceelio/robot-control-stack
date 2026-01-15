@@ -2,10 +2,17 @@ import time
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.motion import Rotate, Drive
-from primitives.manipulation import Grab
+from primitives.manipulation import Grab, LiftUp, LiftDown
 from primitives.base import PrimitiveStatus
 from navigation.target_selection import get_closest_target
+from navigation.height_model import HeightModel
 from config.base import DEFAULT_TARGET_KIND
+from config.base import (
+    MARKER_HEIGHT_MAX_DISTANCE_MM,
+    FINAL_COMMIT_DISTANCE_MM,
+    MARKER_PITCH_HIGH_DEG,
+    MARKER_PITCH_LOW_DEG,
+)
 from config.base import (
     MIN_ROTATE_DEG,
     MAX_ROTATE_DEG,
@@ -13,6 +20,7 @@ from config.base import (
     MAX_DRIVE_MM,
     GRAB_DISTANCE_MM,
     CAMERA_SETTLE_TIME,
+    FINAL_COMMIT_DISTANCE_MM
 )
 
 
@@ -37,6 +45,10 @@ class SeekAndCollect(Behavior):
         self.search_blocked_until = None
         self.final_commit = False
         self.approach_started = False
+        self.height_model = HeightModel()
+        self.target_is_high = None
+        self.final_actions = None
+        self.final_index = 0
 
     def start(self, *, kind=None):
         self.state = "SEARCHING"
@@ -165,13 +177,24 @@ class SeekAndCollect(Behavior):
 
                     # FINAL COMMIT: drive ends → GRAB
                     if self.final_commit:
-                        print("[APPROACH][FINAL] drive complete — entering GRABBING")
+                        print("[APPROACH][FINAL] drive complete — executing blind pickup sequence")
 
                         self.active_primitive = None
                         self.last_action = None
                         self.cached_distance = None
                         self.cached_bearing = None
                         self.settle_until = None
+
+                        # -------------------------
+                        # FINAL BLIND PICKUP PLAN
+                        # -------------------------
+                        self.final_actions = [
+                            LiftUp(),
+                            LiftDown(),
+                            Grab(),
+                            LiftUp(),
+                        ]
+                        self.final_index = 0
 
                         self.state = "GRABBING"
                         return self.status
@@ -237,14 +260,41 @@ class SeekAndCollect(Behavior):
         # TARGET SEEN — SNAPSHOT
         self.last_seen_time = now
 
-        # ---------- FINAL COMMIT DECISION ----------
         distance = target["distance"]
         bearing = target["bearing"]
 
-        if not self.final_commit and distance <= 500:
+        # ---------- HEIGHT INFERENCE (VISION PHASE ONLY) ----------
+        if (
+                distance <= MARKER_HEIGHT_MAX_DISTANCE_MM
+                and not self.height_model.is_committed()
+        ):
+            pitch = target["marker"].orientation.pitch
+            self.height_model.update(pitch_deg=pitch)
+
+            committed = self.height_model.try_commit(
+                high_thresh=MARKER_PITCH_HIGH_DEG,
+                low_thresh=MARKER_PITCH_LOW_DEG,
+            )
+
+            if committed:
+                print(
+                    f"[HEIGHT] committed "
+                    f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
+                    f"(pitch={pitch:.3f})"
+                )
+
+        # ---------- FINAL COMMIT DECISION ----------
+
+        if (
+                not self.final_commit
+                and distance <= FINAL_COMMIT_DISTANCE_MM
+                and self.height_model.is_committed()
+        ):
             self.final_commit = True
+            self.target_is_high = self.height_model.is_high()
 
             final_drive_mm = distance + 70
+
             print(
                 f"[APPROACH][FINAL] commit "
                 f"dist={distance:.0f}mm "
@@ -297,20 +347,41 @@ class SeekAndCollect(Behavior):
 
         return self.status
 
-
     def _grab(self, lvl2):
-        if self.active_primitive is None:
-            self.active_primitive = Grab()
-            self.active_primitive.start(lvl2=lvl2)
+        if self.final_actions is None:
+            print("[GRAB] ERROR: no final action plan")
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
+        # Start next primitive if none active
+        if self.active_primitive is None:
+            if self.final_index >= len(self.final_actions):
+                print("[GRAB] pickup sequence complete")
+                self.final_actions = None
+                self.status = BehaviorStatus.SUCCEEDED
+                return self.status
+
+            prim = self.final_actions[self.final_index]
+            self.final_index += 1
+            self.active_primitive = prim
+
+            print(f"[GRAB] starting {prim.__class__.__name__}")
+            prim.start(lvl2=lvl2)
+            return self.status
+
+        # Update active primitive
         prim_status = self.active_primitive.update()
 
         if prim_status == PrimitiveStatus.SUCCEEDED:
+            print(f"[GRAB] {self.active_primitive.__class__.__name__} complete")
             self.active_primitive = None
-            self.status = BehaviorStatus.SUCCEEDED
+            return self.status
 
         if prim_status == PrimitiveStatus.FAILED:
+            print(f"[GRAB] {self.active_primitive.__class__.__name__} FAILED")
             self.active_primitive = None
             self.status = BehaviorStatus.FAILED
+            return self.status
 
         return self.status
+
