@@ -1,3 +1,5 @@
+# behaviors/seek_and_collect.py
+
 import time
 
 from behaviors.base import Behavior, BehaviorStatus
@@ -6,22 +8,6 @@ from primitives.manipulation import Grab, LiftUp, LiftDown
 from primitives.base import PrimitiveStatus
 from navigation.target_selection import get_closest_target
 from navigation.height_model import HeightModel
-from config.base import DEFAULT_TARGET_KIND
-from config.base import (
-    MARKER_HEIGHT_MAX_DISTANCE_MM,
-    FINAL_COMMIT_DISTANCE_MM,
-    MARKER_PITCH_HIGH_DEG,
-    MARKER_PITCH_LOW_DEG,
-)
-from config.base import (
-    MIN_ROTATE_DEG,
-    MAX_ROTATE_DEG,
-    MIN_DRIVE_MM,
-    MAX_DRIVE_MM,
-    GRAB_DISTANCE_MM,
-    CAMERA_SETTLE_TIME,
-    FINAL_COMMIT_DISTANCE_MM
-)
 
 
 class SeekAndCollect(Behavior):
@@ -50,9 +36,10 @@ class SeekAndCollect(Behavior):
         self.final_actions = None
         self.final_index = 0
 
-    def start(self, *, kind=None):
+    def start(self, *, config, kind=None):
+        self.config = config
         self.state = "SEARCHING"
-        self.kind = kind or DEFAULT_TARGET_KIND
+        self.kind = kind or config.default_target_kind
         print(f"[SEEK_AND_COLLECT][START] kind={self.kind}")
         self.target = None
         self.active_primitive = None
@@ -156,10 +143,10 @@ class SeekAndCollect(Behavior):
                         drive_mm = self.cached_distance
                     else:
                         drive_mm = max(
-                            MIN_DRIVE_MM,
+                            self.config.min_drive_mm,
                             min(
-                                MAX_DRIVE_MM,
-                                self.cached_distance - GRAB_DISTANCE_MM
+                                self.config.max_drive_mm,
+                                self.cached_distance - self.config.grab_distance_mm
                             )
                         )
 
@@ -200,8 +187,8 @@ class SeekAndCollect(Behavior):
                         return self.status
 
                     # NORMAL DRIVE: settle + reassess
-                    self.settle_until = now + CAMERA_SETTLE_TIME
-                    print(f"[APPROACH][SETTLE] start {CAMERA_SETTLE_TIME:.2f}s")
+                    self.settle_until = now + self.config.camera_settle_time
+                    print(f"[APPROACH][SETTLE] start {self.config.camera_settle_time:.2f}s")
                     return self.status
 
 
@@ -222,7 +209,14 @@ class SeekAndCollect(Behavior):
         target = get_closest_target(perception, self.kind)
 
         if target is None:
-            print("[APPROACH][EXIT] no target — returning to SEARCHING")
+            if (
+                    self.last_seen_time is not None
+                    and now - self.last_seen_time < self.config.vision_loss_timeout_s
+            ):
+                print("[APPROACH][VISION] temporarily lost — holding course")
+                return self.status
+
+            print("[APPROACH][EXIT] vision lost — returning to SEARCHING")
             self.state = "SEARCHING"
             return self.status
 
@@ -265,15 +259,15 @@ class SeekAndCollect(Behavior):
 
         # ---------- HEIGHT INFERENCE (VISION PHASE ONLY) ----------
         if (
-                distance <= MARKER_HEIGHT_MAX_DISTANCE_MM
+                distance <= self.config.marker_height_max_distance_mm
                 and not self.height_model.is_committed()
         ):
             pitch = target["marker"].orientation.pitch
             self.height_model.update(pitch_deg=pitch)
 
             committed = self.height_model.try_commit(
-                high_thresh=MARKER_PITCH_HIGH_DEG,
-                low_thresh=MARKER_PITCH_LOW_DEG,
+                high_thresh=self.config.marker_pitch_high_deg,
+                low_thresh=self.config.marker_pitch_low_deg,
             )
 
             if committed:
@@ -287,7 +281,7 @@ class SeekAndCollect(Behavior):
 
         if (
                 not self.final_commit
-                and distance <= FINAL_COMMIT_DISTANCE_MM
+                and distance <= self.config.final_commit_distance_mm
                 and self.height_model.is_committed()
         ):
             self.final_commit = True
@@ -307,8 +301,8 @@ class SeekAndCollect(Behavior):
             self.last_action = "rotate"
 
             angle = max(
-                -MAX_ROTATE_DEG,
-                min(MAX_ROTATE_DEG, bearing)
+                -self.config.max_rotate_deg,
+                min(self.config.max_rotate_deg, self.cached_bearing)
             )
 
             self.active_primitive = Rotate(angle_deg=angle)
@@ -327,11 +321,24 @@ class SeekAndCollect(Behavior):
         self.cached_bearing = bearing
 
         angle = max(
-            -MAX_ROTATE_DEG,
-            min(MAX_ROTATE_DEG, self.cached_bearing)
+            -self.config.max_rotate_deg,
+            min(self.config.max_rotate_deg, self.cached_bearing)
         )
 
-        self.cached_distance = distance  # <-- consumed once
+        # ---------- PROGRESSIVE APPROACH STEP ----------
+        if distance > self.config.final_commit_distance_mm:
+            step = distance / 2
+
+            step = max(
+                self.config.min_drive_mm,
+                min(step, self.config.max_drive_mm)
+            )
+
+            self.cached_distance = step
+        else:
+            # should not normally hit here because FINAL COMMIT is handled above
+            self.cached_distance = distance
+
         self.last_action = "rotate"
 
         print(

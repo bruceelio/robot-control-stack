@@ -1,6 +1,7 @@
 import time
 from calibration.base import drive_duration, rotate_duration
-from config import MIN_ROTATE_DEG, MIN_DRIVE_MM
+from config import CONFIG
+
 
 class TimedMotionBackend:
     """
@@ -14,12 +15,12 @@ class TimedMotionBackend:
         self.mode = None
 
     # ---------------------
-    # Public API (NEW)
+    # Public API
     # ---------------------
 
     def drive(self, *, distance_mm: float):
         # Ignore tiny moves
-        if abs(distance_mm) < MIN_DRIVE_MM:
+        if abs(distance_mm) < CONFIG.min_drive_mm:
             self.mode = None
             self.end_time = None
             return
@@ -29,7 +30,6 @@ class TimedMotionBackend:
         self.end_time = time.time() + duration
         self.mode = "drive"
 
-        # Forward or backward
         direction = 1 if distance_mm >= 0 else -1
         self.lvl2.DRIVE(
             direction * power,
@@ -38,7 +38,7 @@ class TimedMotionBackend:
         )
 
     def rotate(self, angle_deg: float):
-        if abs(angle_deg) < MIN_ROTATE_DEG:
+        if abs(angle_deg) < CONFIG.min_rotate_deg:
             self.mode = None
             self.end_time = None
             return

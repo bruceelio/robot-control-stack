@@ -19,7 +19,7 @@ They exist to answer questions like:
 Diagnostics are executed **explicitly** via configuration:
 
 ```python
-# config/base.py
+# config/__init__.py
 RUN_MODE = RunMode.DIAGNOSTICS
 ```
 

@@ -11,33 +11,39 @@ class RecoverLocalisation(Behavior):
     Rotate in place in fixed increments until localisation is recovered.
 
     Success:
-        - >=2 arena markers visible OR localisation pose valid
+        - localisation pose valid
 
     Failure:
-        - Full 360° rotation without recovery
+        - Full sweep without recovery
     """
-
-    STEP_DEG = 30
-    MAX_SWEEP = 360
-    SETTLE_TIME = 0.30  # seconds to let vision stabilise after rotation
 
     def __init__(self):
         super().__init__()
+        self.config = None
         self.total_rotated = 0
         self.active_primitive = None
         self.settle_until = None
 
-    def start(self, *, motion_backend, **_):
+    def start(self, *, config, motion_backend, **_):
         print("[RECOVER_LOCALISATION] start")
+
+        self.config = config
         self.total_rotated = 0
         self.active_primitive = None
         self.settle_until = None
+        self.status = BehaviorStatus.RUNNING
+
         self._start_next_rotation(motion_backend)
 
     def _start_next_rotation(self, motion_backend):
-        print(f"[RECOVER_LOCALISATION] rotating {self.STEP_DEG}° "
-              f"(total={self.total_rotated}°)")
-        self.active_primitive = Rotate(angle_deg=self.STEP_DEG)
+        print(
+            f"[RECOVER_LOCALISATION] rotating {self.config.recover_step_deg}° "
+            f"(total={self.total_rotated}°)"
+        )
+
+        self.active_primitive = Rotate(
+            angle_deg=self.config.recover_step_deg
+        )
         self.active_primitive.start(
             motion_backend=motion_backend
         )
@@ -54,48 +60,54 @@ class RecoverLocalisation(Behavior):
         # ---------- SETTLE PHASE ----------
         if self.settle_until is not None:
             if time.monotonic() < self.settle_until:
-                return BehaviorStatus.RUNNING
+                return self.status
 
             # settle complete — check for recovery
             self.settle_until = None
 
             if localisation.has_pose():
                 print("[RECOVER_LOCALISATION] pose recovered")
-                return BehaviorStatus.SUCCEEDED
+                self.status = BehaviorStatus.SUCCEEDED
+                return self.status
 
-            if self.total_rotated >= self.MAX_SWEEP:
+            if self.total_rotated >= self.config.recover_max_sweep_deg:
                 print("[RECOVER_LOCALISATION] full sweep complete — failed")
-                return BehaviorStatus.FAILED
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
             self._start_next_rotation(motion_backend)
-            return BehaviorStatus.RUNNING
+            return self.status
 
         # ---------- SUCCESS CHECK ----------
         if localisation.has_pose():
             print("[RECOVER_LOCALISATION] pose recovered")
-            return BehaviorStatus.SUCCEEDED
+            self.status = BehaviorStatus.SUCCEEDED
+            return self.status
 
         # ---------- ACTIVE ROTATION ----------
         if self.active_primitive is None:
-            return BehaviorStatus.FAILED
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
-        status = self.active_primitive.update(
+        prim_status = self.active_primitive.update(
             motion_backend=motion_backend
         )
 
-        if status == PrimitiveStatus.RUNNING:
-            return BehaviorStatus.RUNNING
+        if prim_status == PrimitiveStatus.RUNNING:
+            return self.status
 
-        if status == PrimitiveStatus.FAILED:
+        if prim_status == PrimitiveStatus.FAILED:
             print("[RECOVER_LOCALISATION] rotate failed")
-            return BehaviorStatus.FAILED
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
         # ---------- STEP COMPLETE ----------
-        self.total_rotated += self.STEP_DEG
+        self.total_rotated += self.config.recover_step_deg
 
         # begin settle phase
-        self.settle_until = time.monotonic() + self.SETTLE_TIME
+        self.settle_until = (
+            time.monotonic() + self.config.recover_settle_time
+        )
         self.active_primitive = None
 
-        return BehaviorStatus.RUNNING
-
+        return self.status

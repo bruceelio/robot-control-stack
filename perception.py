@@ -2,8 +2,9 @@
 import time
 import math
 from navigation.geometry import trilaterate_point
-from navigation.arena import marker_locations
-from config import distance_scale, ARENA_SIZE
+from config import CONFIG
+from config.arena import marker_locations
+
 
 # =========================
 # Configuration
@@ -30,7 +31,7 @@ def log(tag, msg):
 
 class Perception:
     def __init__(self):
-        self.arena_markers = marker_locations(ARENA_SIZE)
+        self.arena_markers = marker_locations(CONFIG.arena_size)
         self.objects = {"acidic": {}, "basic": {}}
         self.last_pose = None
 
@@ -115,8 +116,8 @@ def estimate_pose(arena_markers, perception: Perception):
             m1, m2 = arena_markers[i], arena_markers[j]
             A = perception.arena_markers[m1.id]
             B = perception.arena_markers[m2.id]
-            AC = m1.position.distance * distance_scale
-            BC = m2.position.distance * distance_scale
+            AC = m1.position.distance * CONFIG.distance_scale
+            BC = m2.position.distance * CONFIG.distance_scale
 
             try:
                 C1, C2 = trilaterate_point(A, B, AC, BC)
@@ -138,14 +139,14 @@ def estimate_pose(arena_markers, perception: Perception):
     return perception.last_pose
 
 def inside_arena(pos):
-    half = ARENA_SIZE / 2
+    half = CONFIG.arena_size / 2
     return -half <= pos[0] <= half and -half <= pos[1] <= half
 
 # =========================
 # Object tracking
 # =========================
 
-def update_objects(obj_type, markers, robot_pose, perception: Perception, now, distance_scale=1.0):
+def update_objects(obj_type, markers, robot_pose, perception: Perception, now):
     if robot_pose is None:
         for m in markers:
             perception.objects[obj_type][m.id] = {
@@ -169,8 +170,9 @@ def update_objects(obj_type, markers, robot_pose, perception: Perception, now, d
     for m in markers:
         # Convert relative marker position to arena coordinates
         try:
-            dx = float(m.position.distance) * math.cos(float(m.position.horizontal_angle)) * distance_scale
-            dy = float(m.position.distance) * math.sin(float(m.position.horizontal_angle)) * distance_scale
+            scale = CONFIG.distance_scale
+            dx = float(m.position.distance) * math.cos(float(m.position.horizontal_angle)) * scale
+            dy = float(m.position.distance) * math.sin(float(m.position.horizontal_angle)) * scale
         except Exception:
             dx, dy = 0.0, 0.0
 

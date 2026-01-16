@@ -12,10 +12,14 @@ class InitEscape(Behavior):
 
     def __init__(self):
         super().__init__()
-        self.phase = "DRIVE"
+        self.config = None
+        self.phase = None
         self.primitive = None
 
-    def start(self, *, motion_backend=None, **_):
+    def start(self, *, config, motion_backend=None, **_):
+        print("[INIT_ESCAPE] start")
+
+        self.config = config
         self.phase = "DRIVE"
         self.primitive = None
         self.status = BehaviorStatus.RUNNING
@@ -31,7 +35,9 @@ class InitEscape(Behavior):
         # -----------------
         if self.phase == "DRIVE":
             if self.primitive is None:
-                self.primitive = Drive(distance_mm=150)
+                self.primitive = Drive(
+                    distance_mm=self.config.init_escape_drive_mm
+                )
                 self.primitive.start(
                     motion_backend=motion_backend
                 )
@@ -49,7 +55,9 @@ class InitEscape(Behavior):
         # -----------------
         elif self.phase == "ROTATE":
             if self.primitive is None:
-                self.primitive = Rotate(angle_deg=10)
+                self.primitive = Rotate(
+                    angle_deg=self.config.init_escape_rotate_deg
+                )
                 self.primitive.start(
                     motion_backend=motion_backend
                 )

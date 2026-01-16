@@ -1,4 +1,4 @@
-# navigation/arena.py
+# config/arena.py
 
 """
 Static arena geometry.
@@ -10,26 +10,47 @@ No robot state. No perception. No motion.
 from enum import Enum
 import math
 
+# --------------------------------------------------
+# Arena dimensions
+# --------------------------------------------------
+
+ARENA_SIZE = 6000
+
+BASE_WIDTH_MM  = 2000.0   # long edge
+BASE_HEIGHT_MM = 1000.0   # short edge
+BASE_MARGIN_MM = 300
+
+CENTRAL_PLATFORM_SIZE_MM = 1220
+CENTRAL_PLATFORM_HEIGHT_MM = 180
+
+
+# --------------------------------------------------
+# Base identifiers
+# --------------------------------------------------
 
 class BaseID(Enum):
-    BASE_0 = 0
-    BASE_1 = 1
-    BASE_2 = 2
-    BASE_3 = 3
+    BASE_0 = 0   # top-left
+    BASE_1 = 1   # top-right
+    BASE_2 = 2   # bottom-right
+    BASE_3 = 3   # bottom-left
 
 
-def marker_locations(arena_size_mm: float):
+# --------------------------------------------------
+# Arena markers
+# --------------------------------------------------
+
+def marker_locations(arena_size: int):
     """
-    Return world coordinates of arena markers.
+    Return world coordinates of arena boundary markers.
 
-    Marker IDs are assumed to be:
+    Marker IDs:
     0–4   top wall (left → right)
     5–9   right wall (top → bottom)
     10–14 bottom wall (right → left)
     15–19 left wall (bottom → top)
     """
-    half = arena_size_mm / 2
-    spacing = arena_size_mm / 6
+    half = arena_size / 2
+    spacing = arena_size / 6
 
     offsets = [-2 * spacing, -spacing, 0.0, spacing, 2 * spacing]
 
@@ -58,39 +79,44 @@ def marker_locations(arena_size_mm: float):
 
     return markers
 
-def base_bounds(arena_size_mm: float, base: BaseID):
+
+# --------------------------------------------------
+# Base geometry
+# --------------------------------------------------
+
+def base_bounds(base: BaseID, arena_size: int):
     """
     Return (xmin, xmax, ymin, ymax) for a base region.
     """
-    half = arena_size_mm / 2
-
-    width = 2000.0   # long edge
-    height = 1000.0  # short edge
+    h = arena_size / 2
+    w = BASE_WIDTH_MM
+    d = BASE_HEIGHT_MM
 
     if base == BaseID.BASE_0:      # top-left
-        return (-half, -half + width,
-                half - height, half)
+        return (-h, -h + w,
+                +h - d, +h)
 
     if base == BaseID.BASE_1:      # top-right
-        return (half - height, half,
-                half - width, half)
+        return (+h - w, +h,
+                +h - d, +h)
 
     if base == BaseID.BASE_2:      # bottom-right
-        return (half - width, half,
-                -half, -half + height)
+        return (+h - w, +h,
+                -h, -h + d)
 
     if base == BaseID.BASE_3:      # bottom-left
-        return (-half, -half + height,
-                -half, -half + width)
+        return (-h, -h + w,
+                -h, -h + d)
 
     raise ValueError(base)
 
-def base_dock_pose(arena_size_mm: float, base: BaseID):
+
+def base_dock_pose(base: BaseID, arena_size: int):
     """
     Canonical pose inside base: (x, y, heading_rad)
     """
-    xmin, xmax, ymin, ymax = base_bounds(arena_size_mm, base)
-    margin = 300.0
+    xmin, xmax, ymin, ymax = base_bounds(base, arena_size)
+    margin = BASE_MARGIN_MM
 
     if base == BaseID.BASE_0:
         return xmin + margin, ymax - margin, -math.pi / 4
@@ -105,3 +131,4 @@ def base_dock_pose(arena_size_mm: float, base: BaseID):
         return xmin + margin, ymin + margin, math.pi / 4
 
     raise ValueError(base)
+

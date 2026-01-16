@@ -2,8 +2,6 @@
 
 # currently legacy and unused
 
-from .simulation import *
-
 RUN_TESTS = False        # Master switch
 TEST_CATEGORY = None    # e.g. "safety", "motion", None = all
 

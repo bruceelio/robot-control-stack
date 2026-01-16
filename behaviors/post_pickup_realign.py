@@ -16,46 +16,56 @@ class PostPickupRealign(Behavior):
         super().__init__()
         self.phase = None
         self.active_primitive = None
+        self.config = None
 
-    def start(self, *, motion_backend, **_):
+    def start(self, *, config, motion_backend, **_):
         print("[POST_PICKUP_REALIGN] start")
 
+        self.config = config
         self.phase = "REVERSE"
-        self.active_primitive = Drive(distance_mm=-200)
 
+        self.active_primitive = Drive(
+            distance_mm=-self.config.post_pickup_reverse_mm
+        )
         self.active_primitive.start(
             motion_backend=motion_backend
         )
 
+        self.status = BehaviorStatus.RUNNING
+
     def update(self, *, motion_backend, **_):
         if self.active_primitive is None:
             print("[POST_PICKUP_REALIGN] no active primitive")
-            return BehaviorStatus.FAILED
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
-        status = self.active_primitive.update(
+        prim_status = self.active_primitive.update(
             motion_backend=motion_backend
         )
 
-        if status == PrimitiveStatus.RUNNING:
-            return BehaviorStatus.RUNNING
+        if prim_status == PrimitiveStatus.RUNNING:
+            return self.status
 
-        if status == PrimitiveStatus.FAILED:
+        if prim_status == PrimitiveStatus.FAILED:
             print(f"[POST_PICKUP_REALIGN] {self.phase} failed")
-            return BehaviorStatus.FAILED
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
         # ---------- REVERSE COMPLETE ----------
         if self.phase == "REVERSE":
             print("[POST_PICKUP_REALIGN] reverse complete")
 
             self.phase = "ROTATE"
-            self.active_primitive = Rotate(angle_deg=90)
-
+            self.active_primitive = Rotate(
+                angle_deg=self.config.post_pickup_rotate_deg
+            )
             self.active_primitive.start(
                 motion_backend=motion_backend
             )
-            return BehaviorStatus.RUNNING
+            return self.status
 
         # ---------- ROTATE COMPLETE ----------
         if self.phase == "ROTATE":
             print("[POST_PICKUP_REALIGN] rotate complete")
-            return BehaviorStatus.SUCCEEDED
+            self.status = BehaviorStatus.SUCCEEDED
+            return self.status

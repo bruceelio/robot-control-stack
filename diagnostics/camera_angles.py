@@ -6,7 +6,7 @@ from perception import Perception, sense
 from navigation.localisation import Localisation
 from level2_canonical import Level2
 from motion_backends import create_motion_backend
-from config.base import CAMERA_SETTLE_TIME, MOTION_BACKEND
+from config.__init__ import CAMERA_SETTLE_TIME, MOTION_BACKEND
 
 
 def run(robot):
