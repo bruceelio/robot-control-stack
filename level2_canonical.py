@@ -266,3 +266,16 @@ class Level2:
             self.robot.sleep(secs)
         else:
             time.sleep(secs)
+
+from config import CONFIG
+
+try:
+    robot = __robot__   # injected by simulator
+except NameError:
+    robot = None        # simulation / non-SR
+
+lvl2 = Level2(
+    robot=robot,
+    max_power=CONFIG.max_motor_power,
+)
+

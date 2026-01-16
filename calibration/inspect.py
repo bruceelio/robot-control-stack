@@ -5,7 +5,7 @@ This module is for HUMAN inspection only.
 It must not be imported by runtime robot logic.
 """
 
-from .base import (
+from .base_legacy import (
     DRIVE_POWER_SHORT,
     DRIVE_POWER_LONG,
     DRIVE_SWITCH_MM,

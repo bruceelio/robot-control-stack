@@ -37,7 +37,6 @@ class Config:
     # Calibration
     rotate_factor: float
     drive_factor: float
-    distance_scale: float
 
     # InitEscape
     init_escape_drive_mm: int
@@ -99,7 +98,6 @@ RESOLVE_MAP = {
     # Calibration (computed)
     "rotate_factor": ("computed", "rotate_factor"),
     "drive_factor": ("computed", "drive_factor"),
-    "distance_scale": ("computed", "distance_scale"),
 
     # Motion limits
     "min_rotate_deg": ("profile", "MIN_ROTATE_DEG"),
@@ -153,16 +151,11 @@ def resolve(*, arena, profile, strategy) -> Config:
         * profile.SURFACE_MULTIPLIERS[profile.SURFACE]["drive"]
     )
 
-    distance_scale = (
-        profile.BASE_DISTANCE_SCALE
-        * profile.DISTANCE_SCALES[profile.ENVIRONMENT]
-    )
 
     computed = {
         "rotate_factor": rotate_factor,
         "drive_factor": drive_factor,
-        "distance_scale": distance_scale,
-    }
+            }
 
     values = {}
 

@@ -325,6 +325,11 @@ class SeekAndCollect(Behavior):
             min(self.config.max_rotate_deg, self.cached_bearing)
         )
 
+        print(
+            f"[ROTATE-DEBUG] bearing={bearing:.2f} "
+            f"angle_cmd={angle:.2f}"
+        )
+
         # ---------- PROGRESSIVE APPROACH STEP ----------
         if distance > self.config.final_commit_distance_mm:
             step = distance / 2
