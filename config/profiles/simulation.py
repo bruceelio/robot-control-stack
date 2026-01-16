@@ -1,55 +1,55 @@
-# config/simulation.py
+# config/profiles/simulation.py
 
+# Identity
 ROBOT_ID = "sim"
 ENVIRONMENT = "simulation"
 SURFACE = "simulation"
+
+# Drive hardware
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"
-
-# -------------------------
-# Strategy
-# -------------------------
+MOTOR_POLARITY = [1, 1]
 MOTION_BACKEND = "timed"
 
-# -------------------------
-# Calibration bases
-# -------------------------
+# Base calibration
 BASE_ROTATE_FACTOR = 1.0
 BASE_DRIVE_FACTOR = 1.0
 BASE_DISTANCE_SCALE = 1.0
 
-# -------------------------
-# Behavior Constants
-# -------------------------
-INIT_ESCAPE_DRIVE_MM = 150
-INIT_ESCAPE_ROTATE_DEG = 10
+SURFACE_MULTIPLIERS = {
+    "simulation": {"rotate": 1.00, "drive": 1.00},
+}
 
-POST_PICKUP_REVERSE_MM = 200
-POST_PICKUP_ROTATE_DEG = 90
+DISTANCE_SCALES = {
+    "simulation": 1.327,
+}
 
-RECOVER_STEP_DEG = 30
-RECOVER_MAX_SWEEP_DEG = 360
-RECOVER_SETTLE_TIME = 0.30
+# Grabbing
+GRAB_DISTANCE_MM = 140.0
 
-# Robot hardware
-MOTOR_POLARITY = [1, 1, 1, 1]
-GRAB_DISTANCE_MM = 120
+# InitEscape
+INIT_ESCAPE_DRIVE_MM = 200
+INIT_ESCAPE_ROTATE_DEG = 25.0
 
-# -------------------------
-# Motion safety limits
-# -------------------------
-MIN_ROTATE_DEG = 3.0
-MIN_DRIVE_MM = 10.0
+# PostPickupRealign
+POST_PICKUP_REVERSE_MM = 120
+POST_PICKUP_ROTATE_DEG = 180.0
 
-MAX_DRIVE_MM = 1500.0
-MAX_ROTATE_DEG = 45.0
+# RecoverLocalisation
+RECOVER_STEP_DEG = 15.0
+RECOVER_MAX_SWEEP_DEG = 180.0
+RECOVER_SETTLE_TIME = 0.25
 
-CAMERA_SETTLE_TIME = 0.3
+# Motion limits
+MIN_ROTATE_DEG = 2.0
+MAX_ROTATE_DEG = 90.0
+MIN_DRIVE_MM = 5.0
+MAX_DRIVE_MM = 550.0
 
-MARKER_HEIGHT_MAX_DISTANCE_MM = 2000.0
-MARKER_PITCH_HIGH_DEG = 10.0
-MARKER_PITCH_LOW_DEG = 3.0
-
-FINAL_COMMIT_DISTANCE_MM = 300.0
-
-VISION_LOSS_TIMEOUT_S = 0.5
+# Vision / perception
+CAMERA_SETTLE_TIME = 0.15
+MARKER_HEIGHT_MAX_DISTANCE_MM = 1000
+MARKER_PITCH_HIGH_DEG = 0.35
+MARKER_PITCH_LOW_DEG = 0.10
+FINAL_COMMIT_DISTANCE_MM = 500
+VISION_LOSS_TIMEOUT_S = 1.5
