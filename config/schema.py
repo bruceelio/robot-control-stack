@@ -57,6 +57,7 @@ class Config:
     min_drive_mm: float
     max_drive_mm: float
     max_rotate_deg: float
+    max_motor_power: float
 
     # Vision / Seek & Collect
     camera_settle_time: float
@@ -105,6 +106,7 @@ RESOLVE_MAP = {
     "min_drive_mm": ("profile", "MIN_DRIVE_MM"),
     "max_rotate_deg": ("profile", "MAX_ROTATE_DEG"),
     "max_drive_mm": ("profile", "MAX_DRIVE_MM"),
+    "max_motor_power": ("profile", "MAX_MOTOR_POWER"),
 
     # InitEscape
     "init_escape_drive_mm": ("profile", "INIT_ESCAPE_DRIVE_MM"),

@@ -17,14 +17,15 @@ from hal.hardware import is_sr
 
 
 class Level2:
-    MAX_POWER = 0.8  # maximum allowed motor power
 
-    def __init__(self, robot=None):
+    def __init__(self, robot=None, *, max_power: float):
         """
         robot: SR Robot3 instance, or None (non-SR / fallback mode)
+        max_power: maximum allowed motor power (from Config)
         """
         self.robot = robot
         self.has_sr = robot is not None
+        self.max_power = max_power
 
     # -----------------------------
     # Utility methods
@@ -32,7 +33,7 @@ class Level2:
 
     def _clip(self, power):
         """Clip motor power to safe range."""
-        return max(-self.MAX_POWER, min(self.MAX_POWER, power))
+        return max(-self.max_power, min(self.max_power, power))
 
     def _stop_motors(self):
         """Safely stop all motors if SR Robot present."""
@@ -76,22 +77,15 @@ class Level2:
                 if right_pin:
                     right_pin.write(0)
 
-    def ROTATE(self, angle: float):
-        """Rotate robot in degrees: positive = clockwise"""
-        print(f"[Level2] ROTATE {angle}°")
-        power = 0.5 if angle > 0 else -0.5
-        duration = abs(angle) / 90 * 0.46  # from calibration
+    def ROTATE(self, angle_deg: float):
+        """
+        Semantic rotation request.
 
-        if self.has_sr:
-            try:
-                motors = self.robot.motor_board.motors
-                motors[0].power = power
-                motors[1].power = -power
-                self.robot.sleep(duration)
-            finally:
-                self._stop_motors()
-        else:
-            time.sleep(duration)
+        Angle is in degrees.
+        Positive = clockwise.
+        Execution is delegated to the motion backend.
+        """
+        print(f"[Level2] ROTATE request angle={angle_deg}°")
 
     # -----------------------------
     # INDIVIDUAL MOTORS

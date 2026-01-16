@@ -1,4 +1,5 @@
-# calibration/__init__.py
+# calibration/base.py
+
 import numpy as np
 
 # -----------------------------
@@ -18,14 +19,14 @@ long_distances = np.array([1000, 2000, 3000, 4000])
 long_times     = np.array([0.835, 1.615, 2.4, 3.16])
 m_long, b_long = np.polyfit(long_distances, long_times, 1)
 
-def drive_duration(distance_mm):
+def drive_duration(distance_mm, *, drive_factor: float = 1.0):
     """Return (duration, power) for driving a distance_mm (mm)."""
     distance_mm = max(0, distance_mm)
     if distance_mm < DRIVE_SWITCH_MM:
-        duration = m_short * distance_mm + b_short
+        duration = (m_short * distance_mm + b_short) * drive_factor
         power = DRIVE_POWER_SHORT
     else:
-        duration = m_long * distance_mm + b_long
+        duration = (m_long * distance_mm + b_long) * drive_factor
         power = DRIVE_POWER_LONG
     return duration, power
 
@@ -41,11 +42,12 @@ rotation_times  = np.array([0.60, 0.91, 1.365, 1.85])
 m_rot, b_rot = np.polyfit(rotation_angles, rotation_times, 1)
 
 
-def rotate_duration(angle_deg):
+def rotate_duration(angle_deg, *, rotate_factor: float = 1.0):
     """Return (duration, power) for rotating angle_deg (deg)."""
     angle_deg = max(0, angle_deg)
-    duration = m_rot * angle_deg + b_rot
+    duration = (m_rot * angle_deg + b_rot) * rotate_factor
     return duration, ROTATE_POWER
+
 
 
 # -----------------------------

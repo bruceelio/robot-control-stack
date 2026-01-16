@@ -1,6 +1,7 @@
+# motion_backends/timed.py
+
 import time
 from calibration.base import drive_duration, rotate_duration
-from config import CONFIG
 
 
 class TimedMotionBackend:
@@ -9,28 +10,46 @@ class TimedMotionBackend:
     Compatible with Primitive-based architecture.
     """
 
-    def __init__(self, lvl2):
+    def __init__(
+        self,
+        lvl2,
+        *,
+        min_drive_mm: float,
+        min_rotate_deg: float,
+        drive_factor: float,
+        rotate_factor: float,
+    ):
         self.lvl2 = lvl2
+
+        # Injected tuning parameters
+        self.min_drive_mm = min_drive_mm
+        self.min_rotate_deg = min_rotate_deg
+        self.drive_factor = drive_factor
+        self.rotate_factor = rotate_factor
+
         self.end_time = None
         self.mode = None
+
 
     # ---------------------
     # Public API
     # ---------------------
 
     def drive(self, *, distance_mm: float):
-        # Ignore tiny moves
-        if abs(distance_mm) < CONFIG.min_drive_mm:
-            self.mode = None
-            self.end_time = None
+        if abs(distance_mm) < self.min_drive_mm:
+            self.stop()
             return
 
-        duration, power = drive_duration(abs(distance_mm))
+        duration, power = drive_duration(
+            abs(distance_mm),
+            drive_factor=self.drive_factor,
+        )
+
+        direction = 1 if distance_mm >= 0 else -1
 
         self.end_time = time.time() + duration
         self.mode = "drive"
 
-        direction = 1 if distance_mm >= 0 else -1
         self.lvl2.DRIVE(
             direction * power,
             direction * power,
@@ -38,12 +57,15 @@ class TimedMotionBackend:
         )
 
     def rotate(self, angle_deg: float):
-        if abs(angle_deg) < CONFIG.min_rotate_deg:
-            self.mode = None
-            self.end_time = None
+        if abs(angle_deg) < self.min_rotate_deg:
+            self.stop()
             return
 
-        duration, power = rotate_duration(abs(angle_deg))
+        duration, power = rotate_duration(
+            abs(angle_deg),
+            rotate_factor=self.rotate_factor,
+        )
+
         self.end_time = time.time() + duration
         self.mode = "rotate"
 
@@ -51,6 +73,10 @@ class TimedMotionBackend:
             self.lvl2.DRIVE(power, -power, duration)
         else:
             self.lvl2.DRIVE(-power, power, duration)
+
+    # ---------------------
+    # State helpers
+    # ---------------------
 
     def is_busy(self) -> bool:
         if self.mode is None:

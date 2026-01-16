@@ -31,7 +31,10 @@ class Controller:
         self.robot = robot
 
         # Core subsystems
-        self.lvl2 = Level2(robot)
+        self.lvl2 = Level2(
+            robot,
+            max_power=CONFIG.max_motor_power
+        )
         self.perception = Perception()
         self.localisation = Localisation()
 
