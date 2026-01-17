@@ -49,12 +49,23 @@ class Release(Primitive):
     """
 
     def __init__(self, settle_time=0.5):
+        super().__init__()
         self.settle_time = settle_time
         self._start_time = None
 
     def start(self, *, lvl2, **_):
         print("[Release] start")
-        lvl2.RELEASE()
+
+        try:
+            if hasattr(lvl2, "RELEASE"):
+                lvl2.RELEASE()
+            elif hasattr(lvl2, "GRABBER_OPEN"):
+                lvl2.GRABBER_OPEN()
+            else:
+                print("[Release] No release available on this robot")
+        except Exception as e:
+            print(f"[Release] ignored ({e})")
+
         self._start_time = time.time()
 
     def update(self, **_):
@@ -66,6 +77,7 @@ class Release(Primitive):
 
         print("[Release] succeeded")
         return PrimitiveStatus.SUCCEEDED
+
 
 
 class LiftUp(Primitive):

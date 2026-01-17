@@ -38,7 +38,7 @@ RECOVER_SETTLE_TIME = 0.25
 # Motion limits
 MIN_ROTATE_DEG = 2.0
 MAX_ROTATE_DEG = 90.0
-MIN_DRIVE_MM = 5.0
+MIN_DRIVE_MM = 5.0          # only for seek_and_collect
 MAX_DRIVE_MM = 2500.0
 MAX_MOTOR_POWER = 0.8
 

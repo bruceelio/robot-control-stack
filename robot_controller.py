@@ -215,13 +215,15 @@ class Controller:
                 )
 
             status = self.behavior.update(
+                lvl2=self.lvl2,  # ✅ ADD THIS
                 localisation=self.localisation,
                 motion_backend=self.motion_backend,
             )
 
             if status.name == "SUCCEEDED":
-                print("Returned to base — task complete")
-                self.lvl2.DRIVE(0, 0, 0)
+                print("ReturnToBase complete — resuming seek")
+                self.behavior = None
+                self.state = RobotState.SEEK_AND_COLLECT
                 return
 
             return
