@@ -63,9 +63,11 @@ class Config:
     marker_height_max_distance_mm: float
     marker_pitch_high_deg: float
     marker_pitch_low_deg: float
+    vision_loss_timeout_s: float
 
     final_commit_distance_mm: float
-    vision_loss_timeout_s: float
+    final_approach_direct_range_mm: float
+    final_approach_backup_mm: float
 
     def dump(self):
         print("\n=== RESOLVED CONFIGURATION ===")
@@ -119,13 +121,16 @@ RESOLVE_MAP = {
     "recover_max_sweep_deg": ("profile", "RECOVER_MAX_SWEEP_DEG"),
     "recover_settle_time": ("profile", "RECOVER_SETTLE_TIME"),
 
-    # Vision
+    # Vision / Seek & Collect
     "camera_settle_time": ("profile", "CAMERA_SETTLE_TIME"),
     "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
     "marker_pitch_high_deg": ("profile", "MARKER_PITCH_HIGH_DEG"),
     "marker_pitch_low_deg": ("profile", "MARKER_PITCH_LOW_DEG"),
-    "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
     "vision_loss_timeout_s": ("profile", "VISION_LOSS_TIMEOUT_S"),
+
+    "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
+    "final_approach_direct_range_mm": ("profile", "FINAL_APPROACH_DIRECT_RANGE_MM"),
+    "final_approach_backup_mm": ("profile", "FINAL_APPROACH_BACKUP_MM"),
 }
 
 # --------------------------------------------------

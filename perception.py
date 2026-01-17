@@ -122,11 +122,13 @@ def corrected_distance(m, cam):
 
 def corrected_bearing_deg(m, cam):
     raw = math.degrees(float(m.position.horizontal_angle))
-    return (
-        raw * cam.optical.bearing_sign
-        + cam.optical.bearing_offset_deg
-        + cam.mount.yaw_offset_deg
-    )
+
+    bearing = raw
+    bearing *= cam.optical.bearing_sign
+    bearing += cam.optical.bearing_offset_deg
+    bearing += cam.mount.yaw_offset_deg
+
+    return bearing
 
 
 # ==================================================

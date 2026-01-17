@@ -6,7 +6,7 @@ from perception import Perception, sense
 from navigation.localisation import Localisation
 from level2_canonical import Level2
 from motion_backends import create_motion_backend
-from config.__init__ import CAMERA_SETTLE_TIME, MOTION_BACKEND
+from config import CONFIG
 
 
 def run(robot):
@@ -21,19 +21,26 @@ def run(robot):
     print("\n=== CAMERA ANGLES DIAGNOSTIC ===")
 
     # --- Core subsystems ---
-    lvl2 = Level2(robot)
+    lvl2 = Level2(
+        robot,
+        max_power=CONFIG.max_motor_power
+    )
+
     perception = Perception()
     localisation = Localisation()
 
     motion_backend = create_motion_backend(
-        MOTION_BACKEND,
+        CONFIG.motion_backend,
         lvl2
     )
 
     # --- Step 1: Init escape ---
     print("Running InitEscape...")
     behavior = InitEscape()
-    behavior.start(motion_backend=motion_backend)
+    behavior.start(
+        config=CONFIG,
+        motion_backend=motion_backend
+    )
 
     while True:
         status = behavior.update(
@@ -48,7 +55,7 @@ def run(robot):
     print("InitEscape complete")
 
     # --- Step 2: let camera settle ---
-    time.sleep(CAMERA_SETTLE_TIME)
+    time.sleep(CONFIG.camera_settle_time)
 
     # --- Step 3: read camera ---
     pose, objects = sense(robot, perception)

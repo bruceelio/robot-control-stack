@@ -69,11 +69,19 @@ class Calibration:
     drive_b_long: float
 
     # ----------------------------------------------
-    # Rotation calibration
+    # Rotation calibration (timed backend)
     # ----------------------------------------------
-    rotate_power: float
-    rotate_m: float
-    rotate_b: float
+    rotate_switch_deg: float
+
+    # Small-angle rotations
+    rotate_power_small: float
+    rotate_m_small: float
+    rotate_b_small: float
+
+    # Large-angle rotations
+    rotate_power_large: float
+    rotate_m_large: float
+    rotate_b_large: float
 
     # ----------------------------------------------
     # Camera calibration

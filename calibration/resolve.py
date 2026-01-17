@@ -96,10 +96,16 @@ def resolve(*, config) -> Calibration:
         drive_m_long=profile.DRIVE_M_LONG,
         drive_b_long=profile.DRIVE_B_LONG,
 
-        # Rotate
-        rotate_power=profile.ROTATE_POWER,
-        rotate_m=profile.ROTATE_M,
-        rotate_b=profile.ROTATE_B,
+        # Rotate (small / large angle)
+        rotate_switch_deg=profile.ROTATE_SWITCH_DEG,
+
+        rotate_power_small=profile.ROTATE_POWER_SMALL,
+        rotate_m_small=profile.ROTATE_M_SMALL,
+        rotate_b_small=profile.ROTATE_B_SMALL,
+
+        rotate_power_large=profile.ROTATE_POWER_LARGE,
+        rotate_m_large=profile.ROTATE_M_LARGE,
+        rotate_b_large=profile.ROTATE_B_LARGE,
 
         # Cameras
         cameras=cameras,

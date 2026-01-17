@@ -11,7 +11,7 @@ Values here are NOT policy and MUST NOT be changed at runtime.
 """
 
 # --------------------------------------------------
-# Timed motion calibration
+# Timed Drive calibration
 # --------------------------------------------------
 
 DRIVE_SWITCH_MM = 1000
@@ -27,10 +27,27 @@ DRIVE_B_SHORT = 0.06
 DRIVE_M_LONG  = 0.00078
 DRIVE_B_LONG  = 0.05
 
+# =========================
+# Timed Rotation Calibration
+# =========================
+
+ROTATE_SWITCH_DEG = 60
+
+# Small-angle rotations (precision)
+ROTATE_POWER_SMALL = 0.50
+ROTATE_M_SMALL = 0.0048
+ROTATE_B_SMALL = 0.12
+
+# Large-angle rotations (momentum)
+ROTATE_POWER_LARGE = 0.50
+ROTATE_M_LARGE = 0.0048
+ROTATE_B_LARGE = 0.12
+
+
 # Rotation calibration
-ROTATE_POWER = 0.50
-ROTATE_M = 0.0051
-ROTATE_B = 0.15
+# ROTATE_POWER = 0.50
+# ROTATE_M = 0.0051
+# ROTATE_B = 0.15
 
 
 # --------------------------------------------------
@@ -53,7 +70,7 @@ CAMERAS = {
         # ------------------------------------------
         "optical": {
             "distance_scale": 1.327,     # sim camera overestimates distance
-            "bearing_sign": -1.0,        # image X axis inverted vs robot yaw
+            "bearing_sign": 1.0,        # image X axis inverted vs robot yaw
             "bearing_offset_deg": 0.0,   # no constant bias
         },
 

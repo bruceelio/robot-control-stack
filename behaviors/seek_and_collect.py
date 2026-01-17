@@ -35,6 +35,17 @@ class SeekAndCollect(Behavior):
         self.target_is_high = None
         self.final_actions = None
         self.final_index = 0
+        self.bearing_consumed = False
+        self.last_seen_distance = None
+
+    @staticmethod
+    def _band_label(distance, commit, direct):
+        if distance <= commit:
+            return "A"
+        elif distance <= commit + direct:
+            return "B"
+        else:
+            return "C"
 
     def start(self, *, config, kind=None):
         self.config = config
@@ -64,34 +75,27 @@ class SeekAndCollect(Behavior):
     # -------------------------
 
     def _search(self, perception, motion_backend):
-        now = time.time()
-
-        if self.search_blocked_until is not None:
-            if now < self.search_blocked_until:
-                return self.status
-            self.search_blocked_until = None
-
         self.target = get_closest_target(perception, self.kind)
+        self.bearing_consumed = False
+
         if self.target is None:
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        if self.active_primitive is None:
-            self.active_primitive = Rotate(
-                angle_deg=self.target["bearing"]
-            )
-            self.active_primitive.start(
-                motion_backend=motion_backend
-            )
-
-        prim_status = self.active_primitive.update(
-            motion_backend=motion_backend
+        print(
+            f"[SEARCH] target found "
+            f"id={self.target.get('id', 'REL')} "
+            f"dist={self.target['distance']:.0f} "
+            f"bearing={self.target['bearing']:.1f}"
         )
 
-        if prim_status == PrimitiveStatus.SUCCEEDED:
-            self.active_primitive = None
-            self.state = "APPROACHING"
-            self.approach_started = False  # reset latch
+        # Hand off to APPROACH — NO MOTION HERE
+        self.state = "APPROACHING"
+        self.approach_started = False
+        self.active_primitive = None
+        self.last_action = None
+        self.cached_distance = None
+        self.cached_bearing = None
 
         return self.status
 
@@ -118,8 +122,8 @@ class SeekAndCollect(Behavior):
 
             self.settle_until = None
             self.cached_distance = None
-            self.cached_bearing = None
             self.last_action = None
+            self.bearing_consumed = False
 
             # reassessment allowed after this point
 
@@ -146,11 +150,14 @@ class SeekAndCollect(Behavior):
                             self.config.min_drive_mm,
                             min(
                                 self.config.max_drive_mm,
-                                self.cached_distance - self.config.grab_distance_mm
+                                self.cached_distance
                             )
                         )
 
-                    print(f"[APPROACH][DRIVE] start distance={drive_mm:.0f}mm")
+                    print(
+                        "[MOTION][DRIVE] "
+                        f"distance={drive_mm:.0f}mm"
+                    )
 
                     self.active_primitive = Drive(distance_mm=drive_mm)
                     self.last_action = "drive"
@@ -161,6 +168,27 @@ class SeekAndCollect(Behavior):
 
                                 # ---------- LOOP CLOSE: DRIVE ----------
                 if self.last_action == "drive":
+
+                    # --- POSITION SUMMARY (POST-DRIVE) ---
+                    if self.last_seen_distance is not None and self.cached_distance is not None:
+                        after_est = max(
+                            0.0,
+                            self.last_seen_distance - self.cached_distance
+                        )
+
+                        band_after = self._band_label(
+                            after_est,
+                            self.config.final_commit_distance_mm,
+                            self.config.final_approach_direct_range_mm,
+                        )
+
+                        print(
+                            "[APPROACH][POS] "
+                            f"before={self.last_seen_distance:.0f}mm "
+                            f"drove={self.cached_distance:.0f}mm "
+                            f"after_est={after_est:.0f}mm "
+                            f"band={band_after}"
+                        )
 
                     # FINAL COMMIT: drive ends → GRAB
                     if self.final_commit:
@@ -188,6 +216,11 @@ class SeekAndCollect(Behavior):
 
                     # NORMAL DRIVE: settle + reassess
                     self.settle_until = now + self.config.camera_settle_time
+
+                    # 🔧 IMPORTANT: allow corrective steering after a drive
+                    self.bearing_consumed = False
+                    self.cached_bearing = None
+
                     print(f"[APPROACH][SETTLE] start {self.config.camera_settle_time:.2f}s")
                     return self.status
 
@@ -208,16 +241,72 @@ class SeekAndCollect(Behavior):
 
         target = get_closest_target(perception, self.kind)
 
-        if target is None:
-            if (
-                    self.last_seen_time is not None
-                    and now - self.last_seen_time < self.config.vision_loss_timeout_s
-            ):
-                print("[APPROACH][VISION] temporarily lost — holding course")
-                return self.status
+        # =================================================
+        # (3) TARGET VISIBLE → USE BEARING DIRECTLY
+        # =================================================
+        if target is not None:
+            distance = target["distance"]
+            bearing = target["bearing"]
 
-            print("[APPROACH][EXIT] vision lost — returning to SEARCHING")
-            self.state = "SEARCHING"
+            self.last_seen_time = now
+            self.last_seen_distance = distance
+
+            band = self._band_label(
+                distance,
+                self.config.final_commit_distance_mm,
+                self.config.final_approach_direct_range_mm,
+            )
+
+            print(
+                "[APPROACH][SENSE] "
+                f"vision=VISIBLE "
+                f"band={band} "
+                f"dist={distance:.0f}mm "
+                f"bearing={bearing:.1f}°"
+            )
+
+        # =================================================
+        # (4) TARGET NOT VISIBLE → CONSIDER BLIND FINAL
+        # =================================================
+        else:
+            # Only consider blind motion AFTER a drive + settle
+            if (
+                    self.last_seen_distance is not None
+                    and self.cached_distance is not None
+            ):
+                remaining = self.last_seen_distance - self.cached_distance
+
+                if remaining <= self.config.final_commit_distance_mm:
+                    print(
+                        "[APPROACH][BLIND] final allowed "
+                        f"(remaining={remaining:.0f}mm)"
+                    )
+
+                    # --- BLIND RULES YOU STATED ---
+                    # rotate 0°
+                    # drive remaining distance
+                    self.cached_bearing = 0.0
+                    self.cached_distance = max(
+                        self.config.min_drive_mm,
+                        remaining
+                    )
+
+                    self.last_action = "rotate"
+                    self.bearing_consumed = True
+
+                    self.active_primitive = Rotate(angle_deg=0.0)
+                    self.active_primitive.start(
+                        motion_backend=motion_backend
+                    )
+                    return self.status
+
+            # Blind not allowed → WAIT for vision
+            print(
+                "[APPROACH][SENSE] "
+                "vision=LOST "
+                "intent=WAIT"
+            )
+
             return self.status
 
         # ---------- REL TARGET GUARD ----------
@@ -256,6 +345,7 @@ class SeekAndCollect(Behavior):
 
         distance = target["distance"]
         bearing = target["bearing"]
+        self.last_seen_distance = distance
 
         # ---------- HEIGHT INFERENCE (VISION PHASE ONLY) ----------
         if (
@@ -317,6 +407,15 @@ class SeekAndCollect(Behavior):
 
         assert self.active_primitive is None
         assert self.last_action is None
+        if self.bearing_consumed:
+            print("[APPROACH] bearing already consumed — skipping rotate")
+            return self.status
+
+        # tiny-angle deadband
+        if abs(bearing) < self.config.min_rotate_deg:
+            print("[APPROACH] bearing within tolerance — no rotate")
+            self.bearing_consumed = True
+            return self.status
 
         self.cached_bearing = bearing
 
@@ -331,8 +430,24 @@ class SeekAndCollect(Behavior):
         )
 
         # ---------- PROGRESSIVE APPROACH STEP ----------
-        if distance > self.config.final_commit_distance_mm:
-            step = distance / 2
+        commit = self.config.final_commit_distance_mm
+        direct = self.config.final_approach_direct_range_mm
+
+        print(
+            "[APPROACH][RANGES] "
+            f"commit={commit}mm "
+            f"direct={direct}mm"
+        )
+
+        # ===============================
+        # B / C DISTANCE PLANNING LOGIC
+        # ===============================
+
+        # --- C) Beyond DIRECT band ---
+        if distance > commit + direct:
+            # drive halfway toward COMMIT (not toward marker)
+            remaining_to_commit = distance - commit
+            step = remaining_to_commit / 2
 
             step = max(
                 self.config.min_drive_mm,
@@ -340,16 +455,44 @@ class SeekAndCollect(Behavior):
             )
 
             self.cached_distance = step
+
+            print(
+                "[APPROACH][PLAN] "
+                "band=C "
+                "vision=VISIBLE "
+                f"dist={distance:.0f}mm "
+                "intent=HALF_TO_COMMIT "
+                f"drive_target={step:.0f}mm"
+            )
+
+        # --- B) Inside DIRECT band ---
+        elif distance > commit:
+            # drive directly to COMMIT
+            self.cached_distance = distance - commit
+
+            print(
+                "[APPROACH][PLAN] "
+                "band=B "
+                "vision=VISIBLE "
+                f"dist={distance:.0f}mm "
+                "intent=DIRECT_TO_COMMIT "
+                f"drive_target={self.cached_distance:.0f}mm"
+            )
+
+
+        # --- A) Inside COMMIT ---
         else:
-            # should not normally hit here because FINAL COMMIT is handled above
-            self.cached_distance = distance
+            # should never hit here; handled earlier
+            return self.status
 
         self.last_action = "rotate"
+        self.bearing_consumed = True
+        self.active_primitive = Rotate(angle_deg=angle)
 
         print(
-            f"[APPROACH][ROTATE] start "
+            "[MOTION][ROTATE] "
             f"angle={angle:.1f}° "
-            f"(raw={bearing:.1f}°)"
+            f"(bearing={bearing:.1f}°)"
         )
 
         self.active_primitive = Rotate(angle_deg=angle)

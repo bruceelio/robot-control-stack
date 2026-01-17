@@ -166,16 +166,34 @@ class TimedMotionBackend:
 
     def _compute_rotate(self, angle_deg: float, *, rotate_factor: float):
         """
-        Convert angle (deg) to (duration_s, power).
+        Convert angle (deg) to (duration_s, power),
+        using small / large angle calibration.
         """
         a = abs(angle_deg)
 
-        duration = (
-            CALIBRATION.rotate_m * a
-            + CALIBRATION.rotate_b
+        if a <= CALIBRATION.rotate_switch_deg:
+            m = CALIBRATION.rotate_m_small
+            b = CALIBRATION.rotate_b_small
+            power = CALIBRATION.rotate_power_small
+            band = "SMALL"
+        else:
+            m = CALIBRATION.rotate_m_large
+            b = CALIBRATION.rotate_b_large
+            power = CALIBRATION.rotate_power_large
+            band = "LARGE"
+
+        duration = (m * a + b) * rotate_factor
+        duration = max(0.0, duration)
+
+        print(
+            "[ROTATE][CALC] "
+            f"band={band} "
+            f"angle={a:.1f}deg "
+            f"m={m:.5f} "
+            f"b={b:.3f} "
+            f"power={power:.2f} "
+            f"dur={duration:.3f}s"
         )
 
-        duration = max(0.0, duration * rotate_factor)
-        power = CALIBRATION.rotate_power
-
         return duration, power
+

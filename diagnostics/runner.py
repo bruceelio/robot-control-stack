@@ -1,3 +1,5 @@
+# diagnostics/runner.py
+
 """
 Diagnostics execution framework.
 
@@ -8,5 +10,7 @@ They run ONCE and then exit.
 """
 
 def run_diagnostics(robot):
-    from diagnostics.camera_angles import run
+    # from diagnostics.camera_angles import run
+    from diagnostics.rotation_calibration import run
+    
     run(robot)
