@@ -56,7 +56,7 @@ class ReturnToBase(Behavior):
         # -----------------
         elif self.phase == "BACK_AWAY":
             if self.primitive is None:
-                self.primitive = Drive(distance_mm=-550)
+                self.primitive = Drive(distance_mm=-2500)
                 self.primitive.start(motion_backend=motion_backend)
 
             status = self.primitive.update(motion_backend=motion_backend)

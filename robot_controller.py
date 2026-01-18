@@ -4,14 +4,19 @@ from level2_canonical import Level2
 from perception import Perception, sense
 from navigation.localisation import Localisation
 from state_machine import RobotState
+
 from behaviors.init_escape import InitEscape
 from behaviors.seek_and_collect import SeekAndCollect
 from behaviors.post_pickup_realign import PostPickupRealign
 from behaviors.recover_localisation import RecoverLocalisation
 from behaviors.return_to_base import ReturnToBase
+
 from motion_backends import create_motion_backend
 from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
+
+from calibration.resolve import resolve
+
 
 try:
     from tests.runner import run_tests
@@ -30,23 +35,42 @@ class Controller:
     def __init__(self, robot):
         self.robot = robot
 
+        # -------------------------
         # Core subsystems
+        # -------------------------
         self.lvl2 = Level2(
             robot,
             max_power=CONFIG.max_motor_power
         )
+
         self.perception = Perception()
         self.localisation = Localisation()
 
-        # Motion backend (timed vs encoder, sim vs real)
+        # -------------------------
+        # Configuration & Calibration
+        # -------------------------
+        self.config = CONFIG
+        self.calibration = resolve(config=CONFIG)
+
+        # -------------------------
+        # Motion backend
+        # -------------------------
         self.motion_backend = create_motion_backend(
             CONFIG.motion_backend,
-            self.lvl2
+            self.lvl2,
+            self.config,
+            self.calibration,
         )
 
-        # Behavior + state
+        # -------------------------
+        # State & behavior
+        # -------------------------
         self.state = RobotState.INIT_ESCAPE
         self.behavior = None
+
+    # --------------------------------------------------
+    # Main loop
+    # --------------------------------------------------
 
     def run(self):
         # ----------------------------------
@@ -79,6 +103,10 @@ class Controller:
         while True:
             self.update()
 
+    # --------------------------------------------------
+    # Per-tick update
+    # --------------------------------------------------
+
     def update(self):
         # Always sense first
         pose, objects = sense(self.robot, self.perception)
@@ -90,7 +118,7 @@ class Controller:
             self.localisation.invalidate()
 
         # -------------------------
-        # INIT: escape wall & orient
+        # INIT ESCAPE
         # -------------------------
         if self.state == RobotState.INIT_ESCAPE:
             if self.behavior is None:
@@ -110,11 +138,10 @@ class Controller:
                 self.behavior = None
                 self.state = RobotState.SEEK_AND_COLLECT
 
-
             return
 
         # -------------------------
-        # SEARCH & COLLECT
+        # SEEK & COLLECT
         # -------------------------
         if self.state == RobotState.SEEK_AND_COLLECT:
             if self.behavior is None:
@@ -137,7 +164,6 @@ class Controller:
                 self.state = RobotState.POST_PICKUP_REALIGN
 
             elif status.name == "FAILED":
-
                 print("SeekAndCollect failed — retrying")
                 self.behavior = None
                 self.state = RobotState.SEEK_AND_COLLECT
@@ -215,7 +241,7 @@ class Controller:
                 )
 
             status = self.behavior.update(
-                lvl2=self.lvl2,  # ✅ ADD THIS
+                lvl2=self.lvl2,
                 localisation=self.localisation,
                 motion_backend=self.motion_backend,
             )
@@ -224,8 +250,5 @@ class Controller:
                 print("ReturnToBase complete — resuming seek")
                 self.behavior = None
                 self.state = RobotState.SEEK_AND_COLLECT
-                return
 
             return
-
-

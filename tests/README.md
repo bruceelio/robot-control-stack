@@ -157,6 +157,7 @@ This file configures the environment but **does not run tests** and
 * Explicit is better than automatic
 * No hidden hardware access
 * Tests validate logic — behaviors make decisions
+* Tests must be idempotent and leave the system in a safe state.
 
 ---
 

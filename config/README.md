@@ -250,6 +250,14 @@ This separation is deliberate and enforced.
 
 ---
 
+## Enforcement
+
+Runtime code must only import:
+```python
+ from config import CONFIG
+
+---
+
 ## Summary
 
 This configuration system is designed to scale from:

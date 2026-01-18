@@ -145,6 +145,16 @@ Those belong elsewhere.
 
 ---
 
+## Enforcement
+
+Calibration modules must be safe to import in isolation.
+
+The following should succeed with no side effects:
+```bash
+python -c "import calibration.sr1"
+
+---
+
 ## Final Rule
 
 If calibration feels *interesting* to read, something is wrong.
