@@ -9,22 +9,9 @@ from hw_io.cameras.sr_april import SRAprilCamera
 import time
 
 class SR1Outputs:
-    """
-    Named digital outputs for SR1.
-
-    Backed by the SR Power Board outputs, NOT Arduino pins.
-    """
     def __init__(self, power_board):
         self._power = power_board
         self._state = {"VACUUM": False}
-
-        # Import constants only when SR stack is present
-        try:
-            from sr.robot3 import OUT_H0  # type: ignore
-        except Exception as e:
-            raise RuntimeError("SR1Outputs requires sr.robot3 (Power Board API).") from e
-
-        self._OUT_H0 = OUT_H0
 
     def names(self):
         return self._state.keys()
@@ -33,18 +20,22 @@ class SR1Outputs:
         if name != "VACUUM":
             raise KeyError(name)
 
-        if not self._power:
-            # no-op in environments with no power board
-            self._state[name] = bool(on)
-            return
-
-        # OUT_H0 controls the vacuum pump on SR robots
-        self._power.outputs[self._OUT_H0].is_enabled = bool(on)
         self._state[name] = bool(on)
 
+        if not self._power:
+            print(f"[SR1Outputs] {name} -> {on} (no power board)")
+            return
+
+        try:
+            from sr.robot3 import OUT_H0
+            self._power.outputs[OUT_H0].is_enabled = bool(on)
+            # Read back to confirm
+            actual = self._power.outputs[OUT_H0].is_enabled
+            print(f"[SR1Outputs] {name} -> {on} via OUT_H0 (actual={actual})")
+        except Exception as e:
+            print(f"[SR1Outputs] {name} -> {on} failed ({e})")
+
     def get(self, name: str) -> bool:
-        if name not in self._state:
-            raise KeyError(name)
         return self._state[name]
 
 
@@ -103,7 +94,7 @@ class SR1IO(IOMap):
         )
 
         # Digital outputs (Power Board)
-        self._outputs = SR1Outputs(self._power) if self._power is not None else None
+        self._outputs = SR1Outputs(power_board=self._power)
 
         # Camera registry
         self._cameras: Dict[str, Camera] = {}

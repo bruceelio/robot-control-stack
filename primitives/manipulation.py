@@ -24,6 +24,8 @@ class Grab(Primitive):
                 lvl2.GRAB()
             elif hasattr(lvl2, "GRABBER_CLOSE"):
                 lvl2.GRABBER_CLOSE()
+            elif hasattr(lvl2, "VACUUM_ON"):
+                lvl2.VACUUM_ON()
             else:
                 print("[Grab] No grabber available on this robot")
         except Exception as e:
@@ -42,12 +44,7 @@ class Grab(Primitive):
         return PrimitiveStatus.SUCCEEDED
 
 
-
 class Release(Primitive):
-    """
-    Release a held object.
-    """
-
     def __init__(self, settle_time=0.5):
         super().__init__()
         self.settle_time = settle_time
@@ -55,12 +52,13 @@ class Release(Primitive):
 
     def start(self, *, lvl2, **_):
         print("[Release] start")
-
         try:
             if hasattr(lvl2, "RELEASE"):
                 lvl2.RELEASE()
             elif hasattr(lvl2, "GRABBER_OPEN"):
                 lvl2.GRABBER_OPEN()
+            elif hasattr(lvl2, "VACUUM_OFF"):
+                lvl2.VACUUM_OFF()
             else:
                 print("[Release] No release available on this robot")
         except Exception as e:

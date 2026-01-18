@@ -195,13 +195,21 @@ class Level2:
         except Exception as e:
             print("[Level2] LIFT_DISABLE failed:", e)
 
-    def grab():
-        if io.outputs:
-            io.outputs.set("VACUUM", True)
+    def VACUUM_ON(self):
+        print("[Level2] VACUUM_ON")
+        outs = getattr(self.io, "outputs", None)
+        if outs is None:
+            print("[Level2] VACUUM_ON: no outputs available")
+            return
+        outs.set("VACUUM", True)
 
-    def release():
-        if io.outputs:
-            io.outputs.set("VACUUM", False)
+    def VACUUM_OFF(self):
+        print("[Level2] VACUUM_OFF")
+        outs = getattr(self.io, "outputs", None)
+        if outs is None:
+            print("[Level2] VACUUM_OFF: no outputs available")
+            return
+        outs.set("VACUUM", False)
 
     # -----------------------------
     # CAMERA (optional convenience)
