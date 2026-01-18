@@ -1,3 +1,97 @@
+# HAL Layer (Legacy / Compatibility)
+
+This folder contains the original **Hardware Abstraction Layer (HAL)** which maps
+canonical signal names (pins / channels) to physical endpoints.
+
+As of the current architecture, **`hw_io/` is the primary IO boundary**.
+HAL remains for:
+- legacy code paths which still reference pinmaps
+- SR-equivalent / non-SR wiring maps
+- gradual migration and cleanup
+
+If you’re writing new robot code, prefer:
+- `hw_io/` (IOMap implementations, camera wrappers, outputs)
+- `Level2` talking only to `IOMap`
+
+---
+
+## Architectural Position (Current)
+
+Behaviours / Primitives
+↓
+Controller (owns io + level2)
+↓
+Level2 (robot-agnostic actions)
+↓
+hw_io (IOMap implementation, per hardware profile)
+↓
+SR Robot3 / Arduino / GPIO / real devices
+
+HAL (this folder) is now **optional / transitional**, and should not be extended
+unless you are supporting an older code path.
+
+---
+
+## Why HAL is becoming obsolete
+
+HAL was designed around:
+
+- **canonical signal names** (e.g. `PWM_MOT_LEFT`)
+- resolved to **pins/channels** (Arduino pins, GPIO, etc.)
+- used by a “pinmap-style Level2” as fallback
+
+The new architecture (`hw_io`) replaces this with an explicit object model:
+
+- `IOMap.motors`, `IOMap.servos`, `IOMap.cameras()`
+- `IOMap.outputs` (named digital outputs like VACUUM / SOLENOID)
+- `IOMap.sleep()` to unify timing
+
+This avoids conflating:
+- robot identity
+- simulation vs real
+- hardware wiring
+- device capability
+
+---
+
+## Folder Contents (What’s still here)
+
+### `canonical.py`
+Legacy vocabulary of canonical signal names.
+
+### `pinmap.py` / `init_pins.py` / `unified.py`
+Legacy “canonical-to-pin” mapping machinery.
+
+### `sr_board.py` / `aux_board.py`
+Legacy SR-board-specific helpers.
+
+### `hardware.py`
+Legacy SR detection helpers.
+
+---
+
+## Migration Guidance
+
+When you touch code in the robot stack:
+
+1. **Prefer using `Controller.io` (IOMap)**
+2. Level2 should call IOMap (motors/servos/outputs/cameras), not SR APIs or pinmaps.
+3. If code still uses HAL pinmaps, treat it as migration debt:
+   - move it into an IOMap implementation under `hw_io/`
+   - or rewrite the caller to use `io.*` instead of pins
+
+---
+
+## Key Principle
+
+> Canonical names describe **intent**.
+>
+> `hw_io` provides **capability objects** which execute intent on real hardware.
+>
+> HAL pinmaps describe **wiring** (legacy), and should be phased out.
+
+
+THE TEXT BELOW IS LEGACY
 
 # IO Layer
 

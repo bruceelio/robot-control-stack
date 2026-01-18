@@ -1,81 +1,80 @@
+# level2_canonical.py
+
 """
 level2_canonical.py
 
 Level 2 canonical interface for robot actions.
 
 This layer exposes high-level, robot-agnostic commands (DRIVE, ROTATE, etc.)
-and maps them to:
-- SR Robot3 APIs when available
-- Level 1 canonical I/O as a fallback
+and maps them to the canonical hardware IOMap implementation.
 
-Level 2 merges multiple Level 1 I/O operations into a single semantic action.
+Design rule:
+- Level2 never talks to SR Robot directly.
+- Level2 never talks to raw pinmaps.
+- Level2 only talks to IOMap.
+
+Result:
+- One abstraction for real + sim + non-SR robots.
 """
 
+from __future__ import annotations
+
 import time
-from hal.pinmap import canonical_to_pin
-from hal.hardware import is_sr
+from typing import Optional
+
+from hw_io.base import IOMap
 
 
 class Level2:
-
-    def __init__(self, robot=None, *, max_power: float):
+    def __init__(self, io: IOMap, *, max_power: float):
         """
-        robot: SR Robot3 instance, or None (non-SR / fallback mode)
+        io: canonical IOMap implementation (SR-backed or direct-hardware-backed)
         max_power: maximum allowed motor power (from Config)
         """
-        self.robot = robot
-        self.has_sr = robot is not None
+        self.io = io
         self.max_power = max_power
 
     # -----------------------------
-    # Utility methods
+    # Utility
     # -----------------------------
 
-    def _clip(self, power):
+    def _clip(self, power: float) -> float:
         """Clip motor power to safe range."""
         return max(-self.max_power, min(self.max_power, power))
 
-    def _stop_motors(self):
-        """Safely stop all motors if SR Robot present."""
-        if self.has_sr:
-            motors = self.robot.motor_board.motors
+    def _stop_motors(self) -> None:
+        """Safely stop motors if available."""
+        motors = getattr(self.io, "motors", None)
+        if motors is None:
+            return
+        try:
             for i in range(2):
                 motors[i].power = 0
+        except Exception:
+            # Defensive: different motor adapters may not support indexing etc.
+            pass
 
     # -----------------------------
     # DRIVE / ROTATE
     # -----------------------------
 
-    def DRIVE(self, left_power: float, right_power: float, duration: float = None):
-        """Drive robot: positive = forward, negative = backward"""
+    def DRIVE(self, left_power: float, right_power: float, duration: Optional[float] = None):
+        """Drive robot: positive = forward, negative = backward."""
         left_power = self._clip(left_power)
         right_power = self._clip(right_power)
         print(f"[Level2] DRIVE L={left_power} R={right_power} duration={duration}")
 
-        if self.has_sr:
-            try:
-                motors = self.robot.motor_board.motors
-                motors[0].power = left_power
-                motors[1].power = right_power
-                if duration is not None:
-                    self.robot.sleep(duration)
-            finally:
-                self._stop_motors()
-        else:
-            left_pin = canonical_to_pin.get("MOT_LEFT")
-            right_pin = canonical_to_pin.get("MOT_RIGHT")
-            try:
-                if left_pin:
-                    left_pin.write(left_power)
-                if right_pin:
-                    right_pin.write(right_power)
-                if duration:
-                    time.sleep(duration)
-            finally:
-                if left_pin:
-                    left_pin.write(0)
-                if right_pin:
-                    right_pin.write(0)
+        motors = getattr(self.io, "motors", None)
+        if motors is None:
+            raise RuntimeError("Level2.DRIVE: io.motors is not available")
+
+        try:
+            motors[0].power = left_power
+            motors[1].power = right_power
+            if duration is not None:
+                self.SLEEP(duration)
+        finally:
+            self._stop_motors()
 
     def ROTATE(self, angle_deg: float):
         """
@@ -94,167 +93,126 @@ class Level2:
     def MOTOR_LEFT(self, power: float):
         power = self._clip(power)
         print(f"[Level2] MOTOR_LEFT power={power}")
-        if self.has_sr:
-            try:
-                motors = self.robot.motor_board.motors
-                motors[0].power = power
-            finally:
-                self._stop_motors()
-        else:
-            pin = canonical_to_pin.get("MOT_LEFT")
-            if pin:
-                pin.write(power)
+
+        motors = getattr(self.io, "motors", None)
+        if motors is None:
+            raise RuntimeError("Level2.MOTOR_LEFT: io.motors is not available")
+
+        try:
+            motors[0].power = power
+        finally:
+            self._stop_motors()
 
     def MOTOR_RIGHT(self, power: float):
         power = self._clip(power)
         print(f"[Level2] MOTOR_RIGHT power={power}")
-        if self.has_sr:
-            try:
-                motors = self.robot.motor_board.motors
-                motors[1].power = power
-            finally:
-                self._stop_motors()
-        else:
-            pin = canonical_to_pin.get("MOT_RIGHT")
-            if pin:
-                pin.write(power)
+
+        motors = getattr(self.io, "motors", None)
+        if motors is None:
+            raise RuntimeError("Level2.MOTOR_RIGHT: io.motors is not available")
+
+        try:
+            motors[1].power = power
+        finally:
+            self._stop_motors()
 
     # -----------------------------
-    # LEDs
+    # LEDs (optional)
     # -----------------------------
+    # NOTE: Your IOMap currently doesn't expose LEDs.
+    # If you later add io.leds or io.kch, wire it here.
+    # For now, these methods are stubs to preserve your canonical API.
 
     def LED_ON(self, index: int | None = None):
-        print(f"[Level2] LED_ON index={index}")
-        if self.has_sr:
-            if index is None:
-                for i in range(3):
-                    self.robot.kch.set_led(i, True)
-            else:
-                self.robot.kch.set_led(index, True)
-        else:
-            pin_name = f"LED_{index}" if index is not None else "LED_ALL"
-            pin = canonical_to_pin.get(pin_name)
-            if pin:
-                pin.write(1)
+        print(f"[Level2] LED_ON index={index} (stub — no io.leds exposed)")
 
     def LED_OFF(self, index: int | None = None):
-        print(f"[Level2] LED_OFF index={index}")
-        if self.has_sr:
-            if index is None:
-                for i in range(3):
-                    self.robot.kch.set_led(i, False)
-            else:
-                self.robot.kch.set_led(index, False)
-        else:
-            pin_name = f"LED_{index}" if index is not None else "LED_ALL"
-            pin = canonical_to_pin.get(pin_name)
-            if pin:
-                pin.write(0)
+        print(f"[Level2] LED_OFF index={index} (stub — no io.leds exposed)")
 
     # -----------------------------
-    # BUZZER / PIEZO
+    # BUZZER / PIEZO (optional)
     # -----------------------------
+    # NOTE: IOMap currently doesn't expose piezo either.
+    # Keep as stubs until io exposes a buzzer/piezo interface.
 
     def BUZZER_ON(self, note=None, duration: float = 0.5):
-        print(f"[Level2] BUZZER_ON note={note} duration={duration}")
-        if self.has_sr:
-            from sr.robot3 import Note
-            note = note if note is not None else Note.A6
-            self.robot.power_board.piezo.buzz(note, duration)
-        else:
-            pin = canonical_to_pin.get("BUZZER")
-            if pin:
-                pin.write(1)
-                time.sleep(duration)
-                pin.write(0)
+        print(f"[Level2] BUZZER_ON note={note} duration={duration} (stub)")
+        # If you later expose io.buzzer, implement here.
+        self.SLEEP(duration)
 
     def BUZZER_OFF(self):
-        print("[Level2] BUZZER_OFF")
-        if self.has_sr:
-            self.robot.power_board.piezo.buzz(0, 0)
-        else:
-            pin = canonical_to_pin.get("BUZZER")
-            if pin:
-                pin.write(0)
+        print("[Level2] BUZZER_OFF (stub)")
 
     # -----------------------------
-    # SENSORS (ARDUINO)
+    # SENSORS
     # -----------------------------
+    # NOTE: Level2 shouldn't really do raw sensor reads anymore
+    # because you already have io.bumpers/reflectance/ultrasonics.
+    # But we keep these for legacy/debug callers.
 
-    def SENSOR_READ_DI(self, pin: int):
-        if self.has_sr:
-            assert isinstance(pin, int), "SR Arduino pins must be numeric"
-            value = self.robot.arduino.digital_read(pin)
-        else:
-            p = canonical_to_pin.get(pin)
-            value = p.read() if p else None
-        print(f"[Level2] SENSOR_READ_DI pin={pin} value={value}")
-        return value
-
-    def SENSOR_READ_AI(self, pin: int):
-        if self.has_sr:
-            assert isinstance(pin, int), "SR Arduino pins must be numeric"
-            value = self.robot.arduino.analog_read(pin)
-        else:
-            p = canonical_to_pin.get(pin)
-            value = p.read() if p else None
-        print(f"[Level2] SENSOR_READ_AI pin={pin} value={value}")
-        return value
+    def SENSE(self):
+        """Unified snapshot (pass-through)."""
+        return self.io.sense()
 
     # -----------------------------
-    # GRIPPER
+    # GRIPPER / LIFT (servo-based)
     # -----------------------------
-
-    # Vacuum
-
-    def VACUUM_ON(self):
-        print("[Level2] VACUUM_ON")
-        if is_sr():
-            from sr.robot3 import OUT_H0
-            self.robot.power_board.outputs[OUT_H0].is_enabled = True
-        else:
-            pin = canonical_to_pin.get("DO_GRIPPER_SOLENOID")
-            if pin:
-                pin.write(1)
-
-    def VACUUM_OFF(self):
-        print("[Level2] VACUUM_OFF")
-        if is_sr():
-            from sr.robot3 import OUT_H0
-            self.robot.power_board.outputs[OUT_H0].is_enabled = False
-        else:
-            pin = canonical_to_pin.get("DO_GRIPPER_SOLENOID")
-            if pin:
-                pin.write(0)
-
-    # Lift
 
     def LIFT_DOWN(self):
         print("[Level2] LIFT_DOWN")
-        if is_sr():
-            self.robot.servo_board.servos[0].position = -1
-            self.robot.sleep(0.4)
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            print("[Level2] LIFT_DOWN: no servos available")
+            return
+
+        # Assumption: lift is servo 0, SR-style -1..+1
+        try:
+            servos[0].position = -1
+            self.SLEEP(0.4)
+        except Exception as e:
+            print("[Level2] LIFT_DOWN failed:", e)
 
     def LIFT_UP(self):
         print("[Level2] LIFT_UP")
-        if is_sr():
-            self.robot.servo_board.servos[0].position = 1
-            self.robot.sleep(0.4)
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            print("[Level2] LIFT_UP: no servos available")
+            return
+
+        try:
+            servos[0].position = 1
+            self.SLEEP(0.4)
+        except Exception as e:
+            print("[Level2] LIFT_UP failed:", e)
 
     def LIFT_DISABLE(self):
         print("[Level2] LIFT_DISABLE")
-        if is_sr():
-            self.robot.servo_board.servos[0].position = None
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            return
+        try:
+            servos[0].position = None
+        except Exception as e:
+            print("[Level2] LIFT_DISABLE failed:", e)
+
+    def grab():
+        if io.outputs:
+            io.outputs.set("VACUUM", True)
+
+    def release():
+        if io.outputs:
+            io.outputs.set("VACUUM", False)
 
     # -----------------------------
-    # CAMERA
+    # CAMERA (optional convenience)
     # -----------------------------
 
-    def CAMERA_SEE(self):
-        print("[Level2] CAMERA_SEE")
-        if self.has_sr and self.robot.camera:
-            return self.robot.camera.see()
-        return []
+    def CAMERA_SEE(self, camera: str = "front"):
+        print(f"[Level2] CAMERA_SEE camera={camera}")
+        cams = self.io.cameras()
+        if camera not in cams:
+            return []
+        return cams[camera].see()
 
     # -----------------------------
     # TIME / SLEEP
@@ -262,20 +220,36 @@ class Level2:
 
     def SLEEP(self, secs: float):
         print(f"[Level2] SLEEP {secs}s")
-        if self.has_sr:
-            self.robot.sleep(secs)
-        else:
-            time.sleep(secs)
+        self.io.sleep(secs)
 
-from config import CONFIG
+    # ---------- Optional capabilities ----------
 
-try:
-    robot = __robot__   # injected by simulator
-except NameError:
-    robot = None        # simulation / non-SR
+    @property
+    def leds(self):
+        """
+        Optional LED interface.
+        Suggested shape:
+          - .set(index: int, on: bool) -> None
+          - .set_all(on: bool) -> None
+        """
+        return None
 
-lvl2 = Level2(
-    robot=robot,
-    max_power=CONFIG.max_motor_power,
-)
+    @property
+    def buzzer(self):
+        """
+        Optional buzzer/piezo interface.
+        Suggested shape:
+          - .buzz(note: Any, duration: float) -> None
+          - .off() -> None
+        """
+        return None
 
+    @property
+    def outputs(self):
+        """
+        Optional digital outputs (eg vacuum solenoid).
+        Suggested shape:
+          - mapping/dict-like: outputs[name].is_enabled = True
+          - or methods: set(name, bool)
+        """
+        return None

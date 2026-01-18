@@ -18,6 +18,7 @@ VALID_SURFACES = ("simulation", "tile", "wood", "carpet")
 class Config:
     # Identity / mode
     robot_id: str
+    hardware_profile: str
     environment: str
     surface: str
     drive_layout: str
@@ -81,6 +82,7 @@ class Config:
 RESOLVE_MAP = {
     # Identity
     "robot_id": ("profile", "ROBOT_ID"),
+    "hardware_profile": ("profile", "HARDWARE_PROFILE"),
     "environment": ("profile", "ENVIRONMENT"),
     "surface": ("profile", "SURFACE"),
     "drive_layout": ("profile", "DRIVE_LAYOUT"),

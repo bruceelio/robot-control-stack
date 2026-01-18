@@ -2,6 +2,7 @@
 
 # Identity
 ROBOT_ID = "sim"
+HARDWARE_PROFILE = "sr1"
 ENVIRONMENT = "simulation"
 SURFACE = "simulation"
 

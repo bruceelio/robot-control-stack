@@ -14,9 +14,15 @@ from behaviors.return_to_base import ReturnToBase
 from motion_backends import create_motion_backend
 from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
-
 from calibration.resolve import resolve
+from hw_io.base import IOMap
+from hw_io.resolve import resolve_io
 
+
+from calibration import CALIBRATION
+print("\n=== CALIBRATION CAMERA CHECK ===")
+print("Calibration cameras:", CALIBRATION.cameras.keys())
+print("=== END CALIBRATION CHECK ===\n")
 
 try:
     from tests.runner import run_tests
@@ -35,15 +41,43 @@ class Controller:
     def __init__(self, robot):
         self.robot = robot
 
+        # --------------------------------------------------
+        # TEMP DEBUG — CAMERA SANITY CHECK
+        # --------------------------------------------------
+        print("\n=== CAMERA SANITY CHECK ===")
+        print("robot.camera:", getattr(robot, "camera", None))
+
+        if hasattr(robot, "camera") and robot.camera is not None:
+            print("robot.camera type:", type(robot.camera))
+            try:
+                seen = robot.camera.see()
+                print(f"robot.camera.see() OK — saw {len(seen)} markers")
+            except Exception as e:
+                print("robot.camera.see() FAILED:", e)
+        else:
+            print("NO camera attribute on robot")
+
+        print("=== END CAMERA CHECK ===\n")
+
         # -------------------------
         # Core subsystems
         # -------------------------
-        self.lvl2 = Level2(
-            robot,
-            max_power=CONFIG.max_motor_power
+
+        # IO layer (single source of hardware truth) — create this FIRST
+        self.io: IOMap = resolve_io(
+            robot=robot,
+            hardware_profile=CONFIG.hardware_profile,
         )
 
-        self.perception = Perception()
+        # Level2 now consumes IO, not robot
+        self.lvl2 = Level2(
+            self.io,
+            max_power=CONFIG.max_motor_power,
+        )
+
+        # Perception now consumes IO, not robot
+        self.perception = Perception(self.io)
+
         self.localisation = Localisation()
 
         # -------------------------
@@ -109,7 +143,7 @@ class Controller:
 
     def update(self):
         # Always sense first
-        pose, objects = sense(self.robot, self.perception)
+        pose, objects = sense(self.io, self.perception)
 
         if pose is not None:
             x, y, heading = pose

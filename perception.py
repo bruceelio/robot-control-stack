@@ -7,7 +7,7 @@ from navigation.geometry import trilaterate_point
 from config import CONFIG
 from config.arena import marker_locations
 from calibration import CALIBRATION
-
+from hw_io.base import IOMap
 
 # ==================================================
 # Configuration
@@ -38,7 +38,8 @@ def log(tag, msg):
 # ==================================================
 
 class Perception:
-    def __init__(self):
+    def __init__(self, io: IOMap):
+        self.io = io
         self.arena_markers = marker_locations(CONFIG.arena_size)
         self.objects = {"acidic": {}, "basic": {}}
         self.last_pose = None
@@ -58,7 +59,7 @@ def age_objects(perception: Perception):
 # Main sensing entry point
 # ==================================================
 
-def sense(robot, perception: Perception, stop_robot=True):
+def sense(io: IOMap, perception: Perception, stop_robot=True):
     now = time.time()
     age_objects(perception)
 
@@ -69,13 +70,38 @@ def sense(robot, perception: Perception, stop_robot=True):
     # Camera selection & calibration
     # --------------------------------------------------
 
-    if PRIMARY_CAMERA not in CALIBRATION.cameras:
-        raise RuntimeError(f"Camera '{PRIMARY_CAMERA}' not found in calibration")
+    # Camera selection & calibration
+    calibrated = set(CALIBRATION.cameras.keys())
+    available = set(io.cameras().keys())
+
+    missing_in_io = calibrated - available
+    missing_in_cal = available - calibrated
+
+    log("PERCEPTION", f"Calibrated cameras: {sorted(calibrated)}")
+    log("PERCEPTION", f"Available cameras: {sorted(available)}")
+
+    if PRIMARY_CAMERA not in calibrated:
+        raise RuntimeError(
+            f"PRIMARY_CAMERA={PRIMARY_CAMERA!r} not in calibration. "
+            f"Calibrated={sorted(calibrated)}"
+        )
+
+    if PRIMARY_CAMERA not in available:
+        raise RuntimeError(
+            f"PRIMARY_CAMERA={PRIMARY_CAMERA!r} not in IO. "
+            f"Available={sorted(available)}"
+        )
+
+    # Optional: strict mode (recommended once you add a 2nd camera)
+    if missing_in_io:
+        raise RuntimeError(f"Calibrated cameras missing in IO: {sorted(missing_in_io)}")
+    # if missing_in_cal:
+    #     raise RuntimeError(f"IO cameras missing calibration: {sorted(missing_in_cal)}")
 
     cam_cal = CALIBRATION.cameras[PRIMARY_CAMERA]
+    seen = io.cameras()[PRIMARY_CAMERA].see()
 
-    # NOTE: robot.camera is assumed to correspond to PRIMARY_CAMERA
-    seen = robot.camera.see()
+    # --------------------------------------------------
 
     arena_markers, acidic_markers, basic_markers = classify_markers(seen)
 
