@@ -4,7 +4,7 @@ from tests.registry import register_test
 @register_test(category="hal", enabled=True)
 def test_digital_inputs(robot):
     """Reads all DI_* canonicals"""
-    from hal.pinmap import canonical_to_pin
+    from legacy.hal.pinmap import canonical_to_pin
 
     print("Testing digital inputs...")
     found = False
@@ -25,7 +25,7 @@ def test_digital_inputs(robot):
 @register_test(category="hal", enabled=True)
 def test_analog_inputs(robot):
     """Reads all AI_* canonicals"""
-    from hal.pinmap import canonical_to_pin
+    from legacy.hal.pinmap import canonical_to_pin
 
     print("Testing analog inputs...")
     found = False
@@ -46,7 +46,7 @@ def test_analog_inputs(robot):
 @register_test(category="hal", enabled=False)
 def test_digital_outputs(robot):
     """Toggles all DO_* canonicals"""
-    from hal.pinmap import canonical_to_pin
+    from legacy.hal.pinmap import canonical_to_pin
 
     print("Testing digital outputs...")
 

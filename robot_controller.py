@@ -1,6 +1,6 @@
 # robot_controller.py
 
-from level2_canonical import Level2
+from level2.level2_canonical import Level2
 from perception import Perception, sense
 from navigation.localisation import Localisation
 from state_machine import RobotState
@@ -10,6 +10,7 @@ from behaviors.seek_and_collect import SeekAndCollect
 from behaviors.post_pickup_realign import PostPickupRealign
 from behaviors.recover_localisation import RecoverLocalisation
 from behaviors.return_to_base import ReturnToBase
+from behaviors.post_dropoff_realign import PostDropoffRealign
 
 from motion_backends import create_motion_backend
 from config import CONFIG
@@ -298,8 +299,35 @@ class Controller:
             )
 
             if status.name == "SUCCEEDED":
-                print("ReturnToBase complete — resuming seek")
+                print("ReturnToBase complete — post-dropoff realign")
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+                self.state = RobotState.POST_DROPOFF_REALIGN
+
+            # -------------------------
+            # POST-DROPOFF REALIGN
+            # -------------------------
+            if self.state == RobotState.POST_DROPOFF_REALIGN:
+                if self.behavior is None:
+                    self.behavior = PostDropoffRealign()
+                    self.behavior.start(
+                        config=CONFIG,
+                        motion_backend=self.motion_backend,
+                    )
+
+                status = self.behavior.update(
+                    motion_backend=self.motion_backend,
+                )
+
+                if status.name == "SUCCEEDED":
+                    print("PostDropoffRealign complete — resuming seek")
+                    self.behavior = None
+                    self.state = RobotState.SEEK_AND_COLLECT
+
+                elif status.name == "FAILED":
+                    print("PostDropoffRealign failed — resuming seek anyway")
+                    self.behavior = None
+                    self.state = RobotState.SEEK_AND_COLLECT
+
+                return
 
             return

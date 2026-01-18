@@ -1,10 +1,9 @@
 # motion.py
 import math
-import time
 from config import drive_factor, rotate_factor, motor_polarity
 from calibration import drive_duration, rotate_duration
 from sr.robot3 import INPUT, INPUT_PULLUP
-from level2_canonical import Level2
+from level2.level2_canonical import Level2
 
 
 # -----------------------------

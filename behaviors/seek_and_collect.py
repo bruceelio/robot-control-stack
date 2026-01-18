@@ -408,13 +408,39 @@ class SeekAndCollect(Behavior):
         assert self.active_primitive is None
         assert self.last_action is None
         if self.bearing_consumed:
-            print("[APPROACH] bearing already consumed — skipping rotate")
+            # Rotate already decided for this plan; waiting for drive/settle to close loop.
             return self.status
 
         # tiny-angle deadband
+        # tiny-angle deadband: skip rotate, but still DRIVE
         if abs(bearing) < self.config.min_rotate_deg:
-            print("[APPROACH] bearing within tolerance — no rotate")
-            self.bearing_consumed = True
+            print("[APPROACH] bearing within tolerance — skipping rotate, planning drive")
+
+            # Treat as straight drive
+            self.cached_bearing = 0.0
+
+            # Use the same B/C distance planning logic as below
+            commit = self.config.final_commit_distance_mm
+            direct = self.config.final_approach_direct_range_mm
+
+            if distance > commit + direct:
+                remaining_to_commit = distance - commit
+                step = max(self.config.min_drive_mm, min((remaining_to_commit / 2), self.config.max_drive_mm))
+                self.cached_distance = step
+            elif distance > commit:
+                self.cached_distance = distance - commit
+            else:
+                # If we’re inside commit band, normal flow should have handled final_commit earlier
+                self.cached_distance = self.config.min_drive_mm
+
+            # Start DRIVE immediately (no rotate primitive)
+            drive_mm = max(self.config.min_drive_mm, min(self.config.max_drive_mm, self.cached_distance))
+            print(f"[MOTION][DRIVE] distance={drive_mm:.0f}mm (no-rotate path)")
+
+            self.active_primitive = Drive(distance_mm=drive_mm)
+            self.last_action = "drive"
+            self.active_primitive.start(motion_backend=motion_backend)
+
             return self.status
 
         self.cached_bearing = bearing

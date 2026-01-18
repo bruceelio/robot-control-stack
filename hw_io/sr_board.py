@@ -4,8 +4,6 @@ Canonical-to-pin mapping for the main SR Robot Arduino board.
 This maps canonical names (from canonical.py) to the Arduino pins.
 """
 
-from .canonical import *
-
 SR_ROBOT_BOARD_NAME = "Arduino1"
 
 # Pin mapping for SR Robot Arduino

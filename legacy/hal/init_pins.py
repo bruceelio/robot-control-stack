@@ -11,7 +11,7 @@ try:
 except ImportError:
     SR3_PRESENT = False
 
-from .pinmap import board_mapping
+from legacy.hal.pinmap import board_mapping
 
 # Track initialized pins to avoid duplicates
 _initialized_pins = set()

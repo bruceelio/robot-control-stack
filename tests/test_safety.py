@@ -4,7 +4,7 @@ from tests.registry import register_test
 @register_test(category="safety", enabled=True, requires_robot=False)
 def test_virtual_front_bumper():
     """Tests SI_BUMPER_FRONT logic"""
-    from hal.canonical import (
+    from legacy.hal import (
         DI_BUMPER_FRONT_LEFT,
         DI_BUMPER_FRONT_RIGHT,
         SI_BUMPER_FRONT,

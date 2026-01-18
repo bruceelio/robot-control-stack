@@ -47,6 +47,10 @@ class Config:
     post_pickup_reverse_mm: int
     post_pickup_rotate_deg: float
 
+    # PostDropOffRealign
+    post_dropoff_reverse_mm: int
+    post_dropoff_rotate_deg: float
+
     # RecoverLocalisation
     recover_step_deg: float
     recover_max_sweep_deg: float
@@ -117,6 +121,10 @@ RESOLVE_MAP = {
     # PostPickupRealign
     "post_pickup_reverse_mm": ("profile", "POST_PICKUP_REVERSE_MM"),
     "post_pickup_rotate_deg": ("profile", "POST_PICKUP_ROTATE_DEG"),
+
+    # PostDropoffRealign
+    "post_dropoff_reverse_mm": ("profile", "POST_PICKUP_REVERSE_MM"),
+    "post_dropoff_rotate_deg": ("profile", "POST_PICKUP_ROTATE_DEG"),
 
     # RecoverLocalisation
     "recover_step_deg": ("profile", "RECOVER_STEP_DEG"),

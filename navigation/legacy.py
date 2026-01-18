@@ -10,7 +10,7 @@ Kept only for backward compatibility and reference.
 """
 
 
-from motion import DRIVE_FOR, ROTATE_FOR
+from legacy.motion import DRIVE_FOR, ROTATE_FOR
 from navigation.target_selection import get_closest_target
 
 

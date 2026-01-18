@@ -5,7 +5,7 @@ import math
 
 from behaviors.init_escape import InitEscape
 from perception import Perception
-from level2_canonical import Level2
+from level2.level2_canonical import Level2
 from motion_backends import create_motion_backend
 from calibration import CALIBRATION
 from config import CONFIG

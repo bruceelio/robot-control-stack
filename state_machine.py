@@ -6,5 +6,6 @@ class RobotState(Enum):
     POST_PICKUP_REALIGN = auto()
     RECOVER_LOCALISATION = auto()
     RETURN_TO_BASE = auto()
+    POST_DROPOFF_REALIGN = auto()
     ROTATE_AND_DRIVE = auto()
     COMPLETE = auto()

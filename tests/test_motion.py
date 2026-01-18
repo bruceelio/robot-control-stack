@@ -4,7 +4,7 @@ from tests.registry import register_test
 @register_test(category="motion", enabled=True)
 def test_level2_drive(robot):
     """Visible movement test in simulator"""
-    from level2_canonical import Level2
+    from level2.level2_canonical import Level2
 
     print("Testing Level 2 DRIVE...")
     lvl2 = Level2(robot)
@@ -17,7 +17,7 @@ def test_level2_drive(robot):
 @register_test(category="motion", enabled=False)
 def test_level2_lift(robot):
     """Visible lift up/down test in simulator"""
-    from level2_canonical import Level2
+    from level2.level2_canonical import Level2
     from primitives.manipulation import LiftUp, LiftDown
     from primitives.base import PrimitiveStatus
     import time
