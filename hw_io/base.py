@@ -84,3 +84,17 @@ class IOMap(ABC):
     def sleep(self, secs: float) -> None:
         """Sleep using the platform’s preferred timing (robot time if available)."""
         raise NotImplementedError
+
+    # kch, buzzer
+
+    def kch(self):
+        """Optional KCH/BrainBoard access (LEDs etc)."""
+        return None
+
+    def buzzer(self):
+        """Optional buzzer/piezo access."""
+        return None
+
+    def wait_start(self):
+        """Optional start-gate convenience."""
+        return None

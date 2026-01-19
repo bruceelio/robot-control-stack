@@ -1,5 +1,4 @@
 # tests/runner.py
-
 from tests.registry import TESTS
 
 
@@ -7,34 +6,53 @@ def run_tests(
     robot=None,
     *,
     only=None,
-    category=None,
+    category="io",
 ):
     """
     Run registered tests.
 
-    only="test_name"     -> run a single test
-    category="hal"       -> run tests in category
+    only="test_name"  -> run a single test
+    category="io"     -> run tests in that category
     """
     print("\n=== TEST RUN START ===")
 
-    for name, meta in TESTS.items():
-        if not meta["enabled"]:
+    # Select tests
+    selected = []
+    for test_name, meta in TESTS.items():
+        if only and test_name != only:
             continue
-        if only and name != only:
+        if category and meta.get("category") != category:
             continue
-        if category and meta["category"] != category:
+        if not meta.get("enabled", True):
             continue
+        if meta.get("requires_robot", True) and robot is None:
+            continue
+        selected.append((test_name, meta))
 
-        print(f"\n>>> RUNNING TEST: {name}")
+    if not selected:
+        print("No tests selected.")
+        print(f"Requested: only={only} category={category}")
+        print("Available tests:")
+        for test_name, meta in TESTS.items():
+            print(
+                f"  - {test_name} (category={meta.get('category')}, enabled={meta.get('enabled')})"
+            )
+        print("=== TEST RUN END ===\n")
+        return False
+
+    ok = True
+    for test_name, meta in selected:
+        fn = meta["func"]
+        print(f"\n--- RUN {test_name} (category={meta.get('category')}) ---")
         try:
-            if meta["requires_robot"]:
-                if robot is None:
-                    raise RuntimeError("Robot instance required")
-                meta["func"](robot)
+            if meta.get("requires_robot", True):
+                fn(robot)
             else:
-                meta["func"]()
+                fn()
+            print(f"[PASS] {test_name}")
         except Exception as e:
-            print(f"!!! TEST FAILED: {name}")
-            print(f"    {e}")
+            ok = False
+            print(f"[FAIL] {test_name}: {e}")
 
-    print("\n=== TEST RUN COMPLETE ===\n")
+    print("\n=== TEST RUN END ===\n")
+    return ok

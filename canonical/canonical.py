@@ -1,3 +1,5 @@
+# canonical/canonical.py
+
 """
 Canonical robot I/O definitions.
 

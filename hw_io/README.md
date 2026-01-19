@@ -2,8 +2,8 @@
 
 This folder defines the **primary hardware boundary layer** for the robot.
 
-It exposes a single canonical interface, `IOMap`, which presents robot hardware as
-**capabilities** (motors, servos, cameras, sensors, digital outputs) in a robot-agnostic way.
+It exposes a single robot-agnostic interface, `IOMap`, which presents robot hardware as
+**capabilities** (motors, servos, cameras, sensors, digital outputs) behind stable method names.
 
 No behaviours, strategy, or motion planning belongs here.
 
@@ -16,122 +16,180 @@ No behaviours, strategy, or motion planning belongs here.
   - SR hardware
   - SR-equivalent hardware without `sr.robot3`
   - custom robots with different wiring
-- Remove conflation between:
-  - simulation vs real
-  - robot identity vs hardware wiring
-  - calibration vs IO construction
 - Make IO selection explicit via `hardware_profile` (not `robot_id`)
+- Keep **all SR APIs and pin numbers** inside this folder only
 
 ---
 
-## Architecture
+## Architecture (Control Path)
 
-Behaviours / Primitives
-↓
-Controller (constructs io, level2, motion backend)
-↓
-Level2 (robot-agnostic actions)
-↓
-hw_io (IOMap implementation chosen by hardware_profile)
-↓
+Behaviours / Primitives  
+↓  
+Controller (constructs IOMap, Level2, Motion Backend)  
+↓  
+Level2 (robot-agnostic actions)  
+↓  
+hw_io (IOMap implementation chosen by `hardware_profile`)  
+↓  
 SR Robot3 / Arduino / GPIO / external devices
 
 ---
 
 ## Core Interface: `IOMap`
 
-`hw_io/base.py` defines:
+`hw_io/base.py` defines capabilities such as:
 
-- Sensors:
-  - `bumpers() -> Dict[str, bool]`
-  - `reflectance() -> Dict[str, float]`
-  - `ultrasonics() -> Dict[str, Optional[float]]`
-  - `sense() -> Dict[str, Any]` (snapshot convenience)
+### Sensors
+- `bumpers() -> Dict[str, bool]`
+- `reflectance() -> Dict[str, float]`
+- `ultrasonics() -> Dict[str, Optional[float]]`
+- `sense() -> Dict[str, Any]` (snapshot convenience)
 
-- Cameras:
-  - `cameras() -> Dict[str, CameraLike]` keyed by semantic name (`"front"`, `"rear"`)
+### Cameras
+- `cameras() -> Dict[str, CameraLike]`
+  - keyed by semantic name (`"front"`, `"rear"`, ...)
 
-- Actuators:
-  - `motors` (exposed motor objects, not controlled here)
-  - `servos`
+### Actuators
+- `motors` (exposes motor objects; Level2 controls motion)
+- `servos`
 
-- Digital Outputs:
-  - `outputs -> DigitalOutputs | None`
-    - named outputs such as `"VACUUM"` / `"SOLENOID"` / `"RELAY_*"`
-    - `set(name, on)` / `get(name)` / `names()`
+### Digital Outputs
+- `outputs`
+  - named outputs such as `"VACUUM"`
+  - `set(name, on)` / `get(name)` / `names()`
 
-- Power:
-  - `battery() -> Dict[str, Optional[float]]`
+### Power / System
+- `battery() -> Dict[str, Optional[float]]`
+- `sleep(secs)` (uses robot time when available)
 
-- Timing:
-  - `sleep(secs)` (uses robot time when available)
+Optional capabilities (may be `None` depending on robot):
+- `kch()` (Brain Board LEDs)
+- `buzzer()` (PowerBoard piezo)
+- `wait_start()` (SR start gate)
 
 ---
 
 ## Selecting an IOMap
 
-`hw_io/resolve.py` should select an IOMap implementation based **only** on:
+`hw_io/resolve.py` selects an IOMap implementation based only on:
 
 - `hardware_profile` (e.g. `"sr1"`)
 
-Example shape:
+Example:
 
 ```py
 def resolve_io(*, robot, hardware_profile: str) -> IOMap:
     if hardware_profile == "sr1":
         return SR1IO(robot)
-    raise ValueError(...)
+    raise ValueError(f"Unknown hardware_profile: {hardware_profile}")
 
-Implementations
-hw_io/sr1.py
+Implementations:
 
-SR1 IOMap implementation.
+hw_io/sr1.py — SR1 mapping
 
-Typically binds to:
+SR1IO (hw_io/sr1.py)
 
-robot.motor_board.motors
+SR1 binds to SR Robot3 boards when present:
 
-robot.servo_board.servos
+Motors: robot.motor_board.motors
 
-robot.arduino (for bumpers, reflectance, ultrasonics)
+Servos: robot.servo_board.servos
 
-robot.power_board.outputs[...] (for named digital outputs like VACUUM / SOLENOID)
+Arduino sensors:
 
-robot.camera (AprilCamera)
+bumpers (D10–D13)
 
-Important:
+reflectance (A0–A2)
 
+ultrasonics (trig/echo pairs)
+
+PowerBoard outputs:
+
+"VACUUM" -> OUT_H0
+
+Camera:
+
+"front" -> SR AprilCamera wrapper
+
+IMPORTANT:
 This is the ONLY place SR APIs and pin numbers should appear.
+
+Arduino API compatibility
+
+SR Arduino method names can vary between simulator and real firmware versions.
+SR1IO uses internal compatibility helpers to resolve the correct read functions.
 
 Cameras
 
-Camera wrappers live under hw_io/cameras/ so the rest of the stack can treat cameras uniformly
-(e.g. SRAprilCamera wraps SR’s AprilCamera and exposes a stable .see()-like API).
+Camera wrappers live under hw_io/cameras/ so the rest of the stack can treat cameras uniformly.
+
+Example:
+
+SRAprilCamera wraps SR’s AprilCamera and exposes a stable .see() API.
 
 Conventions
 
 Semantic naming:
 
-cameras: "front", "rear", etc.
+cameras: "front", "rear", ...
 
-outputs: "VACUUM" (or "SOLENOID", but pick one and keep it stable)
+outputs: "VACUUM" (pick one canonical name and keep it stable)
 
-sensors: "fl", "fr", "rl", "rr", etc.
+bumpers: "fl", "fr", "rl", "rr"
 
-No behaviour:
+hw_io must not contain:
 
-hw_io must not contain motion logic, state machines, or strategy.
+motion logic
 
-Roadmap / SR2 Note
+behaviours / state machines
 
-SR2 is expected to share concepts:
+strategy / targeting
 
-Arduino + digital outputs remain conceptually similar
+Testing / IO Checkout
 
-motors/servos may require:
+IO checkout tests live under tests/test_io_checkout.py and run in RunMode.TESTS.
 
-a different driver, or
+Read-only tests are enabled by default.
 
-mapping to board pins via a separate implementation
+Actuation tests (motors/vacuum/buzzer/LED) should be opt-in.
 
-This becomes just another IOMap implementation selected via hardware_profile.
+To run:
+
+set RUN_MODE = RunMode.TESTS in config/strategy.py
+
+run the robot program as normal
+
+the controller will dispatch to run_tests(robot=robot)
+
+
+---
+
+## 4) Why your KCH log prints tuples
+Your log shows:
+
+`KCH LED_A -> (True, False, False)`
+
+That’s not wrong — it’s the `Colour` enum being printed in its tuple form in that SR version. Totally fine.
+
+---
+
+If you want, paste your current `tests/test_io_checkout.py` and I’ll tune the tests so:
+- actuator tests are **disabled by default**
+- `buzzer.off()` doesn’t mark PASS when it actually failed (right now you PASS even after the error; we should treat off-failure as FAIL unless you explicitly mark it “known issue”).
+
+## IO Checkout (SR1 Sim / SR1 Real)
+
+IO checkout tests live in `tests/test_io_checkout.py` (category: `io`).
+
+Run them by setting:
+
+- `config/strategy.py`: `RUN_MODE = RunMode.TESTS`
+
+Then run the robot program normally.
+The controller will dispatch to:
+
+- `tests/runner.py::run_tests(robot=robot, category="io")`
+
+### Safety
+Actuation tests (motors/vacuum/buzzer/LED) should be `enabled=False` by default.
+Enable them temporarily only during bring-up.
