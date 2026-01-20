@@ -42,24 +42,6 @@ class Controller:
     def __init__(self, robot):
         self.robot = robot
 
-        # --------------------------------------------------
-        # TEMP DEBUG — CAMERA SANITY CHECK
-        # --------------------------------------------------
-        print("\n=== CAMERA SANITY CHECK ===")
-        print("robot.camera:", getattr(robot, "camera", None))
-
-        if hasattr(robot, "camera") and robot.camera is not None:
-            print("robot.camera type:", type(robot.camera))
-            try:
-                seen = robot.camera.see()
-                print(f"robot.camera.see() OK — saw {len(seen)} markers")
-            except Exception as e:
-                print("robot.camera.see() FAILED:", e)
-        else:
-            print("NO camera attribute on robot")
-
-        print("=== END CAMERA CHECK ===\n")
-
         # -------------------------
         # Core subsystems
         # -------------------------
@@ -69,6 +51,23 @@ class Controller:
             robot=robot,
             hardware_profile=CONFIG.hardware_profile,
         )
+
+        # --------------------------------------------------
+        # TEMP DEBUG — CAMERA SANITY CHECK (IOMap-based)
+        # --------------------------------------------------
+        print("\n=== CAMERA SANITY CHECK (IOMap) ===")
+        try:
+            cams = self.io.cameras()
+            print("io.cameras():", list(cams.keys()))
+            front = cams.get("front")
+            if front is None:
+                print("No 'front' camera found in io.cameras()")
+            else:
+                seen = front.see()
+                print(f"io.cameras()['front'].see() OK — saw {len(seen)} markers")
+        except Exception as e:
+            print("IOMap camera check FAILED:", e)
+        print("=== END CAMERA CHECK ===\n")
 
         # Level2 now consumes IO, not robot
         self.lvl2 = Level2(
