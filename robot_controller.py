@@ -302,31 +302,31 @@ class Controller:
                 self.behavior = None
                 self.state = RobotState.POST_DROPOFF_REALIGN
 
-            # -------------------------
-            # POST-DROPOFF REALIGN
-            # -------------------------
-            if self.state == RobotState.POST_DROPOFF_REALIGN:
-                if self.behavior is None:
-                    self.behavior = PostDropoffRealign()
-                    self.behavior.start(
-                        config=CONFIG,
-                        motion_backend=self.motion_backend,
-                    )
+            return
 
-                status = self.behavior.update(
+        # -------------------------
+        # POST-DROPOFF REALIGN
+        # -------------------------
+        if self.state == RobotState.POST_DROPOFF_REALIGN:
+            if self.behavior is None:
+                self.behavior = PostDropoffRealign()
+                self.behavior.start(
+                    config=CONFIG,
                     motion_backend=self.motion_backend,
                 )
 
-                if status.name == "SUCCEEDED":
-                    print("PostDropoffRealign complete — resuming seek")
-                    self.behavior = None
-                    self.state = RobotState.SEEK_AND_COLLECT
+            status = self.behavior.update(
+                motion_backend=self.motion_backend,
+            )
 
-                elif status.name == "FAILED":
-                    print("PostDropoffRealign failed — resuming seek anyway")
-                    self.behavior = None
-                    self.state = RobotState.SEEK_AND_COLLECT
+            if status.name == "SUCCEEDED":
+                print("PostDropoffRealign complete — resuming seek")
+                self.behavior = None
+                self.state = RobotState.SEEK_AND_COLLECT
 
-                return
+            elif status.name == "FAILED":
+                print("PostDropoffRealign failed — resuming seek anyway")
+                self.behavior = None
+                self.state = RobotState.SEEK_AND_COLLECT
 
             return
