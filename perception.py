@@ -244,7 +244,18 @@ def prune_objects(perception: Perception, now):
 # Target access helper
 # ==================================================
 
-def get_visible_targets(perception: Perception, kind: str):
-    targets = list(perception.objects.get(kind, {}).values())
+def get_visible_targets(perception: Perception, kind: str, *, now: float | None = None, max_age_s: float = 0.35):
+    """
+    Only return targets seen very recently (vision-visible),
+    not just anything still in memory.
+    """
+    if now is None:
+        now = time.time()
+
+    targets = [
+        t for t in perception.objects.get(kind, {}).values()
+        if (now - t.get("last_seen", 0.0)) <= max_age_s
+    ]
     targets.sort(key=lambda t: t["distance"])
     return targets
+

@@ -37,6 +37,8 @@ class SeekAndCollect(Behavior):
         self.final_index = 0
         self.bearing_consumed = False
         self.last_seen_distance = None
+        self.last_seen_bearing = None
+
 
     @staticmethod
     def _band_label(distance, commit, direct):
@@ -75,7 +77,14 @@ class SeekAndCollect(Behavior):
     # -------------------------
 
     def _search(self, perception, motion_backend):
-        self.target = get_closest_target(perception, self.kind)
+        now = time.time()
+        self.target = get_closest_target(
+            perception,
+            self.kind,
+            now=now,
+            max_age_s=self.VISION_LOSS_TIMEOUT,
+        )
+
         self.bearing_consumed = False
 
         if self.target is None:
@@ -96,6 +105,7 @@ class SeekAndCollect(Behavior):
         self.last_action = None
         self.cached_distance = None
         self.cached_bearing = None
+        self.bearing_consumed = False
 
         return self.status
 
@@ -121,11 +131,14 @@ class SeekAndCollect(Behavior):
             print("[APPROACH][SETTLE] complete — plan consumed")
 
             self.settle_until = None
-            self.cached_distance = None
             self.last_action = None
             self.bearing_consumed = False
 
-            # reassessment allowed after this point
+            if not self.final_commit:
+                self.cached_distance = None
+
+
+        # reassessment allowed after this point
 
         # =================================================
         # SECTION 1 — ACTIVE PRIMITIVE (NO REASSESSMENT)
@@ -137,7 +150,8 @@ class SeekAndCollect(Behavior):
             )
 
             if prim_status == PrimitiveStatus.SUCCEEDED:
-                print(f"[APPROACH][{self.last_action.upper()}] complete")
+                action = self.last_action or "UNKNOWN"
+                print(f"[APPROACH][{action.upper()}] complete")
 
                 self.active_primitive = None
 
@@ -166,7 +180,7 @@ class SeekAndCollect(Behavior):
                     )
                     return self.status
 
-                                # ---------- LOOP CLOSE: DRIVE ----------
+                # ---------- LOOP CLOSE: DRIVE ----------
                 if self.last_action == "drive":
 
                     # --- POSITION SUMMARY (POST-DRIVE) ---
@@ -239,7 +253,12 @@ class SeekAndCollect(Behavior):
         # SECTION 2 — REASSESS TARGET (ONLY THINKING POINT)
         # =================================================
 
-        target = get_closest_target(perception, self.kind)
+        target = get_closest_target(
+            perception,
+            self.kind,
+            now=now,
+            max_age_s=self.VISION_LOSS_TIMEOUT,
+        )
 
         # =================================================
         # (3) TARGET VISIBLE → USE BEARING DIRECTLY
@@ -250,6 +269,8 @@ class SeekAndCollect(Behavior):
 
             self.last_seen_time = now
             self.last_seen_distance = distance
+            self.last_seen_bearing = bearing
+
 
             band = self._band_label(
                 distance,
@@ -269,7 +290,43 @@ class SeekAndCollect(Behavior):
         # (4) TARGET NOT VISIBLE → CONSIDER BLIND FINAL
         # =================================================
         else:
-            # Only consider blind motion AFTER a drive + settle
+            # -------------------------------------------------
+            # VISION LOST CASE
+            # -------------------------------------------------
+
+            commit = self.config.final_commit_distance_mm
+            direct = self.config.final_approach_direct_range_mm
+
+            # If we've committed the height as HIGH, and we're in band B,
+            # don't WAIT forever — push a blind drive to COMMIT.
+            if (
+                    self.height_model.is_committed()
+                    and self.height_model.is_high()
+                    and self.last_seen_distance is not None
+                    and (commit < self.last_seen_distance <= commit + direct)
+            ):
+                blind_to_commit = self.last_seen_distance - commit
+                blind_to_commit = max(self.config.min_drive_mm, min(self.config.max_drive_mm, blind_to_commit))
+
+                print(
+                    "[APPROACH][BLIND] "
+                    f"vision=LOST high=YES band=B "
+                    f"last_seen={self.last_seen_distance:.0f}mm "
+                    f"drive_to_commit={blind_to_commit:.0f}mm"
+                )
+
+                # Blind rules (same style as your final blind):
+                # rotate 0°, then drive planned distance
+                self.cached_bearing = 0.0
+                self.cached_distance = blind_to_commit
+                self.last_action = "rotate"
+                self.bearing_consumed = True
+
+                self.active_primitive = Rotate(angle_deg=0.0)
+                self.active_primitive.start(motion_backend=motion_backend)
+                return self.status
+
+            # Only consider blind FINAL motion AFTER a drive + settle
             if (
                     self.last_seen_distance is not None
                     and self.cached_distance is not None
@@ -300,7 +357,7 @@ class SeekAndCollect(Behavior):
                     )
                     return self.status
 
-            # Blind not allowed → WAIT for vision
+            # Otherwise WAIT for vision
             print(
                 "[APPROACH][SENSE] "
                 "vision=LOST "
@@ -316,8 +373,8 @@ class SeekAndCollect(Behavior):
             self.approach_started = True
 
             # ---------- LATCH DEBUG (NAVIGATION-BASED, SAFE) ----------
-            acidic_t = get_closest_target(perception, "acidic")
-            basic_t = get_closest_target(perception, "basic")
+            acidic_t = get_closest_target(perception, "acidic", now=now, max_age_s=self.VISION_LOSS_TIMEOUT)
+            basic_t = get_closest_target(perception, "basic", now=now, max_age_s=self.VISION_LOSS_TIMEOUT)
 
             acidic_min = acidic_t["distance"] if acidic_t else None
             basic_min = basic_t["distance"] if basic_t else None

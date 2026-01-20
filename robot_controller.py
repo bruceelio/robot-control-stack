@@ -167,6 +167,8 @@ class Controller:
             now_s=time.time(),
         )
 
+        print(f"[LOC] arena={len(arena_obs)} pose_obs={'YES' if pose_obs else 'NO'}")
+
         if pose_obs is not None:
             self.localisation.accept(pose_obs)
         else:
