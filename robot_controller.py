@@ -1,8 +1,9 @@
 # robot_controller.py
 
+import time
 from level2.level2_canonical import Level2
 from perception import Perception, sense
-from navigation.localisation import Localisation
+from localisation import Localisation
 from state_machine import RobotState
 
 from behaviors.init_escape import InitEscape
@@ -18,7 +19,6 @@ from config.strategy import RUN_MODE, RunMode
 from calibration.resolve import resolve
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
-
 
 from calibration import CALIBRATION
 print("\n=== CALIBRATION CAMERA CHECK ===")
@@ -160,11 +160,15 @@ class Controller:
 
     def update(self):
         # Always sense first
-        pose, objects = sense(self.io, self.perception)
+        arena_obs, objects = sense(self.io, self.perception)
 
-        if pose is not None:
-            x, y, heading = pose
-            self.localisation.set_pose((x, y), heading)
+        pose_obs = self.localisation.estimate(
+            arena_observations=arena_obs,
+            now_s=time.time(),
+        )
+
+        if pose_obs is not None:
+            self.localisation.accept(pose_obs)
         else:
             self.localisation.invalidate()
 

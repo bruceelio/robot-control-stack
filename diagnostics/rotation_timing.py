@@ -1,10 +1,9 @@
 # diagnostics/rotation_timing.py
 
 import time
-import math
 
 from behaviors.init_escape import InitEscape
-from navigation.localisation import Localisation
+from localisation.localisation_temp import Localisation
 from primitives.motion import Rotate
 from primitives.base import PrimitiveStatus
 from motion_backends import create_motion_backend

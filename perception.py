@@ -1,11 +1,6 @@
 # perception.py
 import time
 import math
-from typing import Dict, List, Tuple
-
-from navigation.geometry import trilaterate_point
-from config import CONFIG
-from config.arena import marker_locations
 from calibration import CALIBRATION
 from hw_io.base import IOMap
 
@@ -40,9 +35,7 @@ def log(tag, msg):
 class Perception:
     def __init__(self, io: IOMap):
         self.io = io
-        self.arena_markers = marker_locations(CONFIG.arena_size)
         self.objects = {"acidic": {}, "basic": {}}
-        self.last_pose = None
 
 
 # ==================================================
@@ -105,10 +98,14 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
 
     arena_markers, acidic_markers, basic_markers = classify_markers(seen)
 
-    pose = estimate_pose(arena_markers, perception, cam_cal)
+    # Export arena-marker measurements for localisation providers
+    arena_observations = build_arena_observations(arena_markers, cam_cal)
+
+    # For now, keep object updates relative unless an external pose is provided elsewhere
+    pose = None
 
     update_objects("acidic", acidic_markers, pose, perception, now, cam_cal)
-    update_objects("basic",  basic_markers,  pose, perception, now, cam_cal)
+    update_objects("basic", basic_markers, pose, perception, now, cam_cal)
 
     prune_objects(perception, now)
 
@@ -119,7 +116,8 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
         f"pose={'OK' if pose else 'FAIL'}"
     )
 
-    return pose, perception.objects
+    # NEW return shape: (arena_observations, objects)
+    return arena_observations, perception.objects
 
 
 # ==================================================
@@ -142,6 +140,23 @@ def classify_markers(markers):
 # Camera-corrected measurement helpers
 # ==================================================
 
+def build_arena_observations(arena_markers, cam):
+    """
+    Convert raw arena marker detections into normalised observations suitable for localisation.
+
+    Returns list[dict] with keys:
+      id, distance_mm, bearing_deg, camera
+    """
+    obs = []
+    for m in arena_markers:
+        obs.append({
+            "id": int(m.id),
+            "distance_mm": corrected_distance(m, cam),
+            "bearing_deg": corrected_bearing_deg(m, cam),
+            "camera": PRIMARY_CAMERA,
+        })
+    return obs
+
 def corrected_distance(m, cam):
     return float(m.position.distance) * cam.optical.distance_scale
 
@@ -158,52 +173,6 @@ def corrected_bearing_deg(m, cam):
 
 
 # ==================================================
-# Pose estimation (arena markers)
-# ==================================================
-
-def estimate_pose(arena_markers, perception: Perception, cam):
-    if len(arena_markers) < 2:
-        return None
-
-    positions = []
-
-    for i in range(len(arena_markers)):
-        for j in range(i + 1, len(arena_markers)):
-            m1, m2 = arena_markers[i], arena_markers[j]
-
-            A = perception.arena_markers[m1.id]
-            B = perception.arena_markers[m2.id]
-
-            AC = corrected_distance(m1, cam)
-            BC = corrected_distance(m2, cam)
-
-            try:
-                C1, C2 = trilaterate_point(A, B, AC, BC)
-                for C in (C1, C2):
-                    if inside_arena(C):
-                        positions.append(C)
-            except ValueError:
-                continue
-
-    if not positions:
-        log("WARN", "Pose estimation failed")
-        return None
-
-    x = sum(p[0] for p in positions) / len(positions)
-    y = sum(p[1] for p in positions) / len(positions)
-
-    perception.last_pose = (x, y, 0.0)
-
-    log("POSE", f"x={x:.0f} y={y:.0f} using {len(arena_markers)} markers")
-    return perception.last_pose
-
-
-def inside_arena(pos):
-    half = CONFIG.arena_size / 2
-    return -half <= pos[0] <= half and -half <= pos[1] <= half
-
-
-# ==================================================
 # Object tracking
 # ==================================================
 
@@ -215,7 +184,8 @@ def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
         bearing_deg = corrected_bearing_deg(m, cam)
         bearing_rad = math.radians(bearing_deg)
 
-        if robot_pose is None:
+        # If we don't have a usable heading, keep targets in robot-relative coordinates
+        if robot_pose is None or len(robot_pose) < 3 or robot_pose[2] is None:
             memory[m.id] = {
                 "id": m.id,
                 "marker": m,
