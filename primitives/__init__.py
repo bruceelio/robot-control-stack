@@ -1,3 +1,3 @@
-# primitives/__init__legacy.py
+# primitives/__init__.py
 
 from .base import Primitive, PrimitiveStatus

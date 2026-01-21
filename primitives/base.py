@@ -1,4 +1,4 @@
-# primitives/__init__.py
+# primitives/base.py
 
 """
 Primitive base definitions.

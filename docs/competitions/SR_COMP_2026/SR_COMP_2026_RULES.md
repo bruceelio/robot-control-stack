@@ -1,5 +1,7 @@
 Prologue
 
+[Link: https://studentrobotics.org/docs/resources/2026/rulebook.html]
+
 It’s a disaster!
 
 Our entire chemical supply has been mixed up, and our research projects have ground to a halt. Your mission: Collect and catalogue the samples. But beware, these chemicals are strong – get acidic and basic samples too close together, and they'll react and neutralise each other. But act fast, there are competitors nearby.
