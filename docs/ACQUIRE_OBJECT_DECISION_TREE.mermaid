@@ -1,0 +1,88 @@
+flowchart TD
+
+%% =========================
+%% AcquireObject / SeekAndCollect decision tree (banded)
+%% Two-line nodes: Action<br/>Skill: X
+%% =========================
+
+start([Start<br/>Skill: AcquireObject])
+
+snap[Perception snapshot<br/>Skill: Perception]
+sel[Choose target<br/>Skill: SelectTarget]
+
+hasTarget{Target selected?<br/>Skill: SelectTarget}
+
+scan[Rotate/scan for targets<br/>Skill: SearchRotate]
+
+lock[Lock target id & kind<br/>Skill: SelectTarget]
+
+sense[Update target observation<br/>Skill: Perception]
+visible{Target visible?<br/>Skill: Perception}
+
+lostTimer{Lost longer than timeout?<br/>Skill: TimeManagement}
+
+reacq[Rotate steps to reacquire<br/>Skill: ReacquireTarget]
+reacqOK{Reacquired?<br/>Skill: ReacquireTarget}
+
+abandonQ{Abandon target?<br/>Skill: AbandonTarget}
+fallback[Fallback search mode<br/>Skill: FallbackSearch]
+
+band{Distance band?<br/>Skill: ApproachTarget}
+
+%% ---- Band C (far) ----
+alignC[Align to bearing<br/>Skill: AlignToTarget]
+planC[Plan drive: half-to-commit<br/>Skill: ApproachTarget]
+driveC[Drive planned distance<br/>Skill: ApproachTarget]
+settleC[Camera settle<br/>Skill: ApproachTarget]
+
+%% ---- Band B (commit approach) ----
+alignB[Align if needed<br/>Skill: AlignToTarget]
+planB[Plan drive: to-commit<br/>Skill: ApproachTarget]
+driveB[Drive planned distance<br/>Skill: ApproachTarget]
+settleB[Camera settle<br/>Skill: ApproachTarget]
+
+%% ---- Band A (final) ----
+alignA[Align for final<br/>Skill: AlignToTarget]
+finalDrive[Blind final drive<br/>Skill: ApproachTarget]
+grasp[Pickup sequence<br/>Skill: GraspObject]
+verify{Grip verified?<br/>Skill: VerifyGrip}
+
+postPickup[Back out + realign<br/>Skill: PostPickupRealign]
+
+success([Marker collected<br/>Skill: SeekAndCollect])
+
+retryQ{Retry step?<br/>Skill: RetryAction}
+recover[Mobility recovery<br/>Skill: RecoverMobility]
+
+fail([Acquire failed<br/>Skill: SeekAndCollect])
+
+%% =========================
+%% Edges
+%% =========================
+
+start --> snap --> sel --> hasTarget
+hasTarget -- "No" --> scan --> snap
+hasTarget -- "Yes" --> lock --> sense --> visible
+
+visible -- "Yes" --> band
+visible -- "No" --> lostTimer
+
+lostTimer -- "No" --> sense
+lostTimer -- "Yes" --> reacq --> reacqOK
+
+reacqOK -- "Yes" --> sense
+reacqOK -- "No" --> abandonQ
+
+abandonQ -- "Yes" --> fallback --> snap
+abandonQ -- "No" --> retryQ
+
+%% Distance bands
+band -- "C  Far" --> alignC --> planC --> driveC --> settleC --> sense
+band -- "B  Commit" --> alignB --> planB --> driveB --> settleB --> sense
+band -- "A  Final" --> alignA --> finalDrive --> grasp --> verify
+
+verify -- "Yes" --> postPickup --> success
+verify -- "No" --> retryQ
+
+retryQ -- "Yes" --> recover --> sense
+retryQ -- "No" --> fail

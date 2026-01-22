@@ -2,7 +2,7 @@
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
-from composites.drive_then_rotate import DriveThenRotate
+from skills.drive_then_rotate import DriveThenRotate
 
 
 class PostPickupRealign(Behavior):

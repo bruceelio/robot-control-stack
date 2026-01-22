@@ -11,7 +11,7 @@ Kept only for backward compatibility and reference.
 
 
 from legacy.motion import DRIVE_FOR, ROTATE_FOR
-from navigation.target_selection import get_closest_target
+from skills.select_target import get_closest_target
 
 
 # =========================

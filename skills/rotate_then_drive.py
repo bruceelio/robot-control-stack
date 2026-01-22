@@ -1,4 +1,4 @@
-# navigation/rotate_then_drive.py
+# skills/rotate_then_drive.py
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Rotate, Drive

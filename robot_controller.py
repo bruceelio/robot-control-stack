@@ -7,10 +7,11 @@ from localisation import Localisation
 from state_machine import RobotState
 
 from behaviors.init_escape import InitEscape
-from behaviors.seek_and_collect import SeekAndCollect
+from behaviors.acquire_object import AcquireObject
 from behaviors.post_pickup_realign import PostPickupRealign
 from behaviors.recover_localisation import RecoverLocalisation
-from behaviors.return_to_base import ReturnToBase
+from behaviors.deliver_object import DeliverObject
+
 from behaviors.post_dropoff_realign import PostDropoffRealign
 
 from motion_backends import create_motion_backend
@@ -202,7 +203,7 @@ class Controller:
         # -------------------------
         if self.state == RobotState.SEEK_AND_COLLECT:
             if self.behavior is None:
-                self.behavior = SeekAndCollect()
+                self.behavior = AcquireObject()
                 self.behavior.start(
                     config=CONFIG,
                     kind=CONFIG.default_target_kind,
@@ -287,26 +288,29 @@ class Controller:
             return
 
         # -------------------------
-        # RETURN TO BASE
+        # DELIVER OBJECT
         # -------------------------
         if self.state == RobotState.RETURN_TO_BASE:
             if self.behavior is None:
-                self.behavior = ReturnToBase()
+                self.behavior = DeliverObject()
                 self.behavior.start(
-                    localisation=self.localisation,
-                    motion_backend=self.motion_backend,
+                    config=CONFIG,
                 )
 
             status = self.behavior.update(
                 lvl2=self.lvl2,
-                localisation=self.localisation,
                 motion_backend=self.motion_backend,
             )
 
             if status.name == "SUCCEEDED":
-                print("ReturnToBase complete — post-dropoff realign")
+                print("DeliverObject complete — post-dropoff realign")
                 self.behavior = None
                 self.state = RobotState.POST_DROPOFF_REALIGN
+
+            elif status.name == "FAILED":
+                print("DeliverObject failed — resuming seek")
+                self.behavior = None
+                self.state = RobotState.SEEK_AND_COLLECT
 
             return
 

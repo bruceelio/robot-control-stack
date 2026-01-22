@@ -1,4 +1,4 @@
-# navigation/target_selection.py
+# skills/perception/select_target.py
 
 """
 Target selection utilities.
