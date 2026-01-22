@@ -6,7 +6,7 @@ from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 
 from skills.navigation.align_to_target import AlignToTarget
-from skills.navigation.approach_target import ApproachTarget  # now the control-loop approach skill
+from skills.navigation.approach_target import ApproachTarget
 from skills.perception.select_target import SelectTarget
 
 from skills.manipulation.grasp_object import GraspObject
@@ -153,10 +153,15 @@ class AcquireObject(Behavior):
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        # Hand off to approach skill
+        # hand off to approach skill
         self.phase = "APPROACHING"
-        self._approach_skill = ApproachTarget(config=self.config, kind=self.kind, height_model=self.height_model)
-        self._approach_skill.start(seed_target=self.target)
+        self._approach_skill = ApproachTarget(
+            config=self.config,
+            kind=self.kind,
+            height_model=self.height_model,
+        )
+        # seed_target so it can optionally do an initial align + initialise last_seen
+        self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
         return self.status
 
     # -------------------------
@@ -165,9 +170,12 @@ class AcquireObject(Behavior):
 
     def _approach(self, perception, motion_backend):
         if self._approach_skill is None:
-            # Defensive: recreate if somehow missing
-            self._approach_skill = ApproachTarget(config=self.config, kind=self.kind, height_model=self.height_model)
-            self._approach_skill.start(seed_target=self.target)
+            self._approach_skill = ApproachTarget(
+                config=self.config,
+                kind=self.kind,
+                height_model=self.height_model,
+            )
+            self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
 
         st = self._approach_skill.update(perception=perception, motion_backend=motion_backend)
 
@@ -175,31 +183,14 @@ class AcquireObject(Behavior):
             return self.status
 
         if st == PrimitiveStatus.FAILED:
-            # Preserve old behavior: reacquire failure kicks back to SELECT
-            if getattr(self._approach_skill, "reselect", False):
-                self.phase = "SELECT"
-                self.target = None
-
-                self._select_skill = SelectTarget(
-                    kind=self.kind,
-                    max_age_s=self.config.vision_loss_timeout_s,
-                    log_every_s=1.0,
-                    label="ACQUIRE_OBJECT][SELECT",
-                )
-                self._select_skill.start(seed_target=None)
-
-                self._align_skill = None
-                self._approach_skill = None
-                return self.status
-
             self.status = BehaviorStatus.FAILED
             return self.status
 
         # SUCCEEDED => ready to grab
-        self.phase = "GRABBING"
         self._grab_step = "GRASP"
         self._grasp_skill = None
         self._verify_skill = None
+        self.phase = "GRABBING"
         return self.status
 
     # -------------------------
@@ -246,3 +237,15 @@ class AcquireObject(Behavior):
             return self.status
 
         return self.status
+
+    def stop(self):
+        if self._select_skill is not None:
+            self._select_skill.stop()
+        if self._align_skill is not None:
+            self._align_skill.stop()
+        if self._approach_skill is not None:
+            self._approach_skill.stop()
+        if self._grasp_skill is not None:
+            self._grasp_skill.stop()
+        if self._verify_skill is not None:
+            self._verify_skill.stop()

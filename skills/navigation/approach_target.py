@@ -7,69 +7,24 @@ from primitives.motion import Drive, Rotate
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.perception.reacquire_target import ReacquireTarget
-from skills.perception.select_target_utils import get_closest_target
 
-
-class DriveStep(Primitive):
-    """
-    Skill: DriveStep
-    Responsibility:
-      - Execute a single forward (or backward) drive step
-      - No perception logic; just motion execution
-    Inputs:
-      - distance_mm
-    Outputs:
-      - SUCCEEDED when drive completes
-      - FAILED if drive fails
-    """
-
-    def __init__(self, *, distance_mm: float):
-        super().__init__()
-        self.distance_mm = float(distance_mm)
-        self._child = None
-
-    def start(self, *, motion_backend, **_):
-        self._child = Drive(distance_mm=self.distance_mm)
-        self._child.start(motion_backend=motion_backend)
-
-    def update(self, *, motion_backend, **_):
-        if self._child is None:
-            return PrimitiveStatus.FAILED
-
-        st = self._child.update(motion_backend=motion_backend)
-        if st == PrimitiveStatus.SUCCEEDED:
-            return PrimitiveStatus.SUCCEEDED
-        if st == PrimitiveStatus.FAILED:
-            return PrimitiveStatus.FAILED
-        return PrimitiveStatus.RUNNING
-
-    def stop(self):
-        if self._child is not None:
-            self._child.stop()
+# Your perception helper (from perception.py)
+from perception import get_visible_targets
 
 
 class ApproachTarget(Primitive):
     """
-    Skill: ApproachTarget (control-loop)
-    Responsibility:
-      - Run the full approach loop:
-          - reassess perception
-          - plan rotate/drive steps
-          - handle settle delay
-          - handle reacquire if vision lost
-          - commit-final approach and finish when ready to grab
+    Skill: ApproachTarget (FULL APPROACH LOOP)
 
-    Inputs:
-      - config
-      - kind
-      - height_model (shared object, for high/low commit)
-      - seed_target (optional, initial target dict)
+    Responsibilities:
+      - Repeatedly: sense -> plan -> rotate -> drive -> settle -> repeat
+      - Handles vision loss via ReacquireTarget
+      - Handles final commit and returns SUCCEEDED when positioned for grabbing
 
-    Outputs:
-      - RUNNING while approaching
-      - SUCCEEDED when final approach drive completes (ready to grab)
-      - FAILED on irrecoverable failure
-        - if `reselect` is True, caller should go back to SELECT
+    Inputs (constructor):
+      - config: config object (drive/rotate/vision params)
+      - kind: target kind string (e.g. "basic")
+      - height_model: HeightModel instance (shared with AcquireObject)
     """
 
     def __init__(self, *, config, kind: str, height_model):
@@ -78,7 +33,7 @@ class ApproachTarget(Primitive):
         self.kind = kind
         self.height_model = height_model
 
-        # Control-loop / execution state
+        # Approach loop state
         self.active_primitive = None
         self.last_action = None  # "rotate" / "drive" / "reacquire"
         self.settle_until = None
@@ -96,9 +51,7 @@ class ApproachTarget(Primitive):
         self.last_seen_distance = None
         self.last_seen_bearing = None
         self.last_drive_step = None
-
-        # Caller hint: if reacquire fails we request reselect instead of hard-fail
-        self.reselect = False
+        self.target_id = None
 
     @staticmethod
     def _band_label(distance, commit, direct):
@@ -109,11 +62,10 @@ class ApproachTarget(Primitive):
         else:
             return "C"
 
-    def start(self, *, seed_target=None, **_):
+    def start(self, *, motion_backend, seed_target=None, **_):
+        # IMPORTANT: do NOT rotate here. AcquireObject already did ALIGN.
         now = time.time()
-        self.reselect = False
 
-        # reset loop state
         self.active_primitive = None
         self.last_action = None
         self.settle_until = None
@@ -124,13 +76,19 @@ class ApproachTarget(Primitive):
         self.final_commit = False
         self.approach_started = False
         self.target_is_high = None
-
         self.bearing_consumed = False
 
-        self.last_seen_time = now if seed_target is not None else None
-        self.last_seen_distance = float(seed_target.get("distance")) if seed_target is not None else None
-        self.last_seen_bearing = float(seed_target.get("bearing")) if seed_target is not None else None
         self.last_drive_step = None
+        self.target_id = seed_target.get("id") if seed_target else None
+
+        if seed_target is not None:
+            self.last_seen_time = now
+            self.last_seen_distance = float(seed_target.get("distance", 0.0))
+            self.last_seen_bearing = float(seed_target.get("bearing", 0.0))
+        else:
+            self.last_seen_time = None
+            self.last_seen_distance = None
+            self.last_seen_bearing = None
 
     def update(self, *, perception, motion_backend, **_):
         now = time.time()
@@ -161,10 +119,13 @@ class ApproachTarget(Primitive):
         if self.active_primitive is not None:
             prim = self.active_primitive
 
-            # Dispatch by "needs perception?"
+            # Dispatch by “needs perception?”
             if isinstance(prim, ReacquireTarget):
                 prim_status = prim.update(motion_backend=motion_backend, perception=perception)
+            elif isinstance(prim, (Drive, Rotate)):
+                prim_status = prim.update(motion_backend=motion_backend)
             else:
+                # AlignToTarget (motion-only skill)
                 prim_status = prim.update(motion_backend=motion_backend)
 
             if prim_status == PrimitiveStatus.SUCCEEDED:
@@ -174,27 +135,30 @@ class ApproachTarget(Primitive):
                 self.active_primitive = None
 
                 if self.last_action == "reacquire":
+                    # Reacquire finished; loop around and re-sense/plan
                     self.last_action = None
                     return PrimitiveStatus.RUNNING
 
                 if self.last_action == "rotate":
+                    # after rotate, do the drive
                     if self.final_commit:
-                        drive_mm = self.cached_distance
+                        drive_mm = float(self.cached_distance or self.config.min_drive_mm)
                     else:
                         drive_mm = max(
                             self.config.min_drive_mm,
-                            min(self.config.max_drive_mm, self.cached_distance),
+                            min(self.config.max_drive_mm, float(self.cached_distance or self.config.min_drive_mm)),
                         )
 
                     print(f"[MOTION][DRIVE] distance={drive_mm:.0f}mm")
-
                     self.last_drive_step = drive_mm
-                    self.active_primitive = DriveStep(distance_mm=drive_mm)
+
+                    self.active_primitive = Drive(distance_mm=drive_mm)
                     self.last_action = "drive"
                     self.active_primitive.start(motion_backend=motion_backend)
                     return PrimitiveStatus.RUNNING
 
                 if self.last_action == "drive":
+                    # Post-drive bookkeeping
                     if self.last_seen_distance is not None and self.last_drive_step is not None:
                         after_est = max(0.0, self.last_seen_distance - self.last_drive_step)
                         band_after = self._band_label(
@@ -210,10 +174,12 @@ class ApproachTarget(Primitive):
                             f"band={band_after}"
                         )
 
+                    # Final drive completed -> SUCCESS (ready to grab)
                     if self.final_commit:
-                        print("[APPROACH][FINAL] drive complete — starting grasp+verify")
+                        print("[APPROACH][FINAL] drive complete — positioned for grab")
                         return PrimitiveStatus.SUCCEEDED
 
+                    # otherwise settle then re-sense
                     self.settle_until = now + self.config.camera_settle_time
                     self.bearing_consumed = False
                     self.cached_bearing = None
@@ -224,18 +190,15 @@ class ApproachTarget(Primitive):
             elif prim_status == PrimitiveStatus.FAILED:
                 print(f"[APPROACH][{(self.last_action or 'UNKNOWN').upper()}] FAILED")
 
+                # If we fail to reacquire, bubble up a failure
                 if self.last_action == "reacquire":
-                    # Old behavior: bounce to SELECT instead of hard failing
                     self.active_primitive = None
                     self.last_action = None
-
                     self.cached_distance = None
                     self.cached_bearing = None
                     self.bearing_consumed = False
                     self.last_drive_step = None
                     self.settle_until = None
-
-                    self.reselect = True
                     return PrimitiveStatus.FAILED
 
                 self.active_primitive = None
@@ -249,12 +212,32 @@ class ApproachTarget(Primitive):
         # =================================================
         # SECTION 2 — REASSESS TARGET (ONLY THINKING POINT)
         # =================================================
-        target = get_closest_target(
+
+        visible = get_visible_targets(
             perception,
             self.kind,
             now=now,
             max_age_s=self.config.vision_loss_timeout_s,
         )
+
+        # Prefer the originally-selected id if we have one (sticky)
+        target = None
+        if self.target_id is not None:
+            target = next((t for t in visible if t.get("id") == self.target_id), None)
+
+            # Don't immediately switch ids on loss; keep trying for a short window
+            if target is None:
+                GIVE_UP_S = 2.0
+                age = (now - self.last_seen_time) if self.last_seen_time is not None else 0.0
+                if age < GIVE_UP_S:
+                    visible = []  # force "lost" behavior -> reacquire
+                else:
+                    # allow switching after timeout
+                    self.target_id = None
+
+        # fallback: closest visible of this kind (only if not sticky anymore)
+        if target is None and self.target_id is None:
+            target = visible[0] if visible else None
 
         age = (now - self.last_seen_time) if self.last_seen_time is not None else 0.0
         print(
@@ -283,9 +266,11 @@ class ApproachTarget(Primitive):
                 f"dist={distance:.0f}mm bearing={bearing:.1f}°"
             )
         else:
+            # Vision lost — decide blind-continue (rare) or reacquire
             commit = self.config.final_commit_distance_mm
             direct = self.config.final_approach_direct_range_mm
 
+            # “high object” blind allowance
             if (
                 self.height_model.is_committed()
                 and self.height_model.is_high()
@@ -310,24 +295,10 @@ class ApproachTarget(Primitive):
                 self.last_action = "rotate"
                 self.bearing_consumed = True
 
+                # rotate(0) acts as "do drive next" using the same rotate->drive pipeline
                 self.active_primitive = Rotate(angle_deg=0.0)
                 self.active_primitive.start(motion_backend=motion_backend)
                 return PrimitiveStatus.RUNNING
-
-            if self.last_seen_distance is not None and self.last_drive_step is not None:
-                remaining = self.last_seen_distance - self.last_drive_step
-                if remaining <= self.config.final_commit_distance_mm:
-                    print(f"[APPROACH][BLIND] final allowed (remaining={remaining:.0f}mm)")
-
-                    self.cached_bearing = 0.0
-                    self.cached_distance = max(self.config.min_drive_mm, remaining)
-
-                    self.last_action = "rotate"
-                    self.bearing_consumed = True
-
-                    self.active_primitive = Rotate(angle_deg=0.0)
-                    self.active_primitive.start(motion_backend=motion_backend)
-                    return PrimitiveStatus.RUNNING
 
             elapsed = now - (self.last_seen_time or now)
             print(f"[APPROACH][SENSE] vision=LOST intent=REACQUIRE t={elapsed:.2f}s")
@@ -342,6 +313,10 @@ class ApproachTarget(Primitive):
             self.active_primitive.start(motion_backend=motion_backend)
             return PrimitiveStatus.RUNNING
 
+        # =================================================
+        # SECTION 3 — PLAN (we have a target)
+        # =================================================
+
         tid = target.get("id", "REL")
 
         if not self.approach_started:
@@ -350,7 +325,7 @@ class ApproachTarget(Primitive):
 
         print(
             f"[APPROACH][TARGET] kind={self.kind} id={tid} "
-            f"dist={target['distance']:.0f}mm bearing={target['bearing']:.1f}°"
+            f"dist={float(target['distance']):.0f}mm bearing={float(target['bearing']):.1f}°"
         )
 
         distance = float(target["distance"])
@@ -358,6 +333,7 @@ class ApproachTarget(Primitive):
         self.last_seen_time = now
         self.last_seen_distance = distance
 
+        # Height model update/commit (ported)
         if distance <= self.config.marker_height_max_distance_mm and not self.height_model.is_committed():
             pitch = target["marker"].orientation.pitch
             self.height_model.update(pitch_deg=pitch)
@@ -371,6 +347,7 @@ class ApproachTarget(Primitive):
                     f"(pitch={pitch:.3f})"
                 )
 
+        # Final commit trigger
         if (
             not self.final_commit
             and distance <= self.config.final_commit_distance_mm
@@ -396,9 +373,7 @@ class ApproachTarget(Primitive):
             self.active_primitive.start(motion_backend=motion_backend)
             return PrimitiveStatus.RUNNING
 
-        if self.last_action is None and self.active_primitive is None:
-            self.last_drive_step = None
-
+        # If bearing already good, skip rotate -> drive
         if self.bearing_consumed:
             return PrimitiveStatus.RUNNING
 
@@ -424,11 +399,12 @@ class ApproachTarget(Primitive):
             print(f"[MOTION][DRIVE] distance={drive_mm:.0f}mm (no-rotate path)")
 
             self.last_drive_step = drive_mm
-            self.active_primitive = DriveStep(distance_mm=drive_mm)
+            self.active_primitive = Drive(distance_mm=drive_mm)
             self.last_action = "drive"
             self.active_primitive.start(motion_backend=motion_backend)
             return PrimitiveStatus.RUNNING
 
+        # Otherwise rotate then drive
         self.cached_bearing = bearing
         angle = max(-self.config.max_rotate_deg, min(self.config.max_rotate_deg, self.cached_bearing))
 
@@ -436,7 +412,6 @@ class ApproachTarget(Primitive):
 
         commit = self.config.final_commit_distance_mm
         direct = self.config.final_approach_direct_range_mm
-
         print(f"[APPROACH][RANGES] commit={commit}mm direct={direct}mm")
 
         if distance > commit + direct:
@@ -473,3 +448,4 @@ class ApproachTarget(Primitive):
     def stop(self):
         if self.active_primitive is not None:
             self.active_primitive.stop()
+        self.active_primitive = None

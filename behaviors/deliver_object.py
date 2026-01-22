@@ -3,7 +3,7 @@
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.manipulation import Release, LiftDown, LiftUp
-from skills.navigation.approach_target import ApproachTarget
+from primitives.motion import Drive
 
 
 class DeliverObject(Behavior):
@@ -41,7 +41,7 @@ class DeliverObject(Behavior):
                 self.active_primitive.start(lvl2=lvl2)
 
             elif self.step == "REVERSE":
-                self.active_primitive = ApproachTarget(distance_mm=-250.0)
+                self.active_primitive = Drive(distance_mm=-250.0)
                 self.active_primitive.start(motion_backend=motion_backend)
 
             elif self.step == "LIFT_UP":
@@ -52,8 +52,8 @@ class DeliverObject(Behavior):
                 self.status = BehaviorStatus.SUCCEEDED
                 return self.status
 
-        # ---- FIX: ApproachTarget.update requires motion_backend ----
-        if isinstance(self.active_primitive, ApproachTarget):
+        # Dispatch: motion primitives need motion_backend
+        if isinstance(self.active_primitive, Drive):
             st = self.active_primitive.update(motion_backend=motion_backend)
         else:
             st = self.active_primitive.update()
