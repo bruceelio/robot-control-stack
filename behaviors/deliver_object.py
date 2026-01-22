@@ -1,5 +1,7 @@
 # behaviors/deliver_object.py
 
+from __future__ import annotations
+
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.manipulation import Release, LiftDown, LiftUp
@@ -11,6 +13,10 @@ class DeliverObject(Behavior):
     Partitioned version of the delivery half:
       (positioning handled elsewhere for now)
       -> LIFT_DOWN -> RELEASE -> REVERSE -> LIFT_UP -> SUCCEEDED
+
+    NOTE:
+      This behavior does not own "preferred/delivered list" policy.
+      It only reports which marker id should be considered delivered upon success.
     """
 
     def __init__(self):
@@ -19,12 +25,24 @@ class DeliverObject(Behavior):
         self.step = None
         self.config = None
 
-    def start(self, *, config, **_):
+        # Marker id that should be marked delivered once this behavior SUCCEEDS
+        self.delivered_target_id = None
+
+    @property
+    def delivered_id(self):
+        return self.delivered_target_id
+
+    def start(self, *, config, delivered_target_id=None, **_):
         print("[DELIVER_OBJECT] start")
         self.config = config
         self.active_primitive = None
         self.step = "LIFT_DOWN"
         self.status = BehaviorStatus.RUNNING
+
+        self.delivered_target_id = delivered_target_id
+        if self.delivered_target_id is not None:
+            print(f"[DELIVER_OBJECT] will mark delivered id={self.delivered_target_id}")
+
         return self.status
 
     def update(self, *, lvl2, motion_backend, **_):
@@ -41,6 +59,7 @@ class DeliverObject(Behavior):
                 self.active_primitive.start(lvl2=lvl2)
 
             elif self.step == "REVERSE":
+                # TODO: make this distance configurable if you want (config.final_dropoff_reverse_mm etc.)
                 self.active_primitive = Drive(distance_mm=-250.0)
                 self.active_primitive.start(motion_backend=motion_backend)
 
@@ -49,7 +68,10 @@ class DeliverObject(Behavior):
                 self.active_primitive.start(lvl2=lvl2)
 
             else:
+                # DONE
                 self.status = BehaviorStatus.SUCCEEDED
+                if self.delivered_target_id is not None:
+                    print(f"[DELIVER_OBJECT] delivered id={self.delivered_target_id}")
                 return self.status
 
         # Dispatch: motion primitives need motion_backend

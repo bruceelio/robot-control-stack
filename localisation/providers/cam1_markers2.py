@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from config import CONFIG
 from config.arena import marker_locations
-from navigation.geometry import trilaterate_point
+from navigation.pose_trilaterate import trilaterate_point
 
 from localisation.pose_types import PoseObservation
 from localisation.providers.base import PoseProvider

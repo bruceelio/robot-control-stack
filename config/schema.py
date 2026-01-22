@@ -74,6 +74,12 @@ class Config:
     final_approach_direct_range_mm: float
     final_approach_backup_mm: float
 
+    final_commit_distance_high_mm: float
+    final_approach_direct_range_high_mm: float
+    final_approach_max_degree_high: float
+    visible_max_age_s: float
+    final_approach_marker_push: float
+
     def dump(self):
         print("\n=== RESOLVED CONFIGURATION ===")
         pprint(asdict(self), sort_dicts=False)
@@ -141,6 +147,12 @@ RESOLVE_MAP = {
     "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
     "final_approach_direct_range_mm": ("profile", "FINAL_APPROACH_DIRECT_RANGE_MM"),
     "final_approach_backup_mm": ("profile", "FINAL_APPROACH_BACKUP_MM"),
+
+    "final_commit_distance_high_mm": ("profile", "FINAL_COMMIT_DISTANCE_HIGH_MM"),
+    "final_approach_direct_range_high_mm": ("profile", "FINAL_APPROACH_DIRECT_RANGE_HIGH_MM"),
+    "final_approach_max_degree_high": ("profile", "FINAL_APPROACH_MAX_DEGREE_HIGH"),
+    "visible_max_age_s": ("profile", "VISIBLE_MAX_AGE_S"),
+    "final_approach_marker_push": ("profile", "FINAL_APPROACH_MARKER_PUSH"),
 }
 
 # --------------------------------------------------

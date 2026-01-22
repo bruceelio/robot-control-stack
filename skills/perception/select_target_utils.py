@@ -12,6 +12,7 @@ Target selection utilities (pure logic).
 from __future__ import annotations
 
 import time
+from typing import Iterable
 
 
 def _get_last_seen_s(t: dict) -> float | None:
@@ -30,9 +31,20 @@ def _get_last_seen_s(t: dict) -> float | None:
     return None
 
 
-def get_closest_target(perception, kind, *, now=None, max_age_s: float = 0.35):
+def _get_id(t: dict) -> int | None:
+    v = t.get("id")
+    if v is None:
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_closest_target(perception, kind, *, now=None, max_age_s: float = 0.35, exclude_ids=None):
     """
     Return the closest currently-fresh target of the given kind, or None.
+
     Expects perception.objects[kind] to be a dict of targets keyed by id.
     """
     if now is None:
@@ -45,11 +57,20 @@ def get_closest_target(perception, kind, *, now=None, max_age_s: float = 0.35):
     if not memory:
         return None
 
+    # Normalise excluded ids to ints (robust to str/int inputs)
+    exclude = set(int(x) for x in exclude_ids) if exclude_ids is not None else set()
+
     fresh = []
     for t in memory.values():
+        # Exclusion by id
+        tid = _get_id(t)
+        if tid is not None and tid in exclude:
+            continue
+
         ts = _get_last_seen_s(t)
         if ts is None:
             continue
+
         if (now - ts) <= float(max_age_s):
             fresh.append(t)
 
@@ -57,3 +78,4 @@ def get_closest_target(perception, kind, *, now=None, max_age_s: float = 0.35):
         return None
 
     return min(fresh, key=lambda t: t["distance"])
+

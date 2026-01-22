@@ -1,4 +1,4 @@
-# navigation/geometry.py
+# navigation/pose_trilaterate.py
 
 """
 Pure geometric utilities for navigation and localisation.

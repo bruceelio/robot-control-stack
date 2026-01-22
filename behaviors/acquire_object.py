@@ -31,6 +31,9 @@ class AcquireObject(Behavior):
         self.phase = "SELECT"
         self.target = None
 
+        # The concrete marker id we actually approached (if any)
+        self.acquired_target_id = None
+
         # SELECT skill
         self._select_skill = None
 
@@ -46,14 +49,28 @@ class AcquireObject(Behavior):
         self._verify_skill = None
 
         self.height_model = HeightModel()
+        self.exclude_ids: set[int] = set()
 
-    def start(self, *, config, kind=None, seed_target=None, **_):
+    @property
+    def acquired_id(self):
+        """
+        Read this after SUCCEEDED (or after APPROACHING completes) so the caller can:
+          - remove from preferred list,
+          - add to delivered/blacklist,
+          - etc.
+        """
+        return self.acquired_target_id
+
+    def start(self, *, config, kind=None, seed_target=None, exclude_ids=None, **_):
         print("[ACQUIRE_OBJECT] start")
         self.config = config
         self.kind = kind or config.default_target_kind
 
         self.phase = "SELECT"
         self.target = None
+        self.acquired_target_id = None
+        self.exclude_ids = set(exclude_ids) if exclude_ids else set()
+
 
         # Reset height model for each acquire run (matches previous behavior)
         self.height_model = HeightModel()
@@ -65,7 +82,7 @@ class AcquireObject(Behavior):
             log_every_s=1.0,
             label="ACQUIRE_OBJECT][SELECT",
         )
-        self._select_skill.start(seed_target=seed_target)
+        self._select_skill.start(seed_target=seed_target, exclude_ids=self.exclude_ids)
 
         self._align_skill = None
         self._approach_skill = None
@@ -108,7 +125,8 @@ class AcquireObject(Behavior):
                 log_every_s=1.0,
                 label="ACQUIRE_OBJECT][SELECT",
             )
-            self._select_skill.start(seed_target=None)
+            self._select_skill.start(seed_target=None, exclude_ids=self.exclude_ids)
+
 
         st = self._select_skill.update(perception=perception)
 
@@ -160,7 +178,7 @@ class AcquireObject(Behavior):
             kind=self.kind,
             height_model=self.height_model,
         )
-        # seed_target so it can optionally do an initial align + initialise last_seen
+        # seed_target so it can initialise last_seen
         self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
         return self.status
 
@@ -187,6 +205,20 @@ class AcquireObject(Behavior):
             return self.status
 
         # SUCCEEDED => ready to grab
+        # Capture the *actual* marker id we approached (used later for blacklist/preferred removal)
+        tid = None
+        if self._approach_skill is not None:
+            tid = self._approach_skill.approached_target_id
+        if tid is None and self.target is not None:
+            try:
+                tid = int(self.target.get("id"))
+            except Exception:
+                tid = None
+
+        self.acquired_target_id = tid
+        if tid is not None:
+            print(f"[ACQUIRE_OBJECT] approached_target_id={tid}")
+
         self._grab_step = "GRASP"
         self._grasp_skill = None
         self._verify_skill = None

@@ -57,5 +57,70 @@ FINAL_COMMIT_DISTANCE_MM = 650
 FINAL_APPROACH_DIRECT_RANGE_MM = 500
 FINAL_APPROACH_BACKUP_MM = 200
 
+# New
+FINAL_COMMIT_DISTANCE_HIGH_MM = 1500
+FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 1100
+FINAL_APPROACH_MAX_DEGREE_HIGH = 10
+VISIBLE_MAX_AGE_S = 0.35
+FINAL_APPROACH_MARKER_PUSH = 50
+
+# --------------------------------------------------
+# Wall / ultrasonic geometry (navigation)
+# --------------------------------------------------
+
+# Which wall-angle backend to use
+#   "one_ultrasonic_scan"
+#   "two_ultrasonics"
+WALL_ANGLE_BACKEND = "one_ultrasonic_scan"
+
+
+# ---- Two-ultrasonic configuration ----
+# Keys must exist in io.ultrasonics()
+WALL_TWO_ULTRASONIC_KEYS = ("left", "right")
+
+# Physical separation between the two ultrasonic sensors (mm)
+WALL_TWO_ULTRASONIC_BASELINE_MM = 160.0
+
+
+# ---- One-ultrasonic scan configuration ----
+# Key must exist in io.ultrasonics()
+WALL_ONE_ULTRASONIC_KEY = "front"
+
+# Relative scan angles (robot frame, degrees)
+WALL_SCAN_ANGLE_1_DEG = -20.0
+WALL_SCAN_ANGLE_2_DEG = 20.0
+
+# Number of samples taken at each scan angle (per side)
+WALL_SCAN_SAMPLES_PER_ANGLE = 3
+
+# Time to wait after rotation before sampling (sensor + motion settle)
+WALL_SCAN_SETTLE_TIME_S = 0.10
+
+
+# ---- Ultrasonic sanity limits ----
+WALL_ULTRASONIC_MIN_MM = 50.0
+WALL_ULTRASONIC_MAX_MM = 2500.0
+
+
+# ---- Wall angle filtering / stability ----
+# Require N consecutive valid angle estimates before we "trust" it.
+WALL_ANGLE_STABLE_SAMPLES = 2
+
+# If we haven’t refreshed an estimate in this long, treat it stale.
+WALL_ANGLE_MAX_AGE_S = 0.25
+
+
+# ---- Parallel-to-wall control ----
+# How close (in degrees) we need to be to parallel before success
+WALL_PARALLEL_TOLERANCE_DEG = 3.0
+
+# Start parallel-to-wall action when abs(error) exceeds this
+WALL_PARALLEL_TRIGGER_DEG = 10.0    # typically same as FINAL_APPROACH_MAX_DEGREE_HIGH
+
+# Safety caps on how much we rotate while trying to parallel
+WALL_PARALLEL_MAX_ROTATE_DEG = 15.0
+WALL_PARALLEL_STEP_DEG = 5.0
+WALL_PARALLEL_TIMEOUT_S = 2.0
+
 
 

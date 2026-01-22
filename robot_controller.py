@@ -115,6 +115,13 @@ class Controller:
         )
 
         # -------------------------
+        # Strategy memory
+        # -------------------------
+        self.delivered_ids: set[int] = set()
+        self.last_collected_id: int | None = None
+
+
+        # -------------------------
         # State & behavior
         # -------------------------
         self.state = RobotState.INIT_ESCAPE
@@ -199,7 +206,7 @@ class Controller:
             return
 
         # -------------------------
-        # SEEK & COLLECT
+        # ACQUIRE OBJECT
         # -------------------------
         if self.state == RobotState.SEEK_AND_COLLECT:
             if self.behavior is None:
@@ -207,6 +214,7 @@ class Controller:
                 self.behavior.start(
                     config=CONFIG,
                     kind=CONFIG.default_target_kind,
+                    exclude_ids=self.delivered_ids,  # NEW: don’t re-select delivered markers
                 )
 
             status = self.behavior.update(
@@ -217,12 +225,15 @@ class Controller:
             )
 
             if status.name == "SUCCEEDED":
-                print("Marker collected")
+                collected_id = getattr(self.behavior, "acquired_id", None)
+                self.last_collected_id = collected_id
+                print(f"Marker collected (id={collected_id})")
+
                 self.behavior = None
                 self.state = RobotState.POST_PICKUP_REALIGN
 
             elif status.name == "FAILED":
-                print("SeekAndCollect failed — retrying")
+                print("AcquireObject failed — retrying")
                 self.behavior = None
                 self.state = RobotState.SEEK_AND_COLLECT
 
@@ -295,6 +306,7 @@ class Controller:
                 self.behavior = DeliverObject()
                 self.behavior.start(
                     config=CONFIG,
+                    delivered_target_id=self.last_collected_id,  # NEW
                 )
 
             status = self.behavior.update(
@@ -303,9 +315,18 @@ class Controller:
             )
 
             if status.name == "SUCCEEDED":
+                delivered_id = getattr(self.behavior, "delivered_target_id", None)
+                if delivered_id is None:
+                    delivered_id = self.last_collected_id
+
+                if delivered_id is not None:
+                    self.delivered_ids.add(delivered_id)
+                    print(f"Delivered id={delivered_id} (delivered_ids={sorted(self.delivered_ids)})")
+
                 print("DeliverObject complete — post-dropoff realign")
                 self.behavior = None
                 self.state = RobotState.POST_DROPOFF_REALIGN
+
 
             elif status.name == "FAILED":
                 print("DeliverObject failed — resuming seek")
