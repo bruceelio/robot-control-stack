@@ -1,78 +1,81 @@
 # skills/manipulation/grasp_object.py
 
-from skills.base import Skill, SkillStatus
 from primitives.base import PrimitiveStatus
 from primitives.manipulation import Grab, LiftUp, LiftDown
 
 
-class GraspObject(Skill):
+class GraspObject:
     """
-    Execute the standard SR1 pickup sequence:
-      LiftUp -> LiftDown -> Vacuum/Grab -> LiftUp
+    Composite primitive which performs the *exact same* grab sequence that
+    previously lived inside AcquireObject:
 
-    This is intentionally "blind" / non-vision: it assumes the robot is already
-    positioned at the final commit point by ApproachTarget.
+        LiftUp -> LiftDown -> Grab -> LiftUp
+
+    This is intentionally non-vision: it assumes ApproachTarget has already
+    positioned the robot at the commit point.
+
+    IMPORTANT:
+    - Implements the Primitive interface (returns PrimitiveStatus), because
+      AcquireObject._grab() is a primitive-runner.
     """
 
     def __init__(self):
-        super().__init__()
         self.io = None
         self.config = None
+        self.lvl2 = None
 
         self._actions = None
         self._index = 0
-        self._active_primitive = None
+        self._active = None
 
-    def start(self, *, io, config, **_):
-        self.io = io
+    def start(self, *, lvl2, config, io=None, **_):
+        self.lvl2 = lvl2
         self.config = config
+        self.io = io
 
+        # Keep historical sequence exactly:
         self._actions = [LiftUp(), LiftDown(), Grab(), LiftUp()]
         self._index = 0
-        self._active_primitive = None
+        self._active = None
 
         print("[GRASP_OBJECT] start")
-        return SkillStatus.RUNNING
+        return PrimitiveStatus.RUNNING
 
-    def _start_next(self):
-        if self._index >= len(self._actions):
+    def _start_next(self) -> bool:
+        if self._actions is None or self._index >= len(self._actions):
             return False
 
-        prim = self._actions[self._index]
-        self._active_primitive = prim
-
-        name = prim.__class__.__name__
+        self._active = self._actions[self._index]
+        name = self._active.__class__.__name__
         print(f"[GRASP_OBJECT] starting {name}")
 
-        # All these primitives in your existing code accept io/config.
-        prim.start(io=self.io, config=self.config)
+        # Match AcquireObject's convention for starting primitives
+        self._active.start(lvl2=self.lvl2, config=self.config, io=self.io)
         return True
 
-    def update(self, **_):
+    def update(self, *, lvl2=None, **_):
         if self._actions is None:
-            return SkillStatus.FAILED
+            return PrimitiveStatus.FAILED
 
-        # Start the next primitive if needed
-        if self._active_primitive is None:
+        # Kick off next primitive as needed
+        if self._active is None:
             if not self._start_next():
                 print("[GRASP_OBJECT] complete")
-                return SkillStatus.SUCCEEDED
+                return PrimitiveStatus.SUCCEEDED
 
-        status = self._active_primitive.update()
+        status = self._active.update()
 
         if status == PrimitiveStatus.RUNNING:
-            return SkillStatus.RUNNING
+            return PrimitiveStatus.RUNNING
 
-        # Primitive finished (success or fail)
-        prim_name = self._active_primitive.__class__.__name__
+        name = self._active.__class__.__name__
 
         if status == PrimitiveStatus.FAILED:
-            print(f"[GRASP_OBJECT] {prim_name} FAILED")
-            self._active_primitive = None
-            return SkillStatus.FAILED
+            print(f"[GRASP_OBJECT] {name} FAILED")
+            return PrimitiveStatus.FAILED
 
         # SUCCEEDED
-        print(f"[GRASP_OBJECT] {prim_name} complete")
-        self._active_primitive = None
+        print(f"[GRASP_OBJECT] {name} complete")
+        self._active = None
         self._index += 1
-        return SkillStatus.RUNNING
+        return PrimitiveStatus.RUNNING

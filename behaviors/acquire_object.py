@@ -4,22 +4,29 @@ import time
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
-from primitives.manipulation import Grab, LiftUp, LiftDown
 from primitives.motion import Rotate
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
 from skills.perception.reacquire_target import ReacquireTarget
-from skills.perception.select_target import get_closest_target
+
+# NEW: control-loop selection skill
+from skills.perception.select_target import SelectTarget
+
+# Pure helper stays usable inside APPROACH (for now)
+from skills.perception.select_target_utils import get_closest_target
+
+from skills.manipulation.grasp_object import GraspObject
+from skills.manipulation.verify_grip import VerifyGrip
+
 from navigation.height_model import HeightModel
 
 
 class AcquireObject(Behavior):
     """
-    Partitioned version of SeekAndCollect (pickup half only):
-      SELECT -> ALIGN -> APPROACHING -> GRABBING -> SUCCEEDED (object held)
+    Pickup-only pipeline:
 
-    No delegation to SeekAndCollect.
+      SELECT -> ALIGN -> APPROACHING -> GRABBING -> SUCCEEDED
     """
 
     def __init__(self):
@@ -31,13 +38,15 @@ class AcquireObject(Behavior):
         self.phase = "SELECT"
         self.target = None
 
-        # SELECT/ALIGN helpers
-        self._align_skill = None
-        self._last_no_target_log = None
+        # SELECT skill (new)
+        self._select_skill = None
 
-        # Approach state (migrated from SeekAndCollect)
+        # ALIGN skill
+        self._align_skill = None
+
+        # Approach state (still here for now; will migrate later)
         self.active_primitive = None
-        self.last_action = None  # "rotate" or "drive" or "reacquire"
+        self.last_action = None  # "rotate" / "drive" / "reacquire"
         self.settle_until = None
 
         self.cached_distance = None
@@ -56,9 +65,10 @@ class AcquireObject(Behavior):
         self.last_seen_bearing = None
         self.last_drive_step = None
 
-        # Grab sequence (migrated from SeekAndCollect)
-        self.final_actions = None
-        self.final_index = 0
+        # Grab state (via skills)
+        self._grab_step = None          # "GRASP" -> "VERIFY"
+        self._grasp_skill = None
+        self._verify_skill = None
 
     @staticmethod
     def _band_label(distance, commit, direct):
@@ -74,15 +84,23 @@ class AcquireObject(Behavior):
         self.config = config
         self.kind = kind or config.default_target_kind
 
-        # Allow optional seed handoff (same semantics as SeekAndCollect)
-        self.target = seed_target
-        self._seed_used = seed_target is None
+        self.phase = "SELECT"
+        self.target = None
 
-        self.phase = "SELECT" if seed_target is None else "ALIGN"
+        # --- SELECT skill boot ---
+        self._select_skill = SelectTarget(
+            kind=self.kind,
+            max_age_s=self.config.vision_loss_timeout_s,
+            log_every_s=1.0,
+            # This will print logs like: [ACQUIRE_OBJECT][SELECT] ...
+            label="ACQUIRE_OBJECT][SELECT",
+        )
+        self._select_skill.start(seed_target=seed_target)
 
+        # reset align
         self._align_skill = None
-        self._last_no_target_log = None
 
+        # reset approach state
         self.active_primitive = None
         self.last_action = None
         self.settle_until = None
@@ -104,8 +122,10 @@ class AcquireObject(Behavior):
         self.last_seen_bearing = seed_target.get("bearing") if seed_target is not None else None
         self.last_drive_step = None
 
-        self.final_actions = None
-        self.final_index = 0
+        # reset grab state
+        self._grab_step = None
+        self._grasp_skill = None
+        self._verify_skill = None
 
         self.status = BehaviorStatus.RUNNING
         return self.status
@@ -129,38 +149,36 @@ class AcquireObject(Behavior):
         return self.status
 
     # -------------------------
-    # Phase: SELECT
+    # Phase: SELECT (via SelectTarget skill)
     # -------------------------
 
     def _select(self, perception):
-        now = time.time()
-
-        # Use seed target first (handover correctness)
-        if self.target is not None and not self._seed_used:
-            self._seed_used = True
-            print(
-                f"[ACQUIRE_OBJECT][SELECT] seeded target "
-                f"id={self.target.get('id', 'REL')} "
-                f"dist={self.target['distance']:.0f} "
-                f"bearing={self.target['bearing']:.1f}"
+        if self._select_skill is None:
+            # Defensive (shouldn't happen, but keeps runtime resilient)
+            self._select_skill = SelectTarget(
+                kind=self.kind,
+                max_age_s=self.config.vision_loss_timeout_s,
+                log_every_s=1.0,
+                label="ACQUIRE_OBJECT][SELECT",
             )
-            self.phase = "ALIGN"
-            self._align_skill = None
+            self._select_skill.start(seed_target=None)
+
+        st = self._select_skill.update(perception=perception)
+
+        if st == PrimitiveStatus.RUNNING:
             return self.status
 
-        self.target = get_closest_target(
-            perception,
-            self.kind,
-            now=now,
-            max_age_s=self.config.vision_loss_timeout_s,
-        )
+        if st == PrimitiveStatus.FAILED:
+            # Treat as "no target yet" for now
+            return self.status
 
+        # SUCCEEDED
+        self.target = self._select_skill.selected_target
         if self.target is None:
-            if self._last_no_target_log is None or now - self._last_no_target_log > 1.0:
-                print("[ACQUIRE_OBJECT] no target visible — waiting")
-                self._last_no_target_log = now
             return self.status
 
+        # Optional: keep your old "target found" line (in addition to skill logs)
+        # If you don't want duplicate logs, delete this print.
         print(
             f"[ACQUIRE_OBJECT][SELECT] target found "
             f"id={self.target.get('id', 'REL')} "
@@ -197,7 +215,7 @@ class AcquireObject(Behavior):
         # hand off to approach loop
         self.phase = "APPROACHING"
 
-        # Initialise approach state (same as SeekAndCollect handoff)
+        # Initialise approach state
         self.active_primitive = None
         self.last_action = None
         self.settle_until = None
@@ -214,7 +232,7 @@ class AcquireObject(Behavior):
         return self.status
 
     # -------------------------
-    # Phase: APPROACHING (ported from SeekAndCollect)
+    # Phase: APPROACHING (unchanged for now)
     # -------------------------
 
     def _approach(self, perception, motion_backend):
@@ -244,8 +262,6 @@ class AcquireObject(Behavior):
         # SECTION 1 — ACTIVE PRIMITIVE (NO REASSESSMENT)
         # =================================================
         if self.active_primitive is not None:
-            # Some primitives need perception (ApproachTarget/ReacquireTarget),
-            # some need only motion_backend (Rotate/AlignToTarget), and some need nothing.
             prim = self.active_primitive
 
             if isinstance(prim, (ApproachTarget, ReacquireTarget)):
@@ -261,12 +277,10 @@ class AcquireObject(Behavior):
 
                 self.active_primitive = None
 
-                # If we just completed a reacquire attempt, return to reassessment on next tick
                 if self.last_action == "reacquire":
                     self.last_action = None
                     return self.status
 
-                # ---------- LOOP CLOSE: ROTATE → DRIVE ----------
                 if self.last_action == "rotate":
                     if self.final_commit:
                         drive_mm = self.cached_distance
@@ -284,7 +298,6 @@ class AcquireObject(Behavior):
                     self.active_primitive.start(motion_backend=motion_backend)
                     return self.status
 
-                # ---------- LOOP CLOSE: DRIVE ----------
                 if self.last_action == "drive":
                     if self.last_seen_distance is not None and self.last_drive_step is not None:
                         after_est = max(0.0, self.last_seen_distance - self.last_drive_step)
@@ -301,9 +314,8 @@ class AcquireObject(Behavior):
                             f"band={band_after}"
                         )
 
-                    # FINAL COMMIT: drive ends → GRAB
                     if self.final_commit:
-                        print("[APPROACH][FINAL] drive complete — executing blind pickup sequence")
+                        print("[APPROACH][FINAL] drive complete — starting grasp+verify")
 
                         self.active_primitive = None
                         self.last_action = None
@@ -311,16 +323,14 @@ class AcquireObject(Behavior):
                         self.cached_bearing = None
                         self.settle_until = None
 
-                        self.final_actions = [LiftUp(), LiftDown(), Grab(), LiftUp()]
-                        self.final_index = 0
+                        self._grab_step = "GRASP"
+                        self._grasp_skill = None
+                        self._verify_skill = None
 
                         self.phase = "GRABBING"
                         return self.status
 
-                    # NORMAL DRIVE: settle + reassess
                     self.settle_until = now + self.config.camera_settle_time
-
-                    # allow corrective steering after a drive
                     self.bearing_consumed = False
                     self.cached_bearing = None
 
@@ -330,7 +340,6 @@ class AcquireObject(Behavior):
             elif prim_status == PrimitiveStatus.FAILED:
                 print(f"[APPROACH][{(self.last_action or 'UNKNOWN').upper()}] FAILED")
 
-                # If reacquire fails, fall back to SELECT (partition-aligned: reacquire failed -> pick again)
                 if self.last_action == "reacquire":
                     self.active_primitive = None
                     self.last_action = None
@@ -342,10 +351,8 @@ class AcquireObject(Behavior):
                     self.settle_until = None
 
                     self.phase = "SELECT"
-                    self.status = BehaviorStatus.RUNNING
                     return self.status
 
-                # otherwise fail acquire
                 self.active_primitive = None
                 self.last_action = None
                 self.cached_distance = None
@@ -372,7 +379,6 @@ class AcquireObject(Behavior):
             f"last_seen_age(before_update)={age:.2f}s"
         )
 
-        # (3) TARGET VISIBLE
         if target is not None:
             distance = float(target["distance"])
             bearing = float(target["bearing"])
@@ -393,11 +399,9 @@ class AcquireObject(Behavior):
                 f"dist={distance:.0f}mm bearing={bearing:.1f}°"
             )
         else:
-            # (4) TARGET NOT VISIBLE
             commit = self.config.final_commit_distance_mm
             direct = self.config.final_approach_direct_range_mm
 
-            # HIGH + band B blind-to-commit rule
             if (
                 self.height_model.is_committed()
                 and self.height_model.is_high()
@@ -426,7 +430,6 @@ class AcquireObject(Behavior):
                 self.active_primitive.start(motion_backend=motion_backend)
                 return self.status
 
-            # Blind FINAL motion rule (after a drive)
             if self.last_seen_distance is not None and self.last_drive_step is not None:
                 remaining = self.last_seen_distance - self.last_drive_step
                 if remaining <= self.config.final_commit_distance_mm:
@@ -455,7 +458,6 @@ class AcquireObject(Behavior):
             self.active_primitive.start(motion_backend=motion_backend)
             return self.status
 
-        # ---------- target guard / debug ----------
         tid = target.get("id", "REL")
 
         if not self.approach_started:
@@ -472,7 +474,6 @@ class AcquireObject(Behavior):
         self.last_seen_time = now
         self.last_seen_distance = distance
 
-        # ---------- HEIGHT INFERENCE ----------
         if distance <= self.config.marker_height_max_distance_mm and not self.height_model.is_committed():
             pitch = target["marker"].orientation.pitch
             self.height_model.update(pitch_deg=pitch)
@@ -486,7 +487,6 @@ class AcquireObject(Behavior):
                     f"(pitch={pitch:.3f})"
                 )
 
-        # ---------- FINAL COMMIT DECISION ----------
         if (
             not self.final_commit
             and distance <= self.config.final_commit_distance_mm
@@ -512,16 +512,12 @@ class AcquireObject(Behavior):
             self.active_primitive.start(motion_backend=motion_backend)
             return self.status
 
-        # =================================================
-        # SECTION 3 — PLAN ATOMIC ROTATE → DRIVE
-        # =================================================
         if self.last_action is None and self.active_primitive is None:
             self.last_drive_step = None
 
         if self.bearing_consumed:
             return self.status
 
-        # tiny-angle deadband: skip rotate, still drive
         if abs(bearing) < self.config.min_rotate_deg:
             print("[APPROACH] bearing within tolerance — skipping rotate, planning drive")
 
@@ -559,7 +555,6 @@ class AcquireObject(Behavior):
 
         print(f"[APPROACH][RANGES] commit={commit}mm direct={direct}mm")
 
-        # B/C distance planning
         if distance > commit + direct:
             remaining_to_commit = distance - commit
             step = remaining_to_commit / 2
@@ -592,41 +587,46 @@ class AcquireObject(Behavior):
         return self.status
 
     # -------------------------
-    # Phase: GRABBING (ported from SeekAndCollect)
+    # Phase: GRABBING (via GraspObject + VerifyGrip)
     # -------------------------
 
     def _grab(self, lvl2):
-        if self.final_actions is None:
-            print("[GRAB] ERROR: no final action plan")
-            self.status = BehaviorStatus.FAILED
-            return self.status
+        if self._grab_step is None:
+            self._grab_step = "GRASP"
 
-        if self.active_primitive is None:
-            if self.final_index >= len(self.final_actions):
-                print("[GRAB] pickup sequence complete")
-                self.final_actions = None
-                self.status = BehaviorStatus.SUCCEEDED
+        if self._grab_step == "GRASP":
+            if self._grasp_skill is None:
+                self._grasp_skill = GraspObject()
+                print("[GRAB] starting GraspObject")
+                self._grasp_skill.start(lvl2=lvl2, config=self.config)
+
+            st = self._grasp_skill.update(lvl2=lvl2)
+            if st == PrimitiveStatus.RUNNING:
+                return self.status
+            if st == PrimitiveStatus.FAILED:
+                print("[GRAB] GraspObject FAILED")
+                self.status = BehaviorStatus.FAILED
                 return self.status
 
-            prim = self.final_actions[self.final_index]
-            self.final_index += 1
-            self.active_primitive = prim
+            print("[GRAB] GraspObject complete")
+            self._grab_step = "VERIFY"
 
-            print(f"[GRAB] starting {prim.__class__.__name__}")
-            prim.start(lvl2=lvl2)
-            return self.status
+        if self._grab_step == "VERIFY":
+            if self._verify_skill is None:
+                self._verify_skill = VerifyGrip()
+                print("[GRAB] starting VerifyGrip")
+                self._verify_skill.start(lvl2=lvl2, config=self.config)
 
-        prim_status = self.active_primitive.update()
+            st = self._verify_skill.update(lvl2=lvl2)
+            if st == PrimitiveStatus.RUNNING:
+                return self.status
+            if st == PrimitiveStatus.FAILED:
+                print("[GRAB] VerifyGrip FAILED")
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
-        if prim_status == PrimitiveStatus.SUCCEEDED:
-            print(f"[GRAB] {self.active_primitive.__class__.__name__} complete")
-            self.active_primitive = None
-            return self.status
-
-        if prim_status == PrimitiveStatus.FAILED:
-            print(f"[GRAB] {self.active_primitive.__class__.__name__} FAILED")
-            self.active_primitive = None
-            self.status = BehaviorStatus.FAILED
+            print("[GRAB] VerifyGrip complete")
+            self.status = BehaviorStatus.SUCCEEDED
             return self.status
 
         return self.status

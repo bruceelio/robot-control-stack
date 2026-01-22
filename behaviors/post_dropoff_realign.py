@@ -2,7 +2,7 @@
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
-from skills.drive_then_rotate import DriveThenRotate
+from primitives.composites.drive_then_rotate import DriveThenRotate
 
 
 class PostDropoffRealign(Behavior):

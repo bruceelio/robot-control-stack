@@ -25,7 +25,7 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 
 # InitEscape
 INIT_ESCAPE_DRIVE_MM = 200
-INIT_ESCAPE_ROTATE_DEG = 25.0
+INIT_ESCAPE_ROTATE_DEG = 30.0
 
 # PostPickupRealign
 POST_PICKUP_REVERSE_MM = 120
