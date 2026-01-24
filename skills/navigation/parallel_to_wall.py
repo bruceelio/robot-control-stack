@@ -9,7 +9,7 @@ from typing import Any, Optional
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Rotate
 
-from navigation.wall_angle_estimator import WallAngleEstimator
+from navigation.wall_angle import WallAngleEstimator
 
 
 def _cfg(config: Any, name: str, fallback: Any) -> Any:
@@ -47,7 +47,7 @@ class ParallelToWall(Primitive):
         self._rotate: Optional[Rotate] = None
         self._deadline: Optional[float] = None
 
-    def start(self, *, **_):
+    def start(self, **_):
         self._est.start()
         self._rotate = None
         self._deadline = time.time() + self.t.timeout_s
@@ -89,6 +89,7 @@ class ParallelToWall(Primitive):
         err = float(angle)
         print(f"[PARALLEL] wall_parallel_error={err:.2f}°")
 
+        # If we're already close enough, done.
         if abs(err) <= self.t.tolerance_deg:
             print("[PARALLEL] within tolerance")
             return PrimitiveStatus.SUCCEEDED

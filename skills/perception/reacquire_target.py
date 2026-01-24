@@ -4,7 +4,8 @@ import time
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Rotate
-from skills.perception.select_target import get_closest_target
+from skills.perception.select_target_utils import get_closest_target
+
 
 
 class ReacquireTarget(Primitive):
@@ -24,9 +25,19 @@ class ReacquireTarget(Primitive):
       - RUNNING while sweeping
     """
 
-    def __init__(self, *, kind: str, step_deg: float, max_sweep_deg: float, max_age_s: float):
+    def __init__(
+            self,
+            *,
+            kind: str,
+            step_deg: float,
+            max_sweep_deg: float,
+            max_age_s: float,
+            target_id: int | None = None,
+    ):
+
         super().__init__()
         self.kind = kind
+        self.target_id = int(target_id) if target_id is not None else None
         self.step_deg = float(step_deg)
         self.max_sweep_deg = float(max_sweep_deg)
         self.max_age_s = float(max_age_s)
@@ -46,14 +57,34 @@ class ReacquireTarget(Primitive):
     def update(self, *, motion_backend, perception=None, **_):
         now = time.time()
 
-        # 1) check if target already visible
+        # 1) Check if target already visible
         if perception is not None:
-            t = get_closest_target(perception, self.kind, now=now, max_age_s=self.max_age_s)
-            if t is not None:
-                self.found_target = t
-                return PrimitiveStatus.SUCCEEDED
+            if self.target_id is not None:
+                # Locked reacquire: look ONLY for that id
+                from perception import get_visible_targets
+                visible = get_visible_targets(
+                    perception,
+                    self.kind,
+                    now=now,
+                    max_age_s=self.max_age_s,
+                )
+                for t in visible:
+                    if int(t.get("id", -1)) == self.target_id:
+                        self.found_target = t
+                        return PrimitiveStatus.SUCCEEDED
+            else:
+                # Unlocked reacquire: any valid target
+                t = get_closest_target(
+                    perception,
+                    self.kind,
+                    now=now,
+                    max_age_s=self.max_age_s,
+                )
+                if t is not None:
+                    self.found_target = t
+                    return PrimitiveStatus.SUCCEEDED
 
-        # 2) if we are currently rotating, continue that child
+        # 2) Continue active rotation
         if self._child is not None:
             st = self._child.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.SUCCEEDED:
@@ -64,17 +95,13 @@ class ReacquireTarget(Primitive):
                 return PrimitiveStatus.FAILED
             return PrimitiveStatus.RUNNING
 
-        # 3) choose next rotate step
+        # 3) Rotation budget exhausted
         if self._swept >= self.max_sweep_deg:
             return PrimitiveStatus.FAILED
 
+        # 4) Start next rotate step
         angle = self._dir * self.step_deg
-        self._swept += abs(self.step_deg)
-
-        # reverse direction at end of a sweep half if you want; keeping simple:
-        if self._swept >= self.max_sweep_deg:
-            # next call will fail unless target found
-            pass
+        self._swept += abs(angle)
 
         self._child = Rotate(angle_deg=angle)
         self._child.start(motion_backend=motion_backend)

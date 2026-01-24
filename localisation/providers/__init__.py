@@ -10,7 +10,7 @@ Exports:
 """
 
 from .base import PoseProvider
-from .cam1_markers2 import Cam1Markers2Provider
+from .pose_cam1_markers2 import Cam1Markers2Provider
 
 
 def default_providers():

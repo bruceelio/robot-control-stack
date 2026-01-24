@@ -9,6 +9,8 @@ from pprint import pprint
 
 VALID_ENVIRONMENTS = ("simulation", "real")
 VALID_SURFACES = ("simulation", "tile", "wood", "carpet")
+VALID_WALL_ANGLE_BACKENDS = ("one_ultrasonic_scan", "two_ultrasonics")
+
 
 # --------------------------------------------------
 # Resolved config object (single source of truth)
@@ -73,12 +75,51 @@ class Config:
     final_commit_distance_mm: float
     final_approach_direct_range_mm: float
     final_approach_backup_mm: float
+    height_decision_deadline_mm: float
+    marker_height_max_distance_mm: float
+
 
     final_commit_distance_high_mm: float
     final_approach_direct_range_high_mm: float
     final_approach_max_degree_high: float
     visible_max_age_s: float
     final_approach_marker_push: float
+
+    # --------------------------------------------------
+    # Wall / ultrasonic geometry (navigation)
+    # --------------------------------------------------
+
+    # Which wall-angle backend to use:
+    #   "one_ultrasonic_scan"
+    #   "two_ultrasonics"
+    wall_angle_backend: str
+
+    # ---- Two-ultrasonic configuration ----
+    wall_two_ultrasonic_keys: tuple[str, str]
+    wall_two_ultrasonic_baseline_mm: float
+
+    # ---- One-ultrasonic scan configuration ----
+    wall_one_ultrasonic_key: str
+    wall_scan_angle_1_deg: float
+    wall_scan_angle_2_deg: float
+    wall_scan_samples_per_angle: int
+    wall_scan_settle_time_s: float
+
+    # ---- Ultrasonic sanity limits ----
+    wall_ultrasonic_min_mm: float
+    wall_ultrasonic_max_mm: float
+
+    # ---- Wall angle filtering / stability ----
+    wall_angle_stable_samples: int
+    wall_angle_max_age_s: float
+
+    # ---- Parallel-to-wall control ----
+    wall_parallel_tolerance_deg: float
+    wall_parallel_trigger_deg: float
+    wall_parallel_max_rotate_deg: float
+    wall_parallel_step_deg: float
+    wall_parallel_timeout_s: float
+
 
     def dump(self):
         print("\n=== RESOLVED CONFIGURATION ===")
@@ -129,8 +170,9 @@ RESOLVE_MAP = {
     "post_pickup_rotate_deg": ("profile", "POST_PICKUP_ROTATE_DEG"),
 
     # PostDropoffRealign
-    "post_dropoff_reverse_mm": ("profile", "POST_PICKUP_REVERSE_MM"),
-    "post_dropoff_rotate_deg": ("profile", "POST_PICKUP_ROTATE_DEG"),
+    "post_dropoff_reverse_mm": ("profile", "POST_DROPOFF_REVERSE_MM"),
+    "post_dropoff_rotate_deg": ("profile", "POST_DROPOFF_ROTATE_DEG"),
+
 
     # RecoverLocalisation
     "recover_step_deg": ("profile", "RECOVER_STEP_DEG"),
@@ -142,6 +184,9 @@ RESOLVE_MAP = {
     "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
     "marker_pitch_high_deg": ("profile", "MARKER_PITCH_HIGH_DEG"),
     "marker_pitch_low_deg": ("profile", "MARKER_PITCH_LOW_DEG"),
+    "height_decision_deadline_mm": ("profile", "HEIGHT_DECISION_DEADLINE_MM"),
+    "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
+
     "vision_loss_timeout_s": ("profile", "VISION_LOSS_TIMEOUT_S"),
 
     "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
@@ -153,6 +198,37 @@ RESOLVE_MAP = {
     "final_approach_max_degree_high": ("profile", "FINAL_APPROACH_MAX_DEGREE_HIGH"),
     "visible_max_age_s": ("profile", "VISIBLE_MAX_AGE_S"),
     "final_approach_marker_push": ("profile", "FINAL_APPROACH_MARKER_PUSH"),
+
+    # --------------------------------------------------
+    # Wall / ultrasonic geometry (navigation)
+    # --------------------------------------------------
+    "wall_angle_backend": ("profile", "WALL_ANGLE_BACKEND"),
+
+    # Two ultrasonics
+    "wall_two_ultrasonic_keys": ("profile", "WALL_TWO_ULTRASONIC_KEYS"),
+    "wall_two_ultrasonic_baseline_mm": ("profile", "WALL_TWO_ULTRASONIC_BASELINE_MM"),
+
+    # One ultrasonic scan
+    "wall_one_ultrasonic_key": ("profile", "WALL_ONE_ULTRASONIC_KEY"),
+    "wall_scan_angle_1_deg": ("profile", "WALL_SCAN_ANGLE_1_DEG"),
+    "wall_scan_angle_2_deg": ("profile", "WALL_SCAN_ANGLE_2_DEG"),
+    "wall_scan_samples_per_angle": ("profile", "WALL_SCAN_SAMPLES_PER_ANGLE"),
+    "wall_scan_settle_time_s": ("profile", "WALL_SCAN_SETTLE_TIME_S"),
+
+    # Ultrasonic sanity
+    "wall_ultrasonic_min_mm": ("profile", "WALL_ULTRASONIC_MIN_MM"),
+    "wall_ultrasonic_max_mm": ("profile", "WALL_ULTRASONIC_MAX_MM"),
+
+    # Filtering / stability
+    "wall_angle_stable_samples": ("profile", "WALL_ANGLE_STABLE_SAMPLES"),
+    "wall_angle_max_age_s": ("profile", "WALL_ANGLE_MAX_AGE_S"),
+
+    # Parallel-to-wall control
+    "wall_parallel_tolerance_deg": ("profile", "WALL_PARALLEL_TOLERANCE_DEG"),
+    "wall_parallel_trigger_deg": ("profile", "WALL_PARALLEL_TRIGGER_DEG"),
+    "wall_parallel_max_rotate_deg": ("profile", "WALL_PARALLEL_MAX_ROTATE_DEG"),
+    "wall_parallel_step_deg": ("profile", "WALL_PARALLEL_STEP_DEG"),
+    "wall_parallel_timeout_s": ("profile", "WALL_PARALLEL_TIMEOUT_S"),
 }
 
 # --------------------------------------------------
@@ -166,6 +242,10 @@ def resolve(*, arena, profile, strategy) -> Config:
 
     if profile.SURFACE not in VALID_SURFACES:
         raise ValueError(f"Invalid SURFACE: {profile.SURFACE}")
+
+    if profile.WALL_ANGLE_BACKEND not in VALID_WALL_ANGLE_BACKENDS:
+        raise ValueError(f"Invalid WALL_ANGLE_BACKEND: {profile.WALL_ANGLE_BACKEND}")
+
 
     # --- derived calibration ---
     rotate_factor = (

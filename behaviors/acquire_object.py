@@ -13,6 +13,7 @@ from skills.manipulation.grasp_object import GraspObject
 from skills.manipulation.verify_grip import VerifyGrip
 
 from navigation.height_model import HeightModel
+from skills.navigation.search_rotate import SearchRotate
 
 
 class AcquireObject(Behavior):
@@ -30,6 +31,8 @@ class AcquireObject(Behavior):
 
         self.phase = "SELECT"
         self.target = None
+
+        self._search_rotate_skill = None
 
         # The concrete marker id we actually approached (if any)
         self.acquired_target_id = None
@@ -51,6 +54,9 @@ class AcquireObject(Behavior):
         self.height_model = HeightModel()
         self.exclude_ids: set[int] = set()
 
+        self.locked_target_id = None
+
+
     @property
     def acquired_id(self):
         """
@@ -65,6 +71,7 @@ class AcquireObject(Behavior):
         print("[ACQUIRE_OBJECT] start")
         self.config = config
         self.kind = kind or config.default_target_kind
+        self.locked_target_id = None
 
         self.phase = "SELECT"
         self.target = None
@@ -100,7 +107,7 @@ class AcquireObject(Behavior):
             return self.status
 
         if self.phase == "SELECT":
-            return self._select(perception)
+            return self._select(perception, motion_backend)
 
         if self.phase == "ALIGN":
             return self._align(motion_backend)
@@ -117,7 +124,8 @@ class AcquireObject(Behavior):
     # Phase: SELECT
     # -------------------------
 
-    def _select(self, perception):
+    def _select(self, perception, motion_backend):
+
         if self._select_skill is None:
             self._select_skill = SelectTarget(
                 kind=self.kind,
@@ -127,10 +135,33 @@ class AcquireObject(Behavior):
             )
             self._select_skill.start(seed_target=None, exclude_ids=self.exclude_ids)
 
-
         st = self._select_skill.update(perception=perception)
 
-        if st in (PrimitiveStatus.RUNNING, PrimitiveStatus.FAILED):
+        if st == PrimitiveStatus.RUNNING:
+            # No target yet → actively scan
+            if self._search_rotate_skill is None:
+                self._search_rotate_skill = SearchRotate(
+                    kinds=[self.kind],
+                    step_deg=15.0,
+                    max_deg=360.0,
+                    timeout_s=3.0,
+                    max_age_s=self.config.vision_loss_timeout_s,
+                    label="ACQUIRE_OBJECT][SEARCH",
+                )
+                self._search_rotate_skill.start(motion_backend=motion_backend)
+
+            sr = self._search_rotate_skill.update(
+                motion_backend=motion_backend,
+                perception=perception,
+            )
+
+            # If a scan finishes without finding anything, restart it
+            if sr == PrimitiveStatus.FAILED:
+                self._search_rotate_skill.start(motion_backend=motion_backend)
+
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
             return self.status
 
         # SUCCEEDED
@@ -138,12 +169,25 @@ class AcquireObject(Behavior):
         if self.target is None:
             return self.status
 
+        self.height_model.reset()
+
+        # --- LOCK ---
+        try:
+            self.locked_target_id = int(self.target.get("id"))
+        except Exception:
+            self.locked_target_id = None
+
+        print(f"[ACQUIRE_OBJECT][LOCK] locked_target_id={self.locked_target_id}")
+
+
         print(
             f"[ACQUIRE_OBJECT][SELECT] target found "
             f"id={self.target.get('id', 'REL')} "
             f"dist={self.target['distance']:.0f} "
             f"bearing={self.target['bearing']:.1f}"
         )
+
+        self._search_rotate_skill = None
 
         self.phase = "ALIGN"
         self._align_skill = None
@@ -177,6 +221,7 @@ class AcquireObject(Behavior):
             config=self.config,
             kind=self.kind,
             height_model=self.height_model,
+            locked_target_id=self.locked_target_id,
         )
         # seed_target so it can initialise last_seen
         self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
@@ -192,6 +237,7 @@ class AcquireObject(Behavior):
                 config=self.config,
                 kind=self.kind,
                 height_model=self.height_model,
+                locked_target_id=self.locked_target_id,
             )
             self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
 

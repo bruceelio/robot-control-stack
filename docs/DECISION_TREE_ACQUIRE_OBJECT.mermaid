@@ -1,88 +1,93 @@
 flowchart TD
 
-%% =========================
-%% AcquireObject / SeekAndCollect decision tree (banded)
-%% Two-line nodes: Action<br/>Skill: X
-%% =========================
+start([Start<br/>Behavior: AcquireObject])
 
-start([Start<br/>Skill: AcquireObject])
-
-snap[Perception snapshot<br/>Skill: Perception]
+snap[Perception snapshot<br/>Module: DetectObjects + TrackObject]
 sel[Choose target<br/>Skill: SelectTarget]
-
 hasTarget{Target selected?<br/>Skill: SelectTarget}
 
-scan[Rotate/scan for targets<br/>Skill: SearchRotate]
-
+scan[Rotate/scan for targets<br/>Skill: SearchRotate<br/>Cap: 180-360deg or 2-3s]
 lock[Lock target id & kind<br/>Skill: SelectTarget]
 
-sense[Update target observation<br/>Skill: Perception]
-visible{Target visible?<br/>Skill: Perception}
+sense[Update target observation<br/>Module: TrackObject]
+visible{Target visible?<br/>Module: TrackObject}
 
-lostTimer{Lost longer than timeout?<br/>Skill: TimeManagement}
+grace[Vision grace period<br/>Policy: VisionGracePeriod<br/>Grace: 0.2s]
+lostLong{Lost longer than grace?<br/>Policy: VisionGracePeriod}
 
-reacq[Rotate steps to reacquire<br/>Skill: ReacquireTarget]
+reacq[Reacquire sweep<br/>Skill: ReacquireTarget<br/>Cap: 90-120deg, step 10-15deg]
 reacqOK{Reacquired?<br/>Skill: ReacquireTarget}
 
-abandonQ{Abandon target?<br/>Skill: AbandonTarget}
-fallback[Fallback search mode<br/>Skill: FallbackSearch]
+microScan[Micro scan in place<br/>Skill: SearchRotate<br/>Cap: 180-360deg or 2-3s]
+microOK{Target found?<br/>Skill: SearchRotate}
+
+mobility[Mobility recovery<br/>Behavior: RecoverMobility<br/>Max: 2 attempts<br/>Each: backoff 150mm + SearchRotate]
+mobOK{Mobility restored AND target found?<br/>Behavior: RecoverMobility}
+
+relocalise[Recover localisation<br/>Behavior: RecoverLocalisation<br/>Max: 1 attempt<br/>Cap: 2-4s]
+relocOK{Pose restored?<br/>Behavior: RecoverLocalisation}
+
+explore[Explore/search region<br/>Behavior: ExploreArea<br/>Time-boxed]
+exploreOK{Target found?<br/>Behavior: ExploreArea}
+
+abandonQ{Abandon current target?<br/>Policy: AbandonTarget}
+fallback[Fallback search mode<br/>Skill/Policy: FallbackSearch]
 
 band{Distance band?<br/>Skill: ApproachTarget}
 
-%% ---- Band C (far) ----
 alignC[Align to bearing<br/>Skill: AlignToTarget]
-planC[Plan drive: half-to-commit<br/>Skill: ApproachTarget]
-driveC[Drive planned distance<br/>Skill: ApproachTarget]
+driveC[Drive step far band<br/>Skill: ApproachTarget]
 settleC[Camera settle<br/>Skill: ApproachTarget]
 
-%% ---- Band B (commit approach) ----
 alignB[Align if needed<br/>Skill: AlignToTarget]
-planB[Plan drive: to-commit<br/>Skill: ApproachTarget]
-driveB[Drive planned distance<br/>Skill: ApproachTarget]
+driveB[Drive step commit band<br/>Skill: ApproachTarget]
 settleB[Camera settle<br/>Skill: ApproachTarget]
 
-%% ---- Band A (final) ----
 alignA[Align for final<br/>Skill: AlignToTarget]
 finalDrive[Blind final drive<br/>Skill: ApproachTarget]
 grasp[Pickup sequence<br/>Skill: GraspObject]
 verify{Grip verified?<br/>Skill: VerifyGrip}
 
-postPickup[Back out + realign<br/>Skill: PostPickupRealign]
+postPickup[Back out + realign<br/>Behavior: PostPickupRealign]
+success([Object acquired<br/>Behavior: AcquireObject])
 
-success([Marker collected<br/>Skill: SeekAndCollect])
-
-retryQ{Retry step?<br/>Skill: RetryAction}
-recover[Mobility recovery<br/>Skill: RecoverMobility]
-
-fail([Acquire failed<br/>Skill: SeekAndCollect])
-
-%% =========================
-%% Edges
-%% =========================
+retryQ{Retry step?<br/>Policy: RetryAction}
+fail([Acquire failed<br/>Behavior: AcquireObject])
 
 start --> snap --> sel --> hasTarget
-hasTarget -- "No" --> scan --> snap
-hasTarget -- "Yes" --> lock --> sense --> visible
+hasTarget -- No --> scan --> snap
+hasTarget -- Yes --> lock --> sense --> visible
 
-visible -- "Yes" --> band
-visible -- "No" --> lostTimer
+visible -- Yes --> band
+visible -- No --> grace --> lostLong
 
-lostTimer -- "No" --> sense
-lostTimer -- "Yes" --> reacq --> reacqOK
+lostLong -- No --> sense
+lostLong -- Yes --> reacq --> reacqOK
 
-reacqOK -- "Yes" --> sense
-reacqOK -- "No" --> abandonQ
+reacqOK -- Yes --> sense
+reacqOK -- No --> microScan --> microOK
 
-abandonQ -- "Yes" --> fallback --> snap
-abandonQ -- "No" --> retryQ
+microOK -- Yes --> sense
+microOK -- No --> mobility --> mobOK
 
-%% Distance bands
-band -- "C  Far" --> alignC --> planC --> driveC --> settleC --> sense
-band -- "B  Commit" --> alignB --> planB --> driveB --> settleB --> sense
-band -- "A  Final" --> alignA --> finalDrive --> grasp --> verify
+mobOK -- Yes --> sense
+mobOK -- No --> relocalise --> relocOK
 
-verify -- "Yes" --> postPickup --> success
-verify -- "No" --> retryQ
+relocOK -- Yes --> sense
+relocOK -- No --> explore --> exploreOK
 
-retryQ -- "Yes" --> recover --> sense
-retryQ -- "No" --> fail
+exploreOK -- Yes --> snap
+exploreOK -- No --> abandonQ
+
+abandonQ -- Yes --> fallback --> snap
+abandonQ -- No --> retryQ
+
+band -- "C Far" --> alignC --> driveC --> settleC --> sense
+band -- "B Commit" --> alignB --> driveB --> settleB --> sense
+band -- "A Final" --> alignA --> finalDrive --> grasp --> verify
+
+verify -- Yes --> postPickup --> success
+verify -- No --> retryQ
+
+retryQ -- Yes --> sense
+retryQ -- No --> fail

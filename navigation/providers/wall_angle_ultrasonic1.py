@@ -1,4 +1,4 @@
-# navigation/wall_angle_one_ultrasonic.py
+# navigation/wall_angle_ultrasonic1.py
 
 """
 Wall angle estimation using one forward-facing ultrasonic + 2-angle scan.
@@ -20,7 +20,7 @@ Returns:
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
+from typing import Optional
 
 
 def wrap_deg_180(a: float) -> float:
@@ -49,9 +49,12 @@ def solve_wall_normal_from_two_scans(
     """
     Returns wall-normal angle n in degrees (robot frame) or None if singular.
     """
-    # y = 1/d = A cosθ + B sinθ
     t1 = math.radians(theta1_deg)
     t2 = math.radians(theta2_deg)
+
+    # Guard against divide by zero (shouldn't happen if caller filters correctly)
+    if d1_mm <= 0 or d2_mm <= 0:
+        return None
 
     y1 = 1.0 / float(d1_mm)
     y2 = 1.0 / float(d2_mm)
@@ -63,9 +66,6 @@ def solve_wall_normal_from_two_scans(
     if abs(det) < 1e-9:
         return None
 
-    # Solve:
-    # [c1 s1][A] = [y1]
-    # [c2 s2][B]   [y2]
     A = (y1 * s2 - s1 * y2) / det
     B = (c1 * y2 - y1 * c2) / det
 
@@ -92,8 +92,5 @@ def parallel_error_from_two_scans(
     if n_deg is None:
         return None
 
-    # wall direction is +90 from wall normal
     wall_dir = wrap_deg_180(n_deg + 90.0)
-
-    # robot heading is 0; error is "how far wall_dir is from heading"
     return wrap_deg_90(wall_dir)
