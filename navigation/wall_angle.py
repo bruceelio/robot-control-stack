@@ -60,361 +60,333 @@ def _norm_ultrasonic(v: Any) -> Optional[float]:
         f = float(v)
     except Exception:
         return None
-    if f <= 0.0:
+    if f <= 0:
         return None
     return f
 
 
-@dataclass(frozen=True)
-class WallAngleTunables:
-    wall_angle_backend: str
-
-    # two ultrasonic
-    wall_two_ultrasonic_keys: Tuple[str, str]
-    wall_two_ultrasonic_baseline_mm: float
-
-    # one ultrasonic scan
-    wall_one_ultrasonic_key: str
-    wall_scan_angle_1_deg: float
-    wall_scan_angle_2_deg: float
-    wall_scan_samples_per_angle: int
-    wall_scan_settle_time_s: float
-    wall_scan_sample_timeout_s: float
-
-    # NEW: if one angle yields no valid samples, retry that angle this many times
-    wall_scan_retries_per_angle: int
-
-    # sanity
-    wall_ultrasonic_min_mm: float
-    wall_ultrasonic_max_mm: float
-
-    # stability / staleness
-    wall_angle_stable_samples: int
-    wall_angle_max_age_s: float
+@dataclass
+class WallAngleEstimate:
+    ok: bool
+    angle_deg: Optional[float] = None
+    age_s: float = 999.0
+    d1_mm: Optional[float] = None
+    d2_mm: Optional[float] = None
+    reason: str = ""
 
 
 class WallAngleEstimator(Primitive):
     """
-    Stateful estimator returning "parallel error (deg)":
-      0 = robot parallel to wall
-      sign indicates direction to rotate to become parallel
+    Estimates the wall-parallel error angle (deg) using either:
+      - one ultrasonic scanned at two angles (config.wall_angle_backend == "one_ultrasonic_scan")
+      - two ultrasonics (config.wall_angle_backend == "two_ultrasonics")
 
-    Primitive-like:
-      - update() returns RUNNING while scanning / stabilising
-      - returns SUCCEEDED when an estimate is available (get via .angle_deg)
-      - returns FAILED if cannot produce (e.g. no IO, no readings, etc.)
+    For one_ultrasonic_scan:
+      rotates to angle_1 -> reads -> rotates to angle_2 -> reads -> computes error
+
+    Debug requirement:
+      prints each raw ultrasonic reading on its own line as it happens.
     """
 
-    def __init__(self, *, config: Any):
-        super().__init__()
+    def __init__(self, *, config: Any, label: str = "WALL_ANGLE"):
+        try:
+            super().__init__(label=label)
+        except TypeError:
+            super().__init__()
+            self.label = label
+
         self.config = config
-        self.t = self._load_tunables(config)
+        self.backend = str(_cfg(config, "wall_angle_backend", "one_ultrasonic_scan"))
 
-        self._angle_deg: Optional[float] = None
-        self._angle_time: Optional[float] = None
-        self._stable_count: int = 0
+        # --- Config compatibility ---
+        legacy = _cfg(config, "wall_scan_angle_deg", None)
+        if legacy is not None:
+            a1 = -float(legacy)
+            a2 = +float(legacy)
+        else:
+            a1 = float(_cfg(config, "wall_scan_angle_1_deg", -8.0))
+            a2 = float(_cfg(config, "wall_scan_angle_2_deg", +8.0))
 
-        # scan state (one ultrasonic)
-        self._phase: str = "IDLE"
-        self._scan_angles: List[float] = []
-        self._scan_idx: int = 0
-        self._settle_until: Optional[float] = None
+        self.scan_angles_primary: Tuple[float, float] = (a1, a2)
 
-        self._samples: List[float] = []
-        self._sample_deadline: Optional[float] = None
+        self.samples_per_angle = int(_cfg(config, "wall_scan_samples_per_angle", 3))
+        self.settle_time_s = float(_cfg(config, "wall_scan_settle_time_s", 0.1))
 
-        self._d1: Optional[float] = None
-        self._d2: Optional[float] = None
+        self.ultra_key_one = str(_cfg(config, "wall_one_ultrasonic_key", "front"))
+        self.ultra_keys_two = tuple(_cfg(config, "wall_two_ultrasonic_keys", ("left", "right")))
+        self.baseline_mm = float(_cfg(config, "wall_two_ultrasonic_baseline_mm", 160.0))
 
-        self._current_rel_deg: float = 0.0
-        self._return_pending: bool = False
+        self.min_mm = float(_cfg(config, "wall_ultrasonic_min_mm", 50.0))
+        self.max_mm = float(_cfg(config, "wall_ultrasonic_max_mm", 2500.0))
 
-        self._active_prim: Optional[Primitive] = None
-        self._printed_us_keys: bool = False
+        self.stable_samples = int(_cfg(config, "wall_angle_stable_samples", 2))
+        self.max_age_s = float(_cfg(config, "wall_angle_max_age_s", 0.25))
 
-        # NEW: retry tracking for one-ultrasonic scan
-        self._angle_retry_count: int = 0
+        # Optional guardrails to reduce “platform vs far wall” bad angles
+        self.max_pair_delta_mm = float(_cfg(config, "wall_scan_max_pair_delta_mm", 1200.0))
+        self.max_pair_ratio = float(_cfg(config, "wall_scan_max_pair_ratio", 2.2))
+
+        # internal state
+        self._io = None
+        self._phase = "IDLE"  # ROTATE_1, READ_1, ROTATE_2, READ_2, DONE, TWO_US
+        self._active: Optional[Primitive] = None
+        self._angle_target_deg: Optional[float] = None
+
+        self._samples_1: List[float] = []
+        self._samples_2: List[float] = []
+
+        self._last_estimate: WallAngleEstimate = WallAngleEstimate(ok=False, reason="not_started")
+        self._last_ok_s: Optional[float] = None
+        self._stable_ok_count = 0
+
+    # ---- Public API ----
 
     @property
-    def angle_deg(self) -> Optional[float]:
-        return self._angle_deg
-
-    def _load_tunables(self, config: Any) -> WallAngleTunables:
-        return WallAngleTunables(
-            wall_angle_backend=str(_cfg(config, "wall_angle_backend", "one_ultrasonic_scan")),
-
-            wall_two_ultrasonic_keys=tuple(_cfg(config, "wall_two_ultrasonic_keys", ("left", "right"))),
-            wall_two_ultrasonic_baseline_mm=float(_cfg(config, "wall_two_ultrasonic_baseline_mm", 160.0)),
-
-            wall_one_ultrasonic_key=str(_cfg(config, "wall_one_ultrasonic_key", "front")),
-            wall_scan_angle_1_deg=float(_cfg(config, "wall_scan_angle_1_deg", -8.0)),
-            wall_scan_angle_2_deg=float(_cfg(config, "wall_scan_angle_2_deg", 8.0)),
-            wall_scan_samples_per_angle=int(_cfg(config, "wall_scan_samples_per_angle", 3)),
-            wall_scan_settle_time_s=float(_cfg(config, "wall_scan_settle_time_s", 0.10)),
-            wall_scan_sample_timeout_s=float(_cfg(config, "wall_scan_sample_timeout_s", 0.35)),
-
-            wall_scan_retries_per_angle=int(_cfg(config, "wall_scan_retries_per_angle", 1)),
-
-            wall_ultrasonic_min_mm=float(_cfg(config, "wall_ultrasonic_min_mm", 50.0)),
-            wall_ultrasonic_max_mm=float(_cfg(config, "wall_ultrasonic_max_mm", 2500.0)),
-
-            wall_angle_stable_samples=int(_cfg(config, "wall_angle_stable_samples", 2)),
-            wall_angle_max_age_s=float(_cfg(config, "wall_angle_max_age_s", 0.25)),
+    def estimate(self) -> WallAngleEstimate:
+        if self._last_ok_s is None:
+            return WallAngleEstimate(ok=False, reason=self._last_estimate.reason)
+        age = time.time() - self._last_ok_s
+        e = self._last_estimate
+        return WallAngleEstimate(
+            ok=(e.ok and age <= self.max_age_s),
+            angle_deg=e.angle_deg,
+            age_s=age,
+            d1_mm=e.d1_mm,
+            d2_mm=e.d2_mm,
+            reason=e.reason if age <= self.max_age_s else "stale",
         )
 
-    def start(self, **_):
-        self._angle_deg = None
-        self._angle_time = None
-        self._stable_count = 0
-
+    def start(self, *, perception=None, motion_backend=None, io=None, **_):
+        self._io = io or _get_io_from_context(perception=perception, motion_backend=motion_backend)
         self._phase = "IDLE"
-        self._scan_angles = [self.t.wall_scan_angle_1_deg, self.t.wall_scan_angle_2_deg]
-        self._scan_idx = 0
-        self._settle_until = None
+        self._active = None
+        self._angle_target_deg = None
+        self._samples_1 = []
+        self._samples_2 = []
+        self._stable_ok_count = 0
 
-        self._samples = []
-        self._sample_deadline = None
-
-        self._d1 = None
-        self._d2 = None
-
-        self._current_rel_deg = 0.0
-        self._return_pending = False
-
-        self._active_prim = None
-        self._printed_us_keys = False
-
-        self._angle_retry_count = 0
+        if self.backend == "two_ultrasonics":
+            self._phase = "TWO_US"
+        else:
+            self._phase = "ROTATE_1"
 
         self.status = PrimitiveStatus.RUNNING
         return self.status
 
-    def _record_angle(self, angle: Optional[float], now: float) -> Optional[float]:
-        if angle is None:
-            self._stable_count = 0
+    def update(self, *, perception=None, motion_backend=None, io=None, **_):
+        if self.status != PrimitiveStatus.RUNNING:
+            return self.status
+
+        if self._io is None:
+            self._io = io or _get_io_from_context(perception=perception, motion_backend=motion_backend)
+
+        if self._io is None:
+            self._last_estimate = WallAngleEstimate(ok=False, reason="no_io")
+            return self.status
+
+        if self.backend == "two_ultrasonics":
+            return self._update_two_ultrasonics()
+
+        return self._update_one_ultrasonic(motion_backend=motion_backend)
+
+    def stop(self, *, motion_backend=None, **_):
+        if self._active is not None:
+            try:
+                self._active.stop(motion_backend=motion_backend)
+            except Exception:
+                try:
+                    self._active.stop()
+                except Exception:
+                    pass
+        self._active = None
+        self.status = PrimitiveStatus.FAILED
+
+    # ---- Internals ----
+
+    def _read_ultrasonic_once(self, *, key: str, angle_tag: str, sample_idx: int) -> Optional[float]:
+        """
+        Read a single sample and print it (even if invalid).
+
+        MODIFICATION:
+          - Prefer canonical IOMap: io.ultrasonics() -> dict
+          - Fallback to legacy: io.ultrasonic[key] if present
+        """
+        raw = None
+        try:
+            # Canonical IOMap path (works in sim + real with your IOMap)
+            u = self._io.ultrasonics()
+            raw = u.get(key)
+        except Exception:
+            # Legacy compatibility path (older code may expose .ultrasonic as a dict)
+            try:
+                raw = self._io.ultrasonic[key]
+            except Exception:
+                raw = None
+
+        d = _norm_ultrasonic(raw)
+
+        # Always print one line per reading, as requested.
+        if d is None:
+            print(f"[WALL_ANGLE][US] {angle_tag} sample={sample_idx} key={key} raw={raw!r} -> INVALID")
             return None
 
-        if self._angle_deg is None:
-            self._stable_count = 1
-        else:
-            self._stable_count += 1
-
-        self._angle_deg = float(angle)
-        self._angle_time = now
-
-        if self._stable_count >= max(1, self.t.wall_angle_stable_samples):
-            return self._angle_deg
-        return None
-
-    def _is_fresh(self, now: float) -> bool:
-        if self._angle_time is None:
-            return False
-        return (now - self._angle_time) <= self.t.wall_angle_max_age_s
-
-    def update(self, *, motion_backend=None, perception=None, **_) -> PrimitiveStatus:
-        now = time.time()
-
-        # Already have a fresh, stable estimate -> succeed
-        if (
-            self._angle_deg is not None
-            and self._is_fresh(now)
-            and self._stable_count >= max(1, self.t.wall_angle_stable_samples)
-        ):
-            return PrimitiveStatus.SUCCEEDED
-
-        io = _get_io_from_context(perception=perception, motion_backend=motion_backend)
-        if io is None:
-            print("[WALL_ANGLE] no IO available in context")
-            return PrimitiveStatus.FAILED
-
-        backend = self.t.wall_angle_backend.strip().lower()
-
-        # -------------------------
-        # Backend: two ultrasonics
-        # -------------------------
-        if backend == "two_ultrasonics":
-            us = io.ultrasonics()
-            if not self._printed_us_keys:
-                try:
-                    keys = list(us.keys())
-                except Exception:
-                    keys = []
-                print(f"[WALL_ANGLE][US] keys={keys} want={self.t.wall_two_ultrasonic_keys}")
-                self._printed_us_keys = True
-
-            kL, kR = self.t.wall_two_ultrasonic_keys
-            angle = estimate_wall_parallel_error_two_ultrasonics(
-                left_mm=_norm_ultrasonic(us.get(kL)),
-                right_mm=_norm_ultrasonic(us.get(kR)),
-                baseline_mm=self.t.wall_two_ultrasonic_baseline_mm,
-                min_mm=self.t.wall_ultrasonic_min_mm,
-                max_mm=self.t.wall_ultrasonic_max_mm,
+        if not (self.min_mm <= d <= self.max_mm):
+            print(
+                f"[WALL_ANGLE][US] {angle_tag} sample={sample_idx} key={key} raw={raw!r} -> {d:.0f}mm OUT_OF_RANGE"
             )
-            stable = self._record_angle(angle, now)
-            if stable is not None:
-                print(f"[WALL_ANGLE][TWO] angle={stable:.2f}° (stable)")
-                return PrimitiveStatus.SUCCEEDED
+            return None
 
-            print(f"[WALL_ANGLE][TWO] angle={self._angle_deg if self._angle_deg is not None else None}° (stabilising)")
-            return PrimitiveStatus.RUNNING
+        print(f"[WALL_ANGLE][US] {angle_tag} sample={sample_idx} key={key} raw={raw!r} -> {d:.0f}mm")
+        return d
 
-        # -------------------------
-        # Backend: one ultrasonic scan
-        # -------------------------
-        if backend != "one_ultrasonic_scan":
-            print(f"[WALL_ANGLE] unknown backend={backend!r}")
-            return PrimitiveStatus.FAILED
+    def _median(self, xs: List[float]) -> Optional[float]:
+        if not xs:
+            return None
+        s = sorted(xs)
+        return s[len(s) // 2]
 
-        # init scan cycle
-        if self._phase == "IDLE":
-            self._scan_idx = 0
-            self._d1 = None
-            self._d2 = None
-            self._samples = []
-            self._sample_deadline = None
-            self._settle_until = None
-            self._current_rel_deg = 0.0
-            self._return_pending = False
-            self._phase = "ROTATE_TO_ANGLE"
-            self._active_prim = None
-            self._angle_retry_count = 0
+    def _update_two_ultrasonics(self):
+        k1, k2 = self.ultra_keys_two[0], self.ultra_keys_two[1]
 
-        # run active rotation
-        if self._active_prim is not None:
-            st = self._active_prim.update(motion_backend=motion_backend)
+        d1 = self._read_ultrasonic_once(key=k1, angle_tag="two_us[left]", sample_idx=1)
+        d2 = self._read_ultrasonic_once(key=k2, angle_tag="two_us[right]", sample_idx=1)
+
+        if d1 is None or d2 is None:
+            self._last_estimate = WallAngleEstimate(ok=False, reason="two_us_invalid", d1_mm=d1, d2_mm=d2)
+            return self.status
+
+        try:
+            angle = estimate_wall_parallel_error_two_ultrasonics(
+                left_mm=d1, right_mm=d2, baseline_mm=self.baseline_mm
+            )
+        except Exception as e:
+            self._last_estimate = WallAngleEstimate(ok=False, reason=f"two_us_math:{e!s}", d1_mm=d1, d2_mm=d2)
+            return self.status
+
+        self._mark_estimate_ok(angle_deg=angle, d1_mm=d1, d2_mm=d2, reason="two_ultrasonics")
+        return self.status
+
+    def _update_one_ultrasonic(self, *, motion_backend):
+        a1, a2 = self.scan_angles_primary
+
+        # ROTATE_1
+        if self._phase == "ROTATE_1":
+            self._angle_target_deg = a1
+            if self._active is None:
+                self._active = Rotate(angle_deg=a1)
+                self._active.start(motion_backend=motion_backend)
+            st = self._active.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.RUNNING:
-                return PrimitiveStatus.RUNNING
-            if st == PrimitiveStatus.FAILED:
-                print("[WALL_ANGLE][SCAN] rotate failed")
-                self._active_prim = None
-                return PrimitiveStatus.FAILED
+                return self.status
+            self._active = None
+            self._phase = "READ_1"
+            self._t_settle = time.time() + self.settle_time_s
+            return self.status
 
-            self._active_prim = None
-            self._settle_until = now + self.t.wall_scan_settle_time_s
-            self._samples = []
-            self._sample_deadline = None
-            self._phase = "SETTLE"
-            return PrimitiveStatus.RUNNING
+        # READ_1
+        if self._phase == "READ_1":
+            if time.time() < getattr(self, "_t_settle", 0):
+                return self.status
 
-        if self._phase == "SETTLE":
-            if self._settle_until is not None and now < self._settle_until:
-                return PrimitiveStatus.RUNNING
-            self._phase = "SAMPLE"
-            self._sample_deadline = now + self.t.wall_scan_sample_timeout_s
-            return PrimitiveStatus.RUNNING
+            idx = len(self._samples_1) + 1
+            d = self._read_ultrasonic_once(key=self.ultra_key_one, angle_tag=f"a1={a1:+.1f}deg", sample_idx=idx)
+            if d is not None:
+                self._samples_1.append(d)
 
-        if self._phase == "ROTATE_TO_ANGLE":
-            target_rel = float(self._scan_angles[self._scan_idx])
-            delta = target_rel - float(self._current_rel_deg)
+            if len(self._samples_1) >= self.samples_per_angle:
+                self._phase = "ROTATE_2"
+                self._samples_2 = []
+            else:
+                self._t_settle = time.time() + self.settle_time_s
+            return self.status
 
-            print(f"[WALL_ANGLE][SCAN] rotate_to rel={target_rel:.1f}° (delta={delta:.1f}°)")
-            self._active_prim = Rotate(angle_deg=delta)
-            self._active_prim.start(motion_backend=motion_backend)
+        # ROTATE_2
+        if self._phase == "ROTATE_2":
+            self._angle_target_deg = a2
+            if self._active is None:
+                self._active = Rotate(angle_deg=a2)
+                self._active.start(motion_backend=motion_backend)
+            st = self._active.update(motion_backend=motion_backend)
+            if st == PrimitiveStatus.RUNNING:
+                return self.status
+            self._active = None
+            self._phase = "READ_2"
+            self._t_settle = time.time() + self.settle_time_s
+            return self.status
 
-            self._current_rel_deg = target_rel
-            self._phase = "ROTATING"
-            return PrimitiveStatus.RUNNING
+        # READ_2
+        if self._phase == "READ_2":
+            if time.time() < getattr(self, "_t_settle", 0):
+                return self.status
 
-        if self._phase == "SAMPLE":
-            us = io.ultrasonics()
+            idx = len(self._samples_2) + 1
+            d = self._read_ultrasonic_once(key=self.ultra_key_one, angle_tag=f"a2={a2:+.1f}deg", sample_idx=idx)
+            if d is not None:
+                self._samples_2.append(d)
 
-            if not self._printed_us_keys:
-                try:
-                    keys = list(us.keys())
-                except Exception:
-                    keys = []
-                print(f"[WALL_ANGLE][US] keys={keys} want='{self.t.wall_one_ultrasonic_key}'")
-                self._printed_us_keys = True
+            if len(self._samples_2) >= self.samples_per_angle:
+                self._compute_from_two_scans(a1=a1, a2=a2)
+                self._phase = "ROTATE_1"
+                self._samples_1 = []
+                self._samples_2 = []
+            else:
+                self._t_settle = time.time() + self.settle_time_s
+            return self.status
 
-            raw = us.get(self.t.wall_one_ultrasonic_key)
-            d = _norm_ultrasonic(raw)
+        self._phase = "ROTATE_1"
+        return self.status
 
-            # take sample if valid and within max (min is soft)
-            if d is not None and d <= self.t.wall_ultrasonic_max_mm:
-                if d >= self.t.wall_ultrasonic_min_mm:
-                    self._samples.append(d)
-                else:
-                    # below min but >0: allow it as a sample (soft min)
-                    self._samples.append(d)
+    def _compute_from_two_scans(self, *, a1: float, a2: float):
+        d1 = self._median(self._samples_1)
+        d2 = self._median(self._samples_2)
 
-            # got enough samples
-            if len(self._samples) >= max(1, self.t.wall_scan_samples_per_angle):
-                avg = sum(self._samples) / float(len(self._samples))
-                print(f"[WALL_ANGLE][SCAN] samples ok idx={self._scan_idx} avg={avg:.1f}mm n={len(self._samples)}")
+        if d1 is None or d2 is None:
+            self._last_estimate = WallAngleEstimate(ok=False, reason="scan_invalid", d1_mm=d1, d2_mm=d2)
+            return
 
-                if self._scan_idx == 0:
-                    self._d1 = avg
-                else:
-                    self._d2 = avg
+        delta = abs(d1 - d2)
+        ratio = (max(d1, d2) / max(1.0, min(d1, d2)))
+        if delta > self.max_pair_delta_mm or ratio > self.max_pair_ratio:
+            self._last_estimate = WallAngleEstimate(
+                ok=False,
+                reason=f"pair_mismatch(delta={delta:.0f}mm ratio={ratio:.2f})",
+                d1_mm=d1,
+                d2_mm=d2,
+            )
+            print(
+                f"[WALL_ANGLE] rejected scan pair: d1={d1:.0f} d2={d2:.0f} "
+                f"delta={delta:.0f}mm ratio={ratio:.2f}"
+            )
+            self._stable_ok_count = 0
+            return
 
-                # reset retry counter when we succeed at an angle
-                self._angle_retry_count = 0
+        try:
+            angle = parallel_error_from_two_scans(
+                d1_mm=float(d1),
+                d2_mm=float(d2),
+                scan_angle_1_deg=float(a1),
+                scan_angle_2_deg=float(a2),
+            )
+        except Exception as e:
+            self._last_estimate = WallAngleEstimate(ok=False, reason=f"math:{e!s}", d1_mm=d1, d2_mm=d2)
+            self._stable_ok_count = 0
+            return
 
-                self._scan_idx += 1
-                if self._scan_idx >= 2:
-                    if self._d1 is None or self._d2 is None:
-                        print("[WALL_ANGLE][SCAN] missing d1/d2 after sampling")
-                        return PrimitiveStatus.FAILED
+        self._mark_estimate_ok(angle_deg=angle, d1_mm=d1, d2_mm=d2, reason="one_ultrasonic_scan")
 
-                    angle = parallel_error_from_two_scans(
-                        theta1_deg=self.t.wall_scan_angle_1_deg,
-                        d1_mm=self._d1,
-                        theta2_deg=self.t.wall_scan_angle_2_deg,
-                        d2_mm=self._d2,
-                    )
+    def _mark_estimate_ok(self, *, angle_deg: float, d1_mm: float, d2_mm: float, reason: str):
+        self._last_ok_s = time.time()
+        self._last_estimate = WallAngleEstimate(
+            ok=True,
+            angle_deg=float(angle_deg),
+            age_s=0.0,
+            d1_mm=d1_mm,
+            d2_mm=d2_mm,
+            reason=reason,
+        )
 
-                    stable = self._record_angle(angle, now)
-                    print(f"[WALL_ANGLE][SCAN] raw_angle={angle:.2f}° stable_count={self._stable_count}")
-
-                    self._return_pending = True
-                    self._phase = "RETURN_TO_CENTER"
-                    return PrimitiveStatus.RUNNING
-
-                self._phase = "ROTATE_TO_ANGLE"
-                return PrimitiveStatus.RUNNING
-
-            # timeout: no enough samples yet
-            if self._sample_deadline is not None and now > self._sample_deadline:
-                # NEW: if we got *zero* samples at this angle, retry the same angle once
-                if len(self._samples) == 0 and self._angle_retry_count < self.t.wall_scan_retries_per_angle:
-                    self._angle_retry_count += 1
-                    print(
-                        "[WALL_ANGLE][SCAN] sample timeout with 0 samples; retrying same angle "
-                        f"(retry={self._angle_retry_count}/{self.t.wall_scan_retries_per_angle}) "
-                        f"last_raw={raw!r} last_norm={d}"
-                    )
-                    # restart sample window (don’t rotate again)
-                    self._samples = []
-                    self._sample_deadline = now + self.t.wall_scan_sample_timeout_s
-                    return PrimitiveStatus.RUNNING
-
-                print(
-                    "[WALL_ANGLE][SCAN] sample timeout "
-                    f"(got={len(self._samples)}/{max(1, self.t.wall_scan_samples_per_angle)}) "
-                    f"last_raw={raw!r} last_norm={d}"
-                )
-                return PrimitiveStatus.FAILED
-
-            return PrimitiveStatus.RUNNING
-
-        if self._phase == "RETURN_TO_CENTER":
-            if self._return_pending:
-                self._return_pending = False
-                delta_back = -float(self._current_rel_deg)
-                print(f"[WALL_ANGLE][SCAN] return_to_center delta={delta_back:.1f}°")
-                self._current_rel_deg = 0.0
-                self._active_prim = Rotate(angle_deg=delta_back)
-                self._active_prim.start(motion_backend=motion_backend)
-                self._phase = "ROTATING"
-                return PrimitiveStatus.RUNNING
-
-            if self._angle_deg is not None and self._stable_count >= max(1, self.t.wall_angle_stable_samples):
-                print(f"[WALL_ANGLE][SCAN] angle={self._angle_deg:.2f}° (stable)")
-                self._phase = "IDLE"
-                return PrimitiveStatus.SUCCEEDED
-
-            print(f"[WALL_ANGLE][SCAN] angle={self._angle_deg if self._angle_deg is not None else None}° (stabilising)")
-            self._phase = "IDLE"
-            return PrimitiveStatus.RUNNING
-
-        return PrimitiveStatus.RUNNING
+        self._stable_ok_count += 1
+        print(
+            f"[WALL_ANGLE] ok angle={float(angle_deg):+.2f}deg d1={d1_mm:.0f} d2={d2_mm:.0f} "
+            f"stable={self._stable_ok_count}/{self.stable_samples} ({reason})"
+        )

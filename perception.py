@@ -18,6 +18,12 @@ DEBUG = True
 # Select primary camera for now
 PRIMARY_CAMERA = "front"
 
+# ==================================================
+# Frame-order logging helper
+# ==================================================
+
+_FRAME_ORDER_BUFFER = []
+
 
 # ==================================================
 # Simple logger
@@ -54,6 +60,7 @@ def age_objects(perception: Perception):
 
 def sense(io: IOMap, perception: Perception, stop_robot=True):
     now = time.time()
+    _FRAME_ORDER_BUFFER.clear()
     age_objects(perception)
 
     if stop_robot:
@@ -106,6 +113,18 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
 
     update_objects("acidic", acidic_markers, pose, perception, now, cam_cal)
     update_objects("basic", basic_markers, pose, perception, now, cam_cal)
+
+    # Log current seen markers left -> right (most negative bearing first)
+    if DEBUG and _FRAME_ORDER_BUFFER:
+        _FRAME_ORDER_BUFFER.sort(key=lambda r: r["bearing"])
+        for r in _FRAME_ORDER_BUFFER:
+            log(
+                "SEEN",
+                f"id={r['id']} kind={r['kind']} "
+                f"dist={r['distance']:.0f} "
+                f"bearing={r['bearing']:+.1f}deg "
+                f"va={r['va_deg']:+.2f}deg"
+            )
 
     prune_objects(perception, now)
 
@@ -186,16 +205,30 @@ def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
 
         # If we don't have a usable heading, keep targets in robot-relative coordinates
         if robot_pose is None or len(robot_pose) < 3 or robot_pose[2] is None:
+            va_rad = float(m.position.vertical_angle)
+            va_deg = math.degrees(va_rad)
+
             memory[m.id] = {
                 "id": m.id,
                 "marker": m,
+                "kind": kind,
                 "distance": dist,
                 "bearing": bearing_deg,
+                "vertical_angle_rad": va_rad,
+                "vertical_angle_deg": va_deg,
                 "last_seen": now,
                 "age": 0,
                 "relative": True,
+                "camera": PRIMARY_CAMERA,  # or "front" if you prefer
             }
-            log(kind.upper(), f"id={m.id} REL dist={dist:.0f}")
+
+            _FRAME_ORDER_BUFFER.append({
+                "id": int(m.id),
+                "kind": kind,
+                "bearing": float(bearing_deg),
+                "distance": float(dist),
+                "va_deg": float(va_deg),
+            })
             continue
 
         rx, ry, rtheta = robot_pose
@@ -222,6 +255,7 @@ def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
         }
 
         log(kind.upper(), f"id={m.id} pos=({ax:.1f}, {ay:.1f})")
+
 
 
 # ==================================================

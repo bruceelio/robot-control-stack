@@ -12,23 +12,26 @@ lock[Lock target id & kind<br/>Skill: SelectTarget]
 sense[Update target observation<br/>Module: TrackObject]
 visible{Target visible?<br/>Module: TrackObject}
 
-grace[Vision grace period<br/>Policy: VisionGracePeriod<br/>Grace: 0.2s]
+grace[VisionGracePeriod<br/>Policy: VisionGracePeriod<br/>Grace: 0.2s]
 lostLong{Lost longer than grace?<br/>Policy: VisionGracePeriod}
 
-reacq[Reacquire sweep<br/>Skill: ReacquireTarget<br/>Cap: 90-120deg, step 10-15deg]
-reacqOK{Reacquired?<br/>Skill: ReacquireTarget}
+reacq[ReacquireTarget<br/>Skill: ReacquireTarget<br/>Locked ID only<br/>Cap: 90-120deg, step 10-15deg]
+reacqOK{Reacquired locked target?<br/>Skill: ReacquireTarget}
 
-microScan[Micro scan in place<br/>Skill: SearchRotate<br/>Cap: 180-360deg or 2-3s]
-microOK{Target found?<br/>Skill: SearchRotate}
+backoff1[BackoffAndScan #1<br/>Rotate wiggle / micro scan<br/>±10-15deg or 60-90deg sweep<br/>No/Minimal backoff unless Band A]
+back1OK{Locked target found?<br/>TrackObject / ReacquireTarget}
 
-mobility[Mobility recovery<br/>Behavior: RecoverMobility<br/>Max: 2 attempts<br/>Each: backoff 150mm + SearchRotate]
-mobOK{Mobility restored AND target found?<br/>Behavior: RecoverMobility}
+backoff2[BackoffAndScan #2<br/>Backoff 150-250mm + SearchRotate<br/>Cap: 120-180deg or 2-3s]
+back2OK{Target found?<br/>SearchRotate / TrackObject}
 
-relocalise[Recover localisation<br/>Behavior: RecoverLocalisation<br/>Max: 1 attempt<br/>Cap: 2-4s]
+global[GlobalRecovery<br/>Phase: GlobalRecovery<br/>Budgeted ladder]
+poseQ{Pose valid?<br/>Localisation}
+
+relocalise[RecoverLocalisation<br/>Behavior: RecoverLocalisation<br/>Max: 1 attempt<br/>Cap: 2-4s]
 relocOK{Pose restored?<br/>Behavior: RecoverLocalisation}
 
-explore[Explore/search region<br/>Behavior: ExploreArea<br/>Time-boxed]
-exploreOK{Target found?<br/>Behavior: ExploreArea}
+poseSearch[PoseDirectedSearch<br/>Behavior/Skill: Navigate/Explore to known coordinates<br/>Time-boxed]
+poseSearchOK{Target found?<br/>PoseDirectedSearch}
 
 abandonQ{Abandon current target?<br/>Policy: AbandonTarget}
 fallback[Fallback search mode<br/>Skill/Policy: FallbackSearch]
@@ -65,19 +68,21 @@ lostLong -- No --> sense
 lostLong -- Yes --> reacq --> reacqOK
 
 reacqOK -- Yes --> sense
-reacqOK -- No --> microScan --> microOK
+reacqOK -- No --> backoff1 --> back1OK
 
-microOK -- Yes --> sense
-microOK -- No --> mobility --> mobOK
+back1OK -- Yes --> sense
+back1OK -- No --> backoff2 --> back2OK
 
-mobOK -- Yes --> sense
-mobOK -- No --> relocalise --> relocOK
+back2OK -- Yes --> sense
+back2OK -- No --> global --> poseQ
 
+poseQ -- "No / low confidence" --> relocalise --> relocOK
 relocOK -- Yes --> sense
-relocOK -- No --> explore --> exploreOK
+relocOK -- No --> abandonQ
 
-exploreOK -- Yes --> snap
-exploreOK -- No --> abandonQ
+poseQ -- "Yes" --> poseSearch --> poseSearchOK
+poseSearchOK -- Yes --> snap
+poseSearchOK -- No --> abandonQ
 
 abandonQ -- Yes --> fallback --> snap
 abandonQ -- No --> retryQ
@@ -91,3 +96,4 @@ verify -- No --> retryQ
 
 retryQ -- Yes --> sense
 retryQ -- No --> fail
+

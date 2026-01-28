@@ -30,7 +30,7 @@ class Behavior:
         """
         raise NotImplementedError
 
-    def stop(self):
+    def stop(self, **kwargs) -> BehaviorStatus:
         """
         Called if the behavior is interrupted.
         """

@@ -59,6 +59,7 @@ MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 
 
 VISION_LOSS_TIMEOUT_S = 0.5
+VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 
 FINAL_APPROACH_DIRECT_RANGE_MM = 500    # additional distance from commit for ranging
 FINAL_COMMIT_DISTANCE_MM = 650          # from here we go blind
@@ -70,6 +71,12 @@ FINAL_COMMIT_DISTANCE_HIGH_MM = 1100            # from here we go blind
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35
 FINAL_APPROACH_MARKER_PUSH = 50
+
+# BackoffScan
+BACKOFF_SCAN_MM = 200.0
+BACKOFF_SCAN_CAP_DEG = 60.0
+BACKOFF_SCAN_STEP_DEG = 20.0
+BACKOFF_SCAN_TIMEOUT_S = 3.0
 
 # --------------------------------------------------
 # Wall / ultrasonic geometry (navigation)

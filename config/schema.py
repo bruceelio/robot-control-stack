@@ -70,7 +70,9 @@ class Config:
     marker_height_max_distance_mm: float
     marker_pitch_high_deg: float
     marker_pitch_low_deg: float
+
     vision_loss_timeout_s: float
+    vision_grace_period_s: float
 
     final_commit_distance_mm: float
     final_approach_direct_range_mm: float
@@ -78,12 +80,18 @@ class Config:
     height_decision_deadline_mm: float
     marker_height_max_distance_mm: float
 
-
     final_commit_distance_high_mm: float
     final_approach_direct_range_high_mm: float
     final_approach_max_degree_high: float
     visible_max_age_s: float
     final_approach_marker_push: float
+
+    # BackoffScan
+    backoff_scan_mm: float
+    backoff_scan_cap_deg: float
+    backoff_scan_step_deg: float
+    backoff_scan_timeout_s: float
+
 
     # --------------------------------------------------
     # Wall / ultrasonic geometry (navigation)
@@ -188,6 +196,7 @@ RESOLVE_MAP = {
     "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
 
     "vision_loss_timeout_s": ("profile", "VISION_LOSS_TIMEOUT_S"),
+    "vision_grace_period_s": ("profile", "VISION_GRACE_PERIOD_S"),
 
     "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
     "final_approach_direct_range_mm": ("profile", "FINAL_APPROACH_DIRECT_RANGE_MM"),
@@ -198,6 +207,13 @@ RESOLVE_MAP = {
     "final_approach_max_degree_high": ("profile", "FINAL_APPROACH_MAX_DEGREE_HIGH"),
     "visible_max_age_s": ("profile", "VISIBLE_MAX_AGE_S"),
     "final_approach_marker_push": ("profile", "FINAL_APPROACH_MARKER_PUSH"),
+
+    # BackoffScan
+    "backoff_scan_mm": ("profile", "BACKOFF_SCAN_MM"),
+    "backoff_scan_cap_deg": ("profile", "BACKOFF_SCAN_CAP_DEG"),
+    "backoff_scan_step_deg": ("profile", "BACKOFF_SCAN_STEP_DEG"),
+    "backoff_scan_timeout_s": ("profile", "BACKOFF_SCAN_TIMEOUT_S"),
+
 
     # --------------------------------------------------
     # Wall / ultrasonic geometry (navigation)
