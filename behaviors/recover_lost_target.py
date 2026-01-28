@@ -330,6 +330,7 @@ class RecoverLostTarget(Behavior):
         # Try a few common constructor signatures.
         try:
             return ReacquireTarget(
+                kind=self.kind,
                 target_id=target_id,
                 step_deg=step_deg,
                 max_sweep_deg=max_sweep_deg,
@@ -343,6 +344,7 @@ class RecoverLostTarget(Behavior):
 
         try:
             return ReacquireTarget(
+                kind=self.kind,
                 target_id=target_id,
                 step_deg=step_deg,
                 max_sweep_deg=max_sweep_deg,
@@ -355,6 +357,7 @@ class RecoverLostTarget(Behavior):
 
         # Minimal signature fallback
         return ReacquireTarget(
+            kind=self.kind,
             target_id=target_id,
             step_deg=step_deg,
             max_sweep_deg=max_sweep_deg,
