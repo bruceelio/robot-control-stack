@@ -22,6 +22,7 @@ class SearchRotate(Primitive):
       - kinds: str or list[str] (which target kinds to accept)
       - step_deg, max_deg, timeout_s
       - max_age_s (freshness window for perception memory)
+      - settle_s (optional post-rotate settle time)
 
     Outputs:
       - SUCCEEDED if a target is found (found_target is set)
@@ -38,6 +39,7 @@ class SearchRotate(Primitive):
         timeout_s: float,
         max_age_s: float,
         label: str = "SEARCH_ROTATE",
+        settle_s: float = 0.0,   # <-- NEW
     ):
         super().__init__()
         if isinstance(kinds, str):
@@ -51,16 +53,21 @@ class SearchRotate(Primitive):
         self.max_age_s = float(max_age_s)
         self.label = label
 
+        self.settle_s = float(settle_s)  # <-- NEW
+
         self._rotated = 0.0
         self._child: Optional[Rotate] = None
         self._t0: Optional[float] = None
         self.found_target = None
+
+        self._settle_until: Optional[float] = None  # <-- NEW
 
     def start(self, *, motion_backend, **_):
         self._rotated = 0.0
         self._child = None
         self._t0 = time.time()
         self.found_target = None
+        self._settle_until = None  # <-- NEW
         return PrimitiveStatus.RUNNING
 
     def _find_any_target(self, perception, now: float):
@@ -75,6 +82,21 @@ class SearchRotate(Primitive):
 
     def update(self, *, motion_backend, perception=None, **_):
         now = time.time()
+
+        # 0) If settling, wait (but still allow early exit if target appears)
+        if self._settle_until is not None:
+            if perception is not None:
+                t = self._find_any_target(perception, now)
+                if t is not None:
+                    self.found_target = t
+                    self._settle_until = None
+                    return PrimitiveStatus.SUCCEEDED
+
+            if now < self._settle_until:
+                return PrimitiveStatus.RUNNING
+
+            # settle complete
+            self._settle_until = None
 
         # 1) Early exit if target appears
         if perception is not None:
@@ -92,6 +114,9 @@ class SearchRotate(Primitive):
             st = self._child.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.SUCCEEDED:
                 self._child = None
+                # NEW: camera settle after rotation completes
+                if self.settle_s > 0.0:
+                    self._settle_until = time.time() + self.settle_s
                 return PrimitiveStatus.RUNNING
             if st == PrimitiveStatus.FAILED:
                 self._child = None
@@ -103,7 +128,6 @@ class SearchRotate(Primitive):
             return PrimitiveStatus.FAILED
 
         # 5) Start next rotate step
-        # Simple strategy: always rotate same direction.
         angle = self.step_deg
         self._rotated += abs(angle)
 
@@ -112,6 +136,7 @@ class SearchRotate(Primitive):
         return PrimitiveStatus.RUNNING
 
     def stop(self):
+        self._settle_until = None  # <-- NEW
         if self._child is not None:
             self._child.stop()
             self._child = None

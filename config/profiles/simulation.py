@@ -61,16 +61,19 @@ MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 VISION_LOSS_TIMEOUT_S = 0.5
 VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 
+# FinalApproach
 FINAL_APPROACH_DIRECT_RANGE_MM = 500    # additional distance from commit for ranging
 FINAL_COMMIT_DISTANCE_MM = 650          # from here we go blind
 FINAL_APPROACH_BACKUP_MM = 200
 
-# New
 FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 500      # additional distance from commit for ranging
 FINAL_COMMIT_DISTANCE_HIGH_MM = 1100            # from here we go blind
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35
-FINAL_APPROACH_MARKER_PUSH = 50
+FINAL_APPROACH_MARKER_PUSH = 35
+
+# ReacquireTarget
+REACQUIRE_TARGET_VISION_LOSS = 20
 
 # BackoffScan
 BACKOFF_SCAN_MM = 200.0

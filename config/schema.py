@@ -86,6 +86,8 @@ class Config:
     visible_max_age_s: float
     final_approach_marker_push: float
 
+    reacquire_target_vision_loss: float
+
     # BackoffScan
     backoff_scan_mm: float
     backoff_scan_cap_deg: float
@@ -207,6 +209,9 @@ RESOLVE_MAP = {
     "final_approach_max_degree_high": ("profile", "FINAL_APPROACH_MAX_DEGREE_HIGH"),
     "visible_max_age_s": ("profile", "VISIBLE_MAX_AGE_S"),
     "final_approach_marker_push": ("profile", "FINAL_APPROACH_MARKER_PUSH"),
+
+
+    "reacquire_target_vision_loss": ("profile", "REACQUIRE_TARGET_VISION_LOSS"),
 
     # BackoffScan
     "backoff_scan_mm": ("profile", "BACKOFF_SCAN_MM"),
