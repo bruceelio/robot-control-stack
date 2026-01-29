@@ -1,6 +1,7 @@
 # perception.py
 import time
 import math
+import hashlib
 from calibration import CALIBRATION
 from hw_io.base import IOMap
 
@@ -14,6 +15,14 @@ BASIC_RANGE  = range(140, 180)
 
 MEMORY_TIMEOUT = 5.0      # seconds
 DEBUG = True
+
+# ==================================================
+# Log throttling tuning
+# ==================================================
+LOG_DEFAULT_INTERVAL_S   = 1.0
+LOG_SEEN_INTERVAL_S      = 1.0
+LOG_CAMLIST_INTERVAL_S   = 10.0
+
 
 # Select primary camera for now
 PRIMARY_CAMERA = "front"
@@ -32,6 +41,60 @@ _FRAME_ORDER_BUFFER = []
 def log(tag, msg):
     if DEBUG:
         print(f"[{tag}] {msg}")
+
+_LOG_STATE = {}  # key -> {"t": float, "sig": str}
+
+def _sig(s: str) -> str:
+    # stable-ish short signature for change detection
+    return hashlib.sha1(s.encode("utf-8")).hexdigest()
+
+def log_throttled(
+    tag: str,
+    msg: str,
+    *,
+    key: str | None = None,
+    now: float | None = None,
+    min_interval_s: float = LOG_DEFAULT_INTERVAL_S,
+    change_only: bool = False,
+):
+    """
+    Throttle logs per (tag,key).
+      - If change_only=True: only log when message signature differs.
+      - Always allow logging if (now - last_time) >= min_interval_s.
+    """
+    if not DEBUG:
+        return
+    if now is None:
+        now = time.time()
+    if key is None:
+        key = tag  # stable default
+    # fallback (still provides throttling if message repeats)
+
+    state_key = (tag, key)
+    entry = _LOG_STATE.get(state_key)
+    sig = _sig(msg)
+
+    if entry is None:
+        _LOG_STATE[state_key] = {"t": now, "sig": sig}
+        log(tag, msg)
+        return
+
+    elapsed = now - entry["t"]
+    changed = (sig != entry["sig"])
+
+    should_log = False
+
+    if change_only:
+        # "change OR interval"
+        should_log = changed or (elapsed >= min_interval_s)
+    else:
+        # "interval"
+        should_log = elapsed >= min_interval_s
+
+    if should_log:
+        entry["t"] = now
+        entry["sig"] = sig
+        log(tag, msg)
 
 
 # ==================================================
@@ -77,8 +140,23 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
     missing_in_io = calibrated - available
     missing_in_cal = available - calibrated
 
-    log("PERCEPTION", f"Calibrated cameras: {sorted(calibrated)}")
-    log("PERCEPTION", f"Available cameras: {sorted(available)}")
+    # Camera lists: mostly static, so log on change (or very infrequently)
+    log_throttled(
+        "PERCEPTION",
+        f"Calibrated cameras: {sorted(calibrated)}",
+        key="cam_calibrated",
+        now=now,
+        min_interval_s=LOG_CAMLIST_INTERVAL_S,
+        change_only=True,
+    )
+    log_throttled(
+        "PERCEPTION",
+        f"Available cameras: {sorted(available)}",
+        key="cam_available",
+        now=now,
+        min_interval_s=LOG_CAMLIST_INTERVAL_S,
+        change_only=True,
+    )
 
     if PRIMARY_CAMERA not in calibrated:
         raise RuntimeError(
@@ -117,22 +195,38 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
     # Log current seen markers left -> right (most negative bearing first)
     if DEBUG and _FRAME_ORDER_BUFFER:
         _FRAME_ORDER_BUFFER.sort(key=lambda r: r["bearing"])
+        # Build a stable signature of the frame's visible markers.
+        # This lets us log the whole set only when it changes (or on an interval).
+        frame_lines = []
         for r in _FRAME_ORDER_BUFFER:
-            log(
-                "SEEN",
+            frame_lines.append(
                 f"id={r['id']} kind={r['kind']} "
                 f"dist={r['distance']:.0f} "
-                f"bearing={r['bearing']:+.1f}deg "
-                f"va={r['va_deg']:+.2f}deg"
+                f"bearing={r['bearing']:.1f}deg "
+                f"va={r['va_deg']:.2f}deg"
             )
+        seen_blob = "\n".join(frame_lines)
+        log_throttled(
+            "SEEN",
+            seen_blob,
+            key="frame_seen_set",
+            now=now,
+            min_interval_s=LOG_SEEN_INTERVAL_S,
+            change_only=True,
+        )
 
     prune_objects(perception, now)
 
-    log(
+    # Summary line: log at most once per second unless it changes.
+    log_throttled(
         "PERCEPTION",
         f"Seen total={len(seen)} arena={len(arena_markers)} "
         f"acidic={len(acidic_markers)} basic={len(basic_markers)} "
-        f"pose={'OK' if pose else 'FAIL'}"
+        f"pose={'OK' if pose else 'FAIL'}",
+        key="perception_summary",
+        now=now,
+        min_interval_s=LOG_DEFAULT_INTERVAL_S,
+        change_only=False,
     )
 
     # NEW return shape: (arena_observations, objects)
@@ -254,8 +348,14 @@ def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
             "relative": False,
         }
 
-        log(kind.upper(), f"id={m.id} pos=({ax:.1f}, {ay:.1f})")
-
+        log_throttled(
+            kind.upper(),
+            f"id={m.id} pos=({ax:.1f}, {ay:.1f})",
+            key=f"{kind}_pos_{int(m.id)}",
+            now=now,
+            min_interval_s=LOG_DEFAULT_INTERVAL_S,
+            change_only=True,  # log when moved, otherwise once/sec
+        )
 
 
 # ==================================================
