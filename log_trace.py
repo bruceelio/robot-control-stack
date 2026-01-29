@@ -1,5 +1,5 @@
 """
-trace.py — Structured TRACE logging helper
+log_trace.py — Structured TRACE logging helper
 
 Outputs machine-parseable log lines:
 

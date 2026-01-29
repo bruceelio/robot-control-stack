@@ -95,6 +95,7 @@ class TrackObject:
         Returns:
           TrackSnapshot
         """
+
         if kind is not None:
             self.kind = kind
         if locked_target_id is not None or self.locked_id is None:

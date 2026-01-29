@@ -21,6 +21,7 @@ from calibration.resolve import resolve
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
 
+from log_trace import next_tick
 from calibration import CALIBRATION
 print("\n=== CALIBRATION CAMERA CHECK ===")
 print("Calibration cameras:", CALIBRATION.cameras.keys())
@@ -167,6 +168,7 @@ class Controller:
     # --------------------------------------------------
 
     def update(self):
+        next_tick()
         # Always sense first
         arena_obs, objects = sense(self.io, self.perception)
 

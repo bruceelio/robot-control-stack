@@ -9,6 +9,8 @@ from typing import Optional, Any, Literal
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
+from log_trace import trace
+
 
 from skills.perception.reacquire_target import ReacquireTarget
 from skills.navigation.backoff_scan import BackoffScan
@@ -54,8 +56,14 @@ class RecoverLostTarget(Behavior):
 
     def __init__(self):
         super().__init__()
+        # Optional: set by caller (AcquireObject) so recovery trace lines share the same run id
+        self.run_id: int = -1
+
         self.config = None
         self.kind = None
+
+        self._banked_pose_time_s: Optional[float] = None
+        self._last_pose_trace_xy: Optional[tuple[float, float]] = None
 
         self.locked_target_id: Optional[int] = None
         self.last_bearing_deg: float = 0.0
@@ -88,6 +96,16 @@ class RecoverLostTarget(Behavior):
         **_,
     ):
         print("[RECOVER_LOST_TARGET] start")
+        trace(
+            src="RECOVER",
+            evt="RECOVER_ENTER",
+            phase="RECOVER_LOST_TARGET",
+            run=self.run_id,
+            kind=kind,
+            lock=locked_target_id or "none",
+            bear=last_bearing_deg,
+            dist=last_distance_mm,
+        )
 
         self.config = config
         self.kind = kind
@@ -149,6 +167,23 @@ class RecoverLostTarget(Behavior):
         # If we don't have a lock, skip straight to SearchRotate (unlock scan for anything)
         if self.locked_target_id is None:
             print("[RECOVER_LOST_TARGET][REACQUIRE] no lock -> SEARCH_ROTATE")
+
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_DONE",
+                phase="REACQUIRE",
+                run=self.run_id,
+                result="SKIPPED",
+                reason="no_lock",
+            )
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_ENTER",
+                phase="SEARCH_ROTATE",
+                run=self.run_id,
+                lock="none",
+            )
+
             self.phase = "SEARCH_ROTATE"
             return self.status
 
@@ -157,6 +192,13 @@ class RecoverLostTarget(Behavior):
                 target_id=self.locked_target_id,
                 last_bearing=self.last_bearing_deg,
                 last_distance=self.last_distance_mm,
+            )
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_ENTER",
+                phase="REACQUIRE",
+                run=self.run_id,
+                lock=self.locked_target_id or "none",
             )
             self._reacquire.start(motion_backend=motion_backend)
 
@@ -170,6 +212,14 @@ class RecoverLostTarget(Behavior):
 
         if st == PrimitiveStatus.SUCCEEDED:
             print("[RECOVER_LOST_TARGET][REACQUIRE] succeeded (locked recovered)")
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_DONE",
+                phase="REACQUIRE",
+                run=self.run_id,
+                result="SUCCEEDED",
+            )
+
             self._reacquire = None
             self._finish(
                 outcome="LOCKED_RECOVERED",
@@ -180,6 +230,22 @@ class RecoverLostTarget(Behavior):
 
         # FAILED
         print("[RECOVER_LOST_TARGET][REACQUIRE] failed -> BACKOFF_SCAN")
+
+        trace(
+            src="RECOVER",
+            evt="RECOVER_RUNG_DONE",
+            phase="REACQUIRE",
+            run=self.run_id,
+            result="FAILED",
+        )
+        trace(
+            src="RECOVER",
+            evt="RECOVER_RUNG_ENTER",
+            phase="BACKOFF_SCAN",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
         self._reacquire = None
         self.phase = "BACKOFF_SCAN"
         return self.status
@@ -192,6 +258,14 @@ class RecoverLostTarget(Behavior):
                 kind=self.kind,
                 label="RECOVER_LOST_TARGET][BACKOFF_SCAN",
             )
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_ENTER",
+                phase="BACKOFF_SCAN",
+                run=self.run_id,
+                lock=self.locked_target_id or "none",
+            )
+
             self._backoff.start(motion_backend=motion_backend)
 
         st = self._backoff.update(
@@ -208,6 +282,14 @@ class RecoverLostTarget(Behavior):
             # don't have a specific id to report, so we funnel back to SELECT by returning NEW_TARGET_FOUND.
             if self.locked_target_id is not None:
                 print("[RECOVER_LOST_TARGET][BACKOFF_SCAN] succeeded (assume locked recovered)")
+                trace(
+                    src="RECOVER",
+                    evt="RECOVER_RUNG_DONE",
+                    phase="BACKOFF_SCAN",
+                    run=self.run_id,
+                    result="SUCCEEDED",
+                )
+
                 self._backoff = None
                 self._finish(
                     outcome="LOCKED_RECOVERED",
@@ -217,12 +299,37 @@ class RecoverLostTarget(Behavior):
                 return self.status
 
             print("[RECOVER_LOST_TARGET][BACKOFF_SCAN] succeeded (no lock) -> NEW_TARGET_FOUND (select again)")
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_DONE",
+                phase="BACKOFF_SCAN",
+                run=self.run_id,
+                result="SUCCEEDED",
+                reason="no_lock",
+            )
+
             self._backoff = None
             self._finish(outcome="NEW_TARGET_FOUND")
             return self.status
 
         # FAILED
         print("[RECOVER_LOST_TARGET][BACKOFF_SCAN] failed -> SEARCH_ROTATE (unlock)")
+
+        trace(
+            src="RECOVER",
+            evt="RECOVER_RUNG_DONE",
+            phase="BACKOFF_SCAN",
+            run=self.run_id,
+            result="FAILED",
+        )
+        trace(
+            src="RECOVER",
+            evt="RECOVER_RUNG_ENTER",
+            phase="SEARCH_ROTATE",
+            run=self.run_id,
+            lock="none",
+        )
+
         self._backoff = None
         self.phase = "SEARCH_ROTATE"
         return self.status
@@ -240,6 +347,14 @@ class RecoverLostTarget(Behavior):
                 max_age_s=float(getattr(self.config, "vision_loss_timeout_s", 0.5)),
                 label="RECOVER_LOST_TARGET][SEARCH",
             )
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_ENTER",
+                phase="SEARCH_ROTATE",
+                run=self.run_id,
+                lock="none",
+            )
+
             self._search.start(motion_backend=motion_backend)
 
         sr = self._search.update(
@@ -258,6 +373,14 @@ class RecoverLostTarget(Behavior):
         # but we stay conservative: if it SUCCEEDED, we ask AcquireObject to funnel back to SELECT.
         if sr == PrimitiveStatus.SUCCEEDED:
             print("[RECOVER_LOST_TARGET][SEARCH_ROTATE] succeeded -> NEW_TARGET_FOUND (funnel to SELECT)")
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_DONE",
+                phase="SEARCH_ROTATE",
+                run=self.run_id,
+                result="SUCCEEDED",
+            )
+
             self._search = None
             self._finish(outcome="NEW_TARGET_FOUND")
             return self.status
@@ -266,10 +389,28 @@ class RecoverLostTarget(Behavior):
         self._search = None
         if self._banked_pose_xy is not None:
             print("[RECOVER_LOST_TARGET][SEARCH_ROTATE] no target, but pose was obtained")
+            trace(
+                src="RECOVER",
+                evt="RECOVER_RUNG_DONE",
+                phase="SEARCH_ROTATE",
+                run=self.run_id,
+                result="FAILED",
+                reason="pose_obtained",
+            )
+
             self._finish(outcome="POSE_OBTAINED_NO_TARGET")
             return self.status
 
         print("[RECOVER_LOST_TARGET][SEARCH_ROTATE] failed (no target, no pose)")
+        trace(
+            src="RECOVER",
+            evt="RECOVER_RUNG_DONE",
+            phase="SEARCH_ROTATE",
+            run=self.run_id,
+            result="FAILED",
+            reason="no_target_no_pose",
+        )
+
         self._finish(outcome="FAILED")
         return self.status
 
@@ -287,6 +428,18 @@ class RecoverLostTarget(Behavior):
             pose_time_s=self._banked_pose_time_s,
         )
         self.status = BehaviorStatus.SUCCEEDED if outcome != "FAILED" else BehaviorStatus.FAILED
+        trace(
+            src="RECOVER",
+            evt="RECOVER_DONE",
+            phase="RECOVER_LOST_TARGET",
+            run=self.run_id,
+            outcome=outcome,
+            lock=self.locked_target_id or "none",
+            tid=found_target_id or "none",
+            kind=found_kind or self.kind,
+            pose=("yes" if self._banked_pose_xy is not None else "no"),
+        )
+
         return self.status
 
     def _maybe_bank_pose(self, localisation):
@@ -315,6 +468,23 @@ class RecoverLostTarget(Behavior):
                 t = None
 
             self._banked_pose_time_s = t if (t and t > 0) else time.time()
+
+            # Only trace when pose meaningfully changes
+            prev = getattr(self, "_last_pose_trace_xy", None)
+            cur = self._banked_pose_xy
+
+            if prev is None or abs(prev[0] - cur[0]) > 50 or abs(prev[1] - cur[1]) > 50:
+                trace(
+                    src="RECOVER",
+                    evt="POSE_BANK",
+                    phase=self.phase,
+                    run=self.run_id,
+                    pose=f"{cur[0]:.1f},{cur[1]:.1f}",
+                    hdg=self._banked_pose_heading,
+                )
+                self._last_pose_trace_xy = cur
+
+
         except Exception:
             # never let recovery fail due to pose plumbing
             return

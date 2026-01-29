@@ -21,6 +21,7 @@ from primitives.base import PrimitiveStatus
 from skills.perception.select_target_utils import get_closest_target
 
 
+
 def _safe_int(v) -> Optional[int]:
     if v is None:
         return None
@@ -69,6 +70,7 @@ class SelectTarget:
         return PrimitiveStatus.RUNNING
 
     def update(self, *, perception=None, now=None, **_):
+
         if now is None:
             now = time.time()
 

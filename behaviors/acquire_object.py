@@ -21,6 +21,7 @@ from skills.navigation.approach_target import ApproachTarget
 from skills.perception.select_target import SelectTarget
 from skills.perception.track_object import TrackObject
 
+from log_trace import next_run, trace
 
 class AcquireObject(Behavior):
     """
@@ -99,10 +100,24 @@ class AcquireObject(Behavior):
         return self.acquired_target_id
 
     def start(self, *, config, kind=None, seed_target=None, exclude_ids=None, **_):
+        self.run_id = next_run()
+
         print("[ACQUIRE_OBJECT] start")
         self.config = config
         self.kind = kind or config.default_target_kind
         self.locked_target_id = None
+
+        # exclusions must be set before tracing
+        self.exclude_ids = set(exclude_ids) if exclude_ids else set()
+
+        trace(
+            src="ACQ",
+            evt="ACQ_START",
+            phase="SELECT",
+            run=self.run_id,
+            kind=self.kind,
+            exclude=len(self.exclude_ids),
+        )
 
         # --- tracking & vision policy ---
         self._tracker = TrackObject(kind=self.kind)
@@ -117,7 +132,6 @@ class AcquireObject(Behavior):
         self.phase = "SELECT"
         self.target = None
         self.acquired_target_id = None
-        self.exclude_ids = set(exclude_ids) if exclude_ids else set()
 
         # Reset height model for each acquire run
         self.height_model = HeightModel()
@@ -180,6 +194,22 @@ class AcquireObject(Behavior):
             kind=self.kind,
         )
 
+        snap = self.track
+        trace(
+            src="TRACK",
+            evt="TRACK_UPDATE",
+            phase=self.phase,
+            run=self.run_id,
+            kind=self.kind,
+            lock=snap.locked_id or "none",
+            visible=int(snap.visible_now),
+            age=snap.age_s,
+            dist=snap.last_seen_distance_mm,
+            bear=snap.last_seen_bearing_deg,
+            seen=snap.seen_count,
+            lost=snap.lost_count,
+        )
+
         if self.phase == "SELECT":
             return self._select(perception, motion_backend)
 
@@ -208,6 +238,7 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _enter_select(self, *, motion_backend=None, reason: str = ""):
+
         if reason:
             print(f"[ACQUIRE_OBJECT] -> SELECT ({reason})")
 
@@ -230,8 +261,23 @@ class AcquireObject(Behavior):
 
         # enter phase
         self.phase = "SELECT"
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="SELECT",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
 
     def _enter_global_search(self, *, motion_backend=None, reason: str = ""):
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="GLOBAL_SEARCH",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
         if reason:
             print(f"[ACQUIRE_OBJECT] -> GLOBAL_SEARCH ({reason})")
 
@@ -253,6 +299,7 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _select(self, perception, motion_backend):
+
         if self._select_skill is None:
             self._select_skill = SelectTarget(
                 kind=self.kind,
@@ -336,6 +383,14 @@ class AcquireObject(Behavior):
 
         # Stop scanning now that we have a target
 
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="ALIGN",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
         self.phase = "ALIGN"
         self._align_skill = None
         return self.status
@@ -363,6 +418,14 @@ class AcquireObject(Behavior):
             return self.status
 
         # hand off to approach skill
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="APPROACHING",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
         self.phase = "APPROACHING"
         self._approach_skill = ApproachTarget(
             config=self.config,
@@ -421,6 +484,8 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _approach(self, perception, motion_backend):
+
+
         if self._approach_skill is None:
             self._approach_skill = ApproachTarget(
                 config=self.config,
@@ -429,18 +494,6 @@ class AcquireObject(Behavior):
                 locked_target_id=self.locked_target_id,
             )
             self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
-
-        if self._tracker is None:
-            self._tracker = TrackObject(kind=self.kind)
-            self._tracker.reset(locked_target_id=self.locked_target_id, kind=self.kind)
-
-        if self.track is None:
-            self.track = self._tracker.update(
-                perception_objects=getattr(perception, "objects", perception),
-                now_s=time.time(),
-                locked_target_id=self.locked_target_id,
-                kind=self.kind,
-            )
 
         snap = self.track
 
@@ -458,18 +511,13 @@ class AcquireObject(Behavior):
 
                 # 2) After grace, allow the approach/reacquire ladder to run
                 # until we exceed the reacquire budget.
-                reacquire_budget_s = float(
-                    getattr(self.config, "reacquire_target_vision_loss", self.config.vision_loss_timeout_s)
-                )
-
-                if snap.age_s < reacquire_budget_s:
-                    # Still within budget: let ApproachTarget / its internal reacquire do its thing.
-                    return self.status
+                # We intentionally do NOT allow ApproachTarget's internal reacquire.
+                # Once grace says "lost long enough", escalate to RecoverLostTarget immediately.
 
                 print(
                     f"[ACQUIRE_OBJECT][VISION_LOSS] age_s={snap.age_s:.2f} "
-                    f"> grace_s={grace.grace_s:.2f} and > reacquire_budget_s={reacquire_budget_s:.2f} "
-                    f"-> RECOVER_LOST_TARGET"
+                    f"> grace_s={grace.grace_s:.2f} "
+                    f"-> RECOVER_LOST_TARGET (direct escalate)"
                 )
 
                 self._safe_stop(self._approach_skill, motion_backend=motion_backend)
@@ -479,6 +527,14 @@ class AcquireObject(Behavior):
                 self._recover_lost_target_id = self.locked_target_id
                 self._recover_started_s = time.time()
                 self._recover_timeout_s = float(getattr(self.config, "recover_total_timeout_s", 8.0))
+
+                trace(
+                    src="ACQ",
+                    evt="PHASE_ENTER",
+                    phase="RECOVER_LOST_TARGET",
+                    run=self.run_id,
+                    lock=self.locked_target_id or "none",
+                )
 
                 self.phase = "RECOVER_LOST_TARGET"
                 self._recover_behavior = None
@@ -517,6 +573,14 @@ class AcquireObject(Behavior):
                     self._recover_started_s = time.time()
                     self._recover_timeout_s = float(getattr(self.config, "recover_total_timeout_s", 8.0))
 
+                    trace(
+                        src="ACQ",
+                        evt="PHASE_ENTER",
+                        phase="RECOVER_LOST_TARGET",
+                        run=self.run_id,
+                        lock=self.locked_target_id or "none",
+                    )
+
                     self.phase = "RECOVER_LOST_TARGET"
                     self._recover_behavior = None
                     self._recover_result = None
@@ -542,6 +606,14 @@ class AcquireObject(Behavior):
         self._grab_step = "GRASP"
         self._grasp_skill = None
         self._verify_skill = None
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="GRABBING",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
         self.phase = "GRABBING"
         return self.status
 
@@ -550,17 +622,19 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _recover_lost_target(self, perception, localisation, motion_backend):
+
+
         if self._recover_started_s is not None and self._recover_timeout_s is not None:
             if (time.time() - self._recover_started_s) > self._recover_timeout_s:
                 print("[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] overall timeout -> GLOBAL_SEARCH")
                 self._recover_behavior = None
                 self._recover_result = None
-                self.phase = "GLOBAL_SEARCH"
-                self._global_search_behavior = None
+                self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
                 return self.status
 
         if self._recover_behavior is None:
             self._recover_behavior = RecoverLostTarget()
+            self._recover_behavior.run_id = self.run_id
             last_bearing = 0.0
             last_distance = None
             if self.track is not None:
@@ -593,6 +667,13 @@ class AcquireObject(Behavior):
             print(f"[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] succeeded result={res}")
 
             if getattr(res, "outcome", None) == "LOCKED_RECOVERED":
+                trace(
+                    src="ACQ",
+                    evt="PHASE_ENTER",
+                    phase="TRACK_AFTER_RECOVER",
+                    run=self.run_id,
+                    lock=self.locked_target_id or "none",
+                )
                 self.phase = "TRACK_AFTER_RECOVER"
                 self._track_after_recover_skill = None
                 return self.status
@@ -605,8 +686,7 @@ class AcquireObject(Behavior):
         print("[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] failed -> GLOBAL_SEARCH")
         self._recover_behavior = None
         self._recover_result = None
-        self.phase = "GLOBAL_SEARCH"
-        self._global_search_behavior = None
+        self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
         return self.status
 
     # -------------------------
@@ -614,6 +694,8 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _track_after_recover(self, perception, motion_backend):
+
+
         if self.locked_target_id is None:
             self._enter_select(motion_backend=motion_backend, reason="track_after_recover_no_lock")
             return self.status
@@ -643,8 +725,7 @@ class AcquireObject(Behavior):
         if grace.lost_long_enough:
             print("[ACQUIRE_OBJECT][TRACK_AFTER_RECOVER] lost again -> GLOBAL_SEARCH")
             self._track_after_recover_skill = None
-            self.phase = "GLOBAL_SEARCH"
-            self._global_search_behavior = None
+            self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
             return self.status
 
         return self.status
@@ -659,6 +740,7 @@ class AcquireObject(Behavior):
           - SUCCEEDED -> SELECT
           - FAILED -> Behavior FAILED
         """
+
 
         if self._global_search_behavior is None:
             self._global_search_behavior = GlobalSearchStub()
@@ -690,6 +772,8 @@ class AcquireObject(Behavior):
     # -------------------------
 
     def _grab(self, lvl2):
+
+
         if self._grab_step is None:
             self._grab_step = "GRASP"
 
