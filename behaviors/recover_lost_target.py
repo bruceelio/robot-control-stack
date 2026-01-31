@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Optional, Any, Literal
 
 from behaviors.base import Behavior, BehaviorStatus
+from behaviors.global_recovery_stub import GlobalRecoveryStub
+
 from primitives.base import PrimitiveStatus
 from log_trace import trace
 
@@ -119,6 +121,7 @@ class RecoverLostTarget(Behavior):
         self._reacquire = None
         self._backoff = None
         self._search = None
+        self._global = None
 
         self._banked_pose_xy = None
         self._banked_pose_heading = None
@@ -143,6 +146,10 @@ class RecoverLostTarget(Behavior):
         if self.phase == "SEARCH_ROTATE":
             return self._update_search_rotate(perception, localisation, motion_backend)
 
+        if self.phase == "GLOBAL_RECOVERY":
+            return self._update_global_recovery(perception, localisation, motion_backend)
+
+
         # DONE (should not be reached while RUNNING)
         return self.status
 
@@ -151,10 +158,14 @@ class RecoverLostTarget(Behavior):
         self._safe_stop(self._reacquire, motion_backend=motion_backend)
         self._safe_stop(self._backoff, motion_backend=motion_backend)
         self._safe_stop(self._search, motion_backend=motion_backend)
+        self._safe_stop(self._global, motion_backend=motion_backend)
+
 
         self._reacquire = None
         self._backoff = None
         self._search = None
+        self._global = None
+
 
         self.status = BehaviorStatus.FAILED
         return self.status
@@ -401,7 +412,11 @@ class RecoverLostTarget(Behavior):
             self._finish(outcome="POSE_OBTAINED_NO_TARGET")
             return self.status
 
-        print("[RECOVER_LOST_TARGET][SEARCH_ROTATE] failed (no target, no pose)")
+        # Escalate: at this point RecoverLostTarget has exhausted its local rungs.
+        # We deliberately keep GlobalRecovery aspirational; today it primarily attempts
+        # to recover pose (so a higher layer can do pose-directed recovery later).
+        print("[RECOVER_LOST_TARGET][SEARCH_ROTATE] escalating -> GLOBAL_RECOVERY (pose recovery)")
+
         trace(
             src="RECOVER",
             evt="RECOVER_RUNG_DONE",
@@ -411,8 +426,40 @@ class RecoverLostTarget(Behavior):
             reason="no_target_no_pose",
         )
 
-        self._finish(outcome="FAILED")
+        self.phase = "GLOBAL_RECOVERY"
         return self.status
+
+    def _update_global_recovery(self, perception, localisation, motion_backend):
+        """Escalation rung.
+
+        For now, this mainly tries to restore pose using RecoverLocalisation
+        (via GlobalRecoveryStub).
+        """
+        if self._global is None:
+            self._global = GlobalRecoveryStub()
+            self._global.start(config=self.config)
+
+        st = self._global.update(
+            perception=perception,
+            localisation=localisation,
+            motion_backend=motion_backend,
+        )
+
+        if st == BehaviorStatus.SUCCEEDED:
+            # We recovered pose but still don't have the target.
+            # Caller can decide what to do next (pose-directed search, abandon, etc.).
+            self._bank_pose(localisation)
+            print("[RECOVER_LOST_TARGET][GLOBAL_RECOVERY] pose recovered (no target)")
+            self._finish(outcome="POSE_OBTAINED_NO_TARGET")
+            return self.status
+
+        if st == BehaviorStatus.FAILED:
+            print("[RECOVER_LOST_TARGET][GLOBAL_RECOVERY] failed")
+            self._finish(outcome="FAILED")
+            return self.status
+
+        return self.status
+
 
     # -------------------------
     # Helpers

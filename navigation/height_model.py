@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
+import math
 
 
 @dataclass
@@ -56,23 +57,32 @@ class HeightModel:
             return (0.80, 0.20)
         return (1.00, 0.50)
 
+    # navigation/height_model.py
+
     def update(
-        self,
-        *,
-        pitch_deg: float,      # radians
-        distance_mm: float,
-        high_thresh: float,
-        low_thresh: float,
+            self,
+            *,
+            pitch_rad: float,  # radians
+            distance_mm: float,
+            high_thresh: float,
+            low_thresh: float,
     ) -> None:
         if self._committed:
             return
 
-        pitch = float(pitch_deg)
+        pitch = float(pitch_rad)
         d = float(distance_mm)
 
         self.samples += 1
         self.max_pitch = max(self.max_pitch, pitch)
 
+        # --- HARD HIGH LATCH (config-driven, radians) ---
+        # If we ever see pitch >= high_thresh at any distance: commit HIGH forever.
+        if pitch >= float(high_thresh):
+            self._commit(True)
+            return
+
+        # (optional) keep the rest of your scoring system for LOW evidence, if you want:
         margin = 0.02
         ev = 0.0
         if pitch >= (high_thresh + margin):
@@ -102,7 +112,7 @@ class HeightModel:
 
         d = float(distance_mm)
 
-        if self.max_pitch >= (high_thresh + 0.02):
+        if self.max_pitch >= float(high_thresh):
             self._commit(True)
             return HeightDecision(True, True, "peak_high_latch")
 
@@ -116,7 +126,7 @@ class HeightModel:
 
         if d <= decision_deadline_mm:
             # If we've ever seen a strong "high" pitch, latch high.
-            if self.max_pitch >= (high_thresh + 0.02):
+            if self.max_pitch >= float(high_thresh):
                 self._commit(True)
                 return HeightDecision(True, True, "deadline_peak_high")
 

@@ -8,6 +8,8 @@ import statistics
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
+
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Drive, Rotate
 
@@ -238,7 +240,7 @@ class ApproachTarget(Primitive):
 
         # Approach loop state
         self.active_primitive: Optional[Primitive] = None
-        self.last_action: Optional[str] = None  # "rotate" / "drive" / "reacquire" / "parallel"
+        self.last_action: Optional[str] = None  # "rotate" / "drive" / "reacquire" / "parallel" / "dogleg"
         self.settle_until: Optional[float] = None
 
         self.cached_distance: Optional[float] = None
@@ -260,6 +262,8 @@ class ApproachTarget(Primitive):
 
         # Parallel-to-wall helper state
         self._parallel_skill: Optional[ParallelToWall] = None
+
+        self._dogleg_cooldown_until: Optional[float] = None
 
     @property
     def approached_target_id(self) -> Optional[int]:
@@ -393,6 +397,15 @@ class ApproachTarget(Primitive):
                     self.cached_distance = None
                     self.cached_bearing = None
                     self.bearing_consumed = False
+                    return PrimitiveStatus.RUNNING
+
+                if self.last_action == "dogleg":
+                    self.last_action = None
+                    self.cached_distance = None
+                    self.cached_bearing = None
+                    self.bearing_consumed = False
+                    self.settle_until = now + self.t.camera_settle_time_s
+                    print(f"[APPROACH][SETTLE] start {self.t.camera_settle_time_s:.2f}s (after dogleg)")
                     return PrimitiveStatus.RUNNING
 
                 if self.last_action == "rotate":
@@ -595,7 +608,7 @@ class ApproachTarget(Primitive):
 
             if src != "none":
                 self.height_model.update(
-                    pitch_deg=pitch,  # (yes: radians despite name)
+                    pitch_rad=pitch,  # radians
                     distance_mm=distance,
                     high_thresh=float(self.t.marker_pitch_high_deg),
                     low_thresh=float(self.t.marker_pitch_low_deg),
@@ -616,6 +629,36 @@ class ApproachTarget(Primitive):
 
         # Refresh geometry after potential height commit
         mode, commit, direct = self._geometry_params()
+
+        # --------------------------------------------------
+        # DOGLEG policy: Band B (both HIGH and LOW)
+        # --------------------------------------------------
+        band_now = self._band_label(distance, commit, direct)
+
+        DOGLEG_TRIGGER_DEG = 12.0
+        DOGLEG_COOLDOWN_S = 1.0
+
+        if (not self.final_commit) and band_now == "B" and abs(bearing) >= DOGLEG_TRIGGER_DEG:
+            if self._dogleg_cooldown_until is None or now >= self._dogleg_cooldown_until:
+                # Optional clamp so we don't sidestep huge distances
+                plan = compute_dog_leg_plan(
+                    distance_mm=distance,
+                    bearing_deg=bearing,
+                    min_sidestep_mm=80.0,
+                    max_drive_mm=600.0,
+                )
+
+                if plan.drive_mm > 0.0:
+                    print(
+                        "[APPROACH][DOGLEG] "
+                        f"mode={mode} band=B dist={distance:.0f}mm bearing={bearing:.1f}° "
+                        f"rot1={plan.rotate1_deg:+.0f} drive={plan.drive_mm:.0f} rot2={plan.rotate2_deg:+.0f}"
+                    )
+                    self.active_primitive = DogLegSideStep(distance_mm=distance, bearing_deg=bearing)
+                    self.last_action = "dogleg"
+                    self.active_primitive.start(motion_backend=motion_backend)
+                    self._dogleg_cooldown_until = now + DOGLEG_COOLDOWN_S
+                    return PrimitiveStatus.RUNNING
 
         # --------------------------------------------------
         # HIGH policy: if too angled in A/B, run ParallelToWall.
@@ -734,8 +777,22 @@ class ApproachTarget(Primitive):
         self.active_primitive.start(motion_backend=motion_backend)
         return PrimitiveStatus.RUNNING
 
-    def stop(self):
-        if self.active_primitive is not None:
-            self.active_primitive.stop()
+    def _safe_stop(self, prim, *, motion_backend=None):
+        if prim is None:
+            return
+        try:
+            prim.stop(motion_backend=motion_backend) if motion_backend is not None else prim.stop()
+        except TypeError:
+            # stop() doesn't accept motion_backend
+            try:
+                prim.stop()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def stop(self, *, motion_backend=None):
+        self._safe_stop(self.active_primitive, motion_backend=motion_backend)
         self.active_primitive = None
         self._parallel_skill = None
+

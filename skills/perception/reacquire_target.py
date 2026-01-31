@@ -111,8 +111,12 @@ class ReacquireTarget(Primitive):
         if self._timed_out(now):
             # stop any active child rotate
             if self._child is not None:
-                self._child.stop()
+                try:
+                    self._child.stop(motion_backend=motion_backend)
+                except TypeError:
+                    self._child.stop()
                 self._child = None
+
             self._settle_until = None
             self._i = len(self._seq)  # skip remaining plan
 
@@ -194,9 +198,17 @@ class ReacquireTarget(Primitive):
         self._child.start(motion_backend=motion_backend)
         return PrimitiveStatus.RUNNING
 
-    def stop(self):
+    def stop(self, *, motion_backend=None):
         if self._child is not None:
-            self._child.stop()
+            try:
+                if motion_backend is not None:
+                    self._child.stop(motion_backend=motion_backend)
+                else:
+                    self._child.stop()
+            except Exception:
+                pass
+
         self._child = None
         self._settle_until = None
         self._start_time = None
+

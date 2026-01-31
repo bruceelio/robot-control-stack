@@ -11,5 +11,5 @@ RUN_MODE = RunMode.NORMAL
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
-DEFAULT_TARGET_KIND = "acidic"  # "acidic" or "basic"
-# DEFAULT_TARGET_KIND = "basic"  # "acidic" or "basic"
+# DEFAULT_TARGET_KIND = "acidic"  # "acidic" or "basic"
+DEFAULT_TARGET_KIND = "basic"  # "acidic" or "basic"

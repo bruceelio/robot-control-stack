@@ -36,7 +36,7 @@ class DeliverObject(Behavior):
         print("[DELIVER_OBJECT] start")
         self.config = config
         self.active_primitive = None
-        self.step = "LIFT_DOWN"
+        self.step = "FORWARD"
         self.status = BehaviorStatus.RUNNING
 
         self.delivered_target_id = delivered_target_id
@@ -50,7 +50,12 @@ class DeliverObject(Behavior):
             return self.status
 
         if self.active_primitive is None:
-            if self.step == "LIFT_DOWN":
+            if self.step == "FORWARD":
+                # TODO: temp for ease until final progam
+                self.active_primitive = Drive(distance_mm=750.0)
+                self.active_primitive.start(motion_backend=motion_backend)
+
+            elif self.step == "LIFT_DOWN":
                 self.active_primitive = LiftDown()
                 self.active_primitive.start(lvl2=lvl2)
 
@@ -90,7 +95,9 @@ class DeliverObject(Behavior):
 
         # SUCCEEDED -> advance
         self.active_primitive = None
-        if self.step == "LIFT_DOWN":
+        if self.step == "FORWARD":
+            self.step = "LIFT_DOWN"
+        elif self.step == "LIFT_DOWN":
             self.step = "RELEASE"
         elif self.step == "RELEASE":
             self.step = "REVERSE"
