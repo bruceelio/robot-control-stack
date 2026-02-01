@@ -11,18 +11,24 @@ from behaviors.acquire_object import AcquireObject
 from behaviors.post_pickup_realign import PostPickupRealign
 from behaviors.recover_localisation import RecoverLocalisation
 from behaviors.deliver_object import DeliverObject
-
 from behaviors.post_dropoff_realign import PostDropoffRealign
+from behaviors.scripted_start import ScriptedStart
 
 from motion_backends import create_motion_backend
+
 from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
+from config.strategy import STARTUP_SCRIPT, StartupScript
+
+from calibration import CALIBRATION
 from calibration.resolve import resolve
+
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
 
 from log_trace import next_tick
-from calibration import CALIBRATION
+from hw_io.buzzer_patterns import BuzzerCue
+
 print("\n=== CALIBRATION CAMERA CHECK ===")
 print("Calibration cameras:", CALIBRATION.cameras.keys())
 print("=== END CALIBRATION CHECK ===\n")
@@ -32,6 +38,12 @@ try:
 except ImportError:
     run_tests = None
 
+def safe_cue(lvl2, cue: BuzzerCue) -> None:
+    print(f"[CUE] {cue.value}")  # always visible in sim/logs
+    try:
+        lvl2.patterns.cue(cue)
+    except Exception:
+        pass
 
 class Controller:
     """
@@ -125,7 +137,11 @@ class Controller:
         # -------------------------
         # State & behavior
         # -------------------------
-        self.state = RobotState.INIT_ESCAPE
+        if STARTUP_SCRIPT == StartupScript.NONE:
+            self.state = RobotState.INIT_ESCAPE
+        else:
+            self.state = RobotState.SCRIPTED_START
+
         self.behavior = None
 
     # --------------------------------------------------
@@ -137,31 +153,53 @@ class Controller:
         # PRINT RESOLVED CONFIG (ONCE)
         # ----------------------------------
         CONFIG.dump()
+        safe_cue(self.lvl2, BuzzerCue.START)
 
         # ----------------------------------
         # EXECUTION MODE DISPATCH
         # ----------------------------------
         if RUN_MODE == RunMode.TESTS:
             if run_tests is None:
+                safe_cue(self.lvl2, BuzzerCue.ERROR)
                 raise RuntimeError("Test runner not available")
 
             print("\n=== RUNNING TESTS MODE ===")
-            run_tests(robot=self.robot)
+            try:
+                run_tests(robot=self.robot)
+                safe_cue(self.lvl2, BuzzerCue.SUCCESS)
+            except Exception:
+                safe_cue(self.lvl2, BuzzerCue.ERROR)
+                raise
+            finally:
+                safe_cue(self.lvl2, BuzzerCue.END)
+
             print("=== TESTS COMPLETE ===\n")
             return
 
         if RUN_MODE == RunMode.DIAGNOSTICS:
             print("\n=== RUNNING DIAGNOSTICS MODE ===")
             from diagnostics.runner import run_diagnostics
-            run_diagnostics(self.robot)
+            try:
+                run_diagnostics(self.robot)
+                safe_cue(self.lvl2, BuzzerCue.SUCCESS)
+            except Exception:
+                safe_cue(self.lvl2, BuzzerCue.ERROR)
+                raise
+            finally:
+                safe_cue(self.lvl2, BuzzerCue.END)
+
             print("=== DIAGNOSTICS COMPLETE ===\n")
             return
 
         # ----------------------------------
         # NORMAL ROBOT OPERATION
         # ----------------------------------
-        while True:
-            self.update()
+        try:
+            while True:
+                self.update()
+        except Exception:
+            safe_cue(self.lvl2, BuzzerCue.ERROR)
+            raise
 
     # --------------------------------------------------
     # Per-tick update
@@ -183,6 +221,26 @@ class Controller:
             self.localisation.accept(pose_obs)
         else:
             self.localisation.invalidate()
+
+        # -------------------------
+        # SCRIPTED START
+        # -------------------------
+        if self.state == RobotState.SCRIPTED_START:
+            if self.behavior is None:
+                self.behavior = ScriptedStart()
+                self.behavior.start(config=CONFIG)
+
+            status = self.behavior.update(
+                motion_backend=self.motion_backend,
+                lvl2=self.lvl2,
+            )
+
+            if status.name in ("SUCCEEDED", "FAILED"):
+                print(f"ScriptedStart {status.name} -> autonomous")
+                self.behavior = None
+                self.state = RobotState.INIT_ESCAPE  # or SEEK_AND_COLLECT if you want to skip escape
+
+            return
 
         # -------------------------
         # INIT ESCAPE

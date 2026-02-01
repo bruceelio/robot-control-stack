@@ -13,27 +13,17 @@ class SR1Buzzer:
     def __init__(self, power_board):
         self._power = power_board
 
-    def on(self, note=None, duration: float = 0.5):
+    def buzz(self, tone, duration: float, *, blocking: bool = False):
         if not self._power:
-            print("[SR1Buzzer] no power board")
+            print(f"[SR1Buzzer] buzz tone={tone} duration={duration} (no power board)")
             return
-        try:
-            # note is optional; SR supports Note enum but keep this generic
-            if note is None:
-                from sr.robot3 import Note
-                note = Note.A6
-            self._power.piezo.buzz(note, duration)
-        except Exception as e:
-            print(f"[SR1Buzzer] buzz failed ({e})")
+        self._power.piezo.buzz(tone, duration, blocking=blocking)
 
     def off(self):
         if not self._power:
-            print("[SR1Buzzer] no power board")
+            print("[SR1Buzzer] off (no power board)")
             return
-        try:
-            self._power.piezo.buzz(8, 0)  # valid freq, zero duration
-        except Exception as e:
-            print(f"[SR1Buzzer] off failed ({e})")
+        self._power.piezo.buzz(0, 0, blocking=False)
 
 
 class SR1KCH:

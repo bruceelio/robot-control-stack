@@ -16,7 +16,7 @@ class ScriptedStart(Behavior):
         self._program = None
 
     def start(self, *, config, **_):
-        super().start(config=config)
+        self.config = config  # <-- add this line
         self._program = None
         self.status = BehaviorStatus.RUNNING
         print(f"[SCRIPTED_START] start script={STARTUP_SCRIPT.name}")

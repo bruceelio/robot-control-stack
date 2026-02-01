@@ -9,6 +9,12 @@ class DigitalOutputs(Protocol):
     def set(self, name: str, on: bool) -> None: ...
     def get(self, name: str) -> bool: ...
 
+
+class Buzzer(Protocol):
+    def buzz(self, tone: Any, duration: float, *, blocking: bool = False) -> None: ...
+    def off(self) -> None: ...
+
+
 class IOMap(ABC):
     """
     Canonical robot IO interface.
@@ -21,13 +27,8 @@ class IOMap(ABC):
 
     @abstractmethod
     def sense(self) -> Dict[str, Any]:
-        """
-        Unified snapshot of all sensors.
-        Keys must be stable across robots.
-        """
+        """Unified snapshot of all sensors. Keys must be stable across robots."""
         raise NotImplementedError
-
-    # ---------- Individual accessors (optional but recommended) ----------
 
     @abstractmethod
     def bumpers(self) -> Dict[str, bool]:
@@ -45,12 +46,8 @@ class IOMap(ABC):
 
     @abstractmethod
     def cameras(self) -> Dict[str, Any]:
-        """
-        Return available cameras keyed by semantic name.
-        Example: {"front": camera_obj, "rear": camera_obj}
-        """
+        """Return cameras keyed by semantic name, e.g. {'front': cam}."""
         raise NotImplementedError
-
 
     # ---------- Actuators (exposed, not controlled) ----------
 
@@ -69,7 +66,7 @@ class IOMap(ABC):
     @property
     @abstractmethod
     def outputs(self) -> DigitalOutputs | None:
-        """Optional named digital outputs (solenoids, pumps, relays, etc.)"""
+        """Optional named digital outputs (solenoids, pumps, relays, etc.)."""
         raise NotImplementedError
 
     # ---------- Power ----------
@@ -85,14 +82,14 @@ class IOMap(ABC):
         """Sleep using the platform’s preferred timing (robot time if available)."""
         raise NotImplementedError
 
-    # kch, buzzer
+    # ---------- Optional capabilities ----------
 
     def kch(self):
         """Optional KCH/BrainBoard access (LEDs etc)."""
         return None
 
-    def buzzer(self):
-        """Optional buzzer/piezo access."""
+    def buzzer(self) -> Buzzer | None:
+        """Optional piezo/buzzer access."""
         return None
 
     def wait_start(self):

@@ -1,6 +1,7 @@
 from enum import Enum, auto
 
 class RobotState(Enum):
+    SCRIPTED_START = auto()
     INIT_ESCAPE = auto()
     SEEK_AND_COLLECT = auto()
     POST_PICKUP_REALIGN = auto()

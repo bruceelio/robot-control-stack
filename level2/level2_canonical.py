@@ -132,16 +132,49 @@ class Level2:
     # -----------------------------
     # BUZZER / PIEZO (optional)
     # -----------------------------
-    # NOTE: IOMap currently doesn't expose piezo either.
-    # Keep as stubs until io exposes a buzzer/piezo interface.
 
+    def BUZZ(self, tone=440, duration: float = 0.25, *, blocking: bool = False):
+        """
+        Canonical buzzer call.
+        - tone: Note enum or frequency in Hz
+        - duration: seconds
+        - blocking: wait until complete
+        """
+        buz = getattr(self.io, "buzzer", None)
+        if buz is None:
+            raise RuntimeError("Level2.BUZZ: io.buzzer not available")
+
+        buz_obj = buz() if callable(buz) else buz
+        if buz_obj is None:
+            raise RuntimeError("Level2.BUZZ: io.buzzer returned None")
+
+        buz_obj.buzz(tone, duration, blocking=blocking)
+
+    # Backwards-compatible names (if older code calls BUZZER_ON/OFF)
     def BUZZER_ON(self, note=None, duration: float = 0.5):
-        print(f"[Level2] BUZZER_ON note={note} duration={duration} (stub)")
-        # If you later expose io.buzzer, implement here.
-        self.SLEEP(duration)
+        tone = 440 if note is None else note
+        self.BUZZ(tone, duration, blocking=False)
 
     def BUZZER_OFF(self):
-        print("[Level2] BUZZER_OFF (stub)")
+        buz = getattr(self.io, "buzzer", None)
+        if buz is None:
+            return
+        buz_obj = buz() if callable(buz) else buz
+        if buz_obj is None:
+            return
+        buz_obj.off()
+
+    @property
+    def patterns(self):
+        """
+        Semantic buzzer patterns (robot-agnostic).
+        Usage:
+          lvl2.patterns.cue(BuzzerCue.START)
+          lvl2.patterns.rickroll_intro()
+        """
+        from hw_io.buzzer_patterns import BuzzerPatterns
+        return BuzzerPatterns(self)
+
 
     # -----------------------------
     # SENSORS

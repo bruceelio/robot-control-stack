@@ -5,8 +5,8 @@ from tests.registry import TESTS
 def run_tests(
     robot=None,
     *,
-    only=None,
-    category="io",
+    only="test_buzzer_patterns",
+    category=None,
 ):
     """
     Run registered tests.
