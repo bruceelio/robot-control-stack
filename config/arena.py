@@ -14,7 +14,7 @@ import math
 # Arena dimensions
 # --------------------------------------------------
 
-ARENA_SIZE = 6000
+ARENA_SIZE = 4575
 
 BASE_WIDTH_MM  = 2000.0   # long edge
 BASE_HEIGHT_MM = 1000.0   # short edge

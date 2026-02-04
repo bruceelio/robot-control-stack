@@ -33,7 +33,7 @@ class ScriptBasicGrab(Behavior):
 
     def start(self, *, config=None, **_):
         self.config = config
-        self.step = "START"
+        self.step = "0START"
         idx = 0
         self.active = None
         self._step_started_at_s = None
@@ -107,22 +107,44 @@ class ScriptBasicGrab(Behavior):
 
     def _make_active_for_step(self, *, step, motion_backend, lvl2, perception, localisation):
         # Primitives
-        if step == "DRIVE01":
-            p = Drive(distance_mm=200.0)
+        length_of_value = int(step[0])
+        tmp_list = list(step)
+        tmp_list[0] = ""
+        step = "".join(tmp_list)
+        try:
+            value = int(step[-length_of_value:])
+        except:
+            value = 0
+        if length_of_value != 0:
+            step = step[0:-length_of_value]
+
+
+        if step == "DRIVE":
+            p = Drive(distance_mm=value)
             p.start(motion_backend=motion_backend)
             return p
 
-        if step == "ROTATE01":
-            p = Rotate(angle_deg=27.0)
+        if step == "ROTATE":
+            p = Rotate(angle_deg=value)
             p.start(motion_backend=motion_backend)
             return p
 
-        if step == "LIFT_UP01":
+        if step == "LIFT_UP":
             p = LiftUp()
             p.start(lvl2=lvl2)
             return p
 
-        if step == "LIFT_DOWN01":
+        if step == "VACUUM_ON":
+            p = Grab()
+            p.start(lvl2=lvl2)
+            return p
+
+        if step == "VACUUM_OFF":
+            p = Release()
+            p.start(lvl2=lvl2)
+            return p
+
+        if step == "LIFT_DOWN":
             p = LiftDown()
             p.start(lvl2=lvl2)
             return p
@@ -141,6 +163,8 @@ class ScriptBasicGrab(Behavior):
             p = Drive(distance_mm=1.0)
             p.start(motion_backend=motion_backend)
             return p
+            
+
 
         # Future: drop in skills/behaviors here
         # if step == "ALIGN01":
@@ -169,7 +193,7 @@ class ScriptBasicGrab(Behavior):
         '''
 
         global idx
-        if self.step == "START":
+        if self.step == "0START":
             idx = -1
         idx = idx+1
         self.step = list_of_steps[idx]

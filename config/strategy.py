@@ -16,8 +16,8 @@ RUN_MODE = RunMode.NORMAL
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
-# STARTUP_SCRIPT = StartupScript.NONE
-STARTUP_SCRIPT = StartupScript.BASIC_GRAB
+STARTUP_SCRIPT = StartupScript.NONE
+# STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
 
 # DEFAULT_TARGET_KIND = "acidic"  # "acidic" or "basic"

@@ -14,17 +14,17 @@ Values here are NOT policy and MUST NOT be changed at runtime.
 # Timed Drive calibration
 # --------------------------------------------------
 
-DRIVE_SWITCH_MM = 1000
+DRIVE_SWITCH_MM = 800
 
 # Power levels (open-loop)
 DRIVE_POWER_SHORT = 0.60
 DRIVE_POWER_LONG  = 0.85
 
 # Distance → time calibration
-DRIVE_M_SHORT = 0.0011
+DRIVE_M_SHORT = 0.00133
 DRIVE_B_SHORT = 0.06
 
-DRIVE_M_LONG  = 0.00078
+DRIVE_M_LONG  = 0.00103
 DRIVE_B_LONG  = 0.05
 
 # =========================
@@ -69,7 +69,7 @@ CAMERAS = {
         # Optical / perception correction
         # ------------------------------------------
         "optical": {
-            "distance_scale": 1.327,     # sim camera overestimates distance
+            "distance_scale": 1.0,     # sim camera overestimates distance
             "bearing_sign": 1.0,        # image X axis inverted vs robot yaw
             "bearing_offset_deg": 0.0,   # no constant bias
         },

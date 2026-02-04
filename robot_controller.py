@@ -238,7 +238,7 @@ class Controller:
             if status.name in ("SUCCEEDED", "FAILED"):
                 print(f"ScriptedStart {status.name} -> autonomous")
                 self.behavior = None
-                self.state = RobotState.INIT_ESCAPE  # or SEEK_AND_COLLECT if you want to skip escape
+                self.state = RobotState.SEEK_AND_COLLECT  # or SEEK_AND_COLLECT if you want to skip escape
 
             return
 

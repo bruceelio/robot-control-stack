@@ -24,13 +24,13 @@ DRIVE_SWITCH_MM = 800
 
 # Motor power levels
 DRIVE_POWER_SHORT = 0.65
-DRIVE_POWER_LONG  = 0.90
+DRIVE_POWER_LONG  = 0.85
 
 # Linear time model (t = m * d + b)
-DRIVE_M_SHORT = 0.00130
-DRIVE_B_SHORT = 0.12
+DRIVE_M_SHORT = 0.00133
+DRIVE_B_SHORT = 0.06
 
-DRIVE_M_LONG  = 0.00085
+DRIVE_M_LONG  = 0.00112
 DRIVE_B_LONG  = 0.09
 
 # Rotation calibration (in-place)
@@ -72,7 +72,7 @@ CAMERAS = {
         # ----------------------------------------------
 
         # Distance scaling factor (camera → real world)
-        "distance_scale": 1.327,
+        "distance_scale": 1.0,
 
         # Bearing convention correction
         # Raw camera bearing:
