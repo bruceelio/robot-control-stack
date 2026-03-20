@@ -116,7 +116,7 @@ class SR1IO(IOMap):
         self.robot = robot
 
         # Boards (may be None)
-        self.arduino = getattr(robot, "arduino", None)
+        self.arduino = getattr(robot, "CircuitPython", None)
         self._init_arduino_pins()
         self._power = getattr(robot, "power_board", None)
 
@@ -191,7 +191,7 @@ class SR1IO(IOMap):
     # --------------------------------------------------
 
     # --------------------------------------------------
-    # Arduino helpers (SR 2026: robot.arduino.pins[...])
+    # Arduino helpers (SR 2026: robot.CircuitPython.pins[...])
     # --------------------------------------------------
 
     def _digital_read(self, pin: int) -> bool:
