@@ -1,6 +1,7 @@
 // Mega2560_2WD_FlySky_iBus_RoboClaw_RIGHT_STICK.ino
 
 #include <Arduino.h>
+#include <math.h>
 
 // ------------------------- CONFIG -------------------------
 #define ROBOCLAW_ADDR 0x80
@@ -19,22 +20,37 @@ bool readIbusFrame() {
   while (IBUS_SERIAL.available()) {
     uint8_t b = IBUS_SERIAL.read();
 
-    if (ibus_idx == 0 && b != 0x20) continue;
-    if (ibus_idx == 1 && b != 0x40) { ibus_idx = 0; continue; }
+    if (ibus_idx == 0) {
+      if (b != 0x20) continue;
+      ibus_buf[ibus_idx++] = b;
+      continue;
+    }
+
+    if (ibus_idx == 1) {
+      if (b != 0x40) {
+        ibus_idx = 0;
+        continue;
+      }
+      ibus_buf[ibus_idx++] = b;
+      continue;
+    }
 
     ibus_buf[ibus_idx++] = b;
 
     if (ibus_idx == IBUS_FRAME_LEN) {
       uint16_t sum = 0xFFFF;
-      for (int i = 0; i < IBUS_FRAME_LEN - 2; i++) sum -= ibus_buf[i];
+      for (int i = 0; i < IBUS_FRAME_LEN - 2; i++) {
+        sum -= ibus_buf[i];
+      }
 
-      uint16_t rxsum = ibus_buf[30] | (ibus_buf[31] << 8);
+      uint16_t rxsum = (uint16_t)ibus_buf[30] | ((uint16_t)ibus_buf[31] << 8);
       ibus_idx = 0;
 
       if (sum != rxsum) return false;
 
       for (int ch = 0; ch < 14; ch++) {
-        ibus_ch[ch] = ibus_buf[2 + ch * 2] | (ibus_buf[3 + ch * 2] << 8);
+        ibus_ch[ch] = (uint16_t)ibus_buf[2 + ch * 2] |
+                      ((uint16_t)ibus_buf[3 + ch * 2] << 8);
       }
 
       ibus_last_frame_ms = millis();
@@ -60,38 +76,63 @@ float normalize(int val) {
   const int dead_max = 55;
 
   if (val >= dead_min && val <= dead_max) return 0.0f;
-  if (val < dead_min) return (float)(val - dead_min) / dead_min;
-  return (float)(val - dead_max) / (100 - dead_max);
+  if (val < dead_min) return (float)(val - dead_min) / (float)dead_min;
+  return (float)(val - dead_max) / (float)(100 - dead_max);
 }
 
-// ------------------------- ROBOCLAW -----------------------
+// ------------------------- ROBOCLAW CRC16 -----------------
+uint16_t crc_update(uint16_t crc, uint8_t data) {
+  crc ^= (uint16_t)data << 8;
+  for (uint8_t i = 0; i < 8; i++) {
+    if (crc & 0x8000) {
+      crc = (crc << 1) ^ 0x1021;
+    } else {
+      crc <<= 1;
+    }
+  }
+  return crc;
+}
+
+// ------------------------- ROBOCLAW SEND ------------------
+void sendRoboClaw(uint8_t cmd, uint8_t val) {
+  uint16_t crc = 0;
+
+  ROBOCLAW_SERIAL.write(ROBOCLAW_ADDR);
+  crc = crc_update(crc, ROBOCLAW_ADDR);
+
+  ROBOCLAW_SERIAL.write(cmd);
+  crc = crc_update(crc, cmd);
+
+  ROBOCLAW_SERIAL.write(val);
+  crc = crc_update(crc, val);
+
+  ROBOCLAW_SERIAL.write((crc >> 8) & 0xFF);
+  ROBOCLAW_SERIAL.write(crc & 0xFF);
+}
+
 int toRoboSpeed(float pwr) {
   pwr = constrain(pwr, -1.0f, 1.0f);
   return (int)(pwr * 127.0f);
 }
 
-void sendRoboClaw(uint8_t cmd, uint8_t val) {
-  uint16_t crc = ROBOCLAW_ADDR + cmd + val;
-
-  ROBOCLAW_SERIAL.write(ROBOCLAW_ADDR);
-  ROBOCLAW_SERIAL.write(cmd);
-  ROBOCLAW_SERIAL.write(val);
-  ROBOCLAW_SERIAL.write(crc >> 8);
-  ROBOCLAW_SERIAL.write(crc & 0xFF);
-}
-
 void setLeft(int speed) {
-  if (speed >= 0)
-    sendRoboClaw(0x00, speed);   // M1 forward
-  else
-    sendRoboClaw(0x01, -speed);  // M1 backward
+  speed = constrain(speed, -127, 127);
+
+  if (speed >= 0) {
+    sendRoboClaw(0x00, (uint8_t)speed);   // M1 forward
+  } else {
+    sendRoboClaw(0x01, (uint8_t)(-speed)); // M1 backward
+  }
 }
 
 void setRight(int speed) {
-  if (speed >= 0)
-    sendRoboClaw(0x04, speed);   // M2 forward
-  else
-    sendRoboClaw(0x05, -speed);  // M2 backward
+  speed = constrain(speed, -127, 127);
+
+  if (speed >= 0) {
+    sendRoboClaw(0x04, (uint8_t)speed);   // M2 forward
+  } else {
+    sendRoboClaw(0x05, (uint8_t)(-speed)); // M2 backward
+  }
 }
 
 void stopMotors() {
@@ -101,7 +142,7 @@ void stopMotors() {
 
 // ------------------------- SETUP --------------------------
 void setup() {
-  IBUS_SERIAL.begin(115200);
+  IBUS_SERIAL.begin(115200, SERIAL_8N2);
   ROBOCLAW_SERIAL.begin(38400);
 
   stopMotors();
@@ -117,9 +158,11 @@ void loop() {
     return;
   }
 
-  // ✅ RIGHT STICK DRIVING (Mode 2)
-  int throttle = ibusToPercent(1); // CH2 → Right stick up/down
-  int rotate   = ibusToPercent(0); // CH1 → Right stick left/right
+  // RIGHT STICK DRIVING (Mode 2)
+  // CH2 = right stick up/down
+  // CH1 = right stick left/right
+  int throttle = ibusToPercent(1);
+  int rotate   = ibusToPercent(0);
 
   float fwd  = normalize(throttle);
   float turn = normalize(rotate);
