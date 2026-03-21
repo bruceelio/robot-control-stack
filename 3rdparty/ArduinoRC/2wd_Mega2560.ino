@@ -167,8 +167,11 @@ void loop() {
   float fwd  = normalize(throttle);
   float turn = normalize(rotate);
 
-  // Optional: soften turning
-  float turnScale = 0.7f;
+  // Speed tuning
+  float driveScale = 0.38f;  // target ~117 rpm feel from 312 rpm motor
+  float turnScale  = 0.45f;  // soften steering
+
+  fwd  *= driveScale;
   turn *= turnScale;
 
   // Differential drive
