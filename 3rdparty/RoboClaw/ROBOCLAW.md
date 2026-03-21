@@ -83,19 +83,17 @@ Set in RoboClaw:
 
 ---
 
-## Step 7 — Configure Serial Port
+## Step 7 — Serial Configuration (Updated UI)
 
-Navigate to:
+In newer versions of Ion Motion Studio, there is no separate "Serial Port Settings" menu.
 
-    Serial Port Settings
+Setting:
 
-Set:
+    Control Mode = Packet Serial
 
-    S1 = Packet Serial
+automatically configures the serial interface (S1) for UART communication.
 
-Optional:
-
-    S2 = Packet Serial
+No additional configuration is required.
 
 ---
 
