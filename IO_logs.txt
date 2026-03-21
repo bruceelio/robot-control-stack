@@ -1,0 +1,251 @@
+[0| 0.000] Running simulator version: 2026.1.1 in Python 3.13.9 (Windows-AMD64)
+[0| 0.000] 
+[0| 0.000] === RESOLVED CONFIGURATION ===
+[0| 0.000] {'robot_id': 'sim',
+[0| 0.000]  'hardware_profile': 'sr1',
+[0| 0.000]  'environment': 'simulation',
+[0| 0.000]  'surface': 'simulation',
+[0| 0.000]  'drive_layout': '2WD',
+[0| 0.000]  'wheel_type': 'standard',
+[0| 0.000]  'arena_size': 6000,
+[0| 0.000]  'default_target_kind': 'basic',
+[0| 0.000]  'motion_backend': 'timed',
+[0| 0.000]  'grab_distance_mm': 0.0,
+[0| 0.000]  'motor_polarity': [1, 1],
+[0| 0.000]  'rotate_factor': 1.0,
+[0| 0.000]  'drive_factor': 1.0,
+[0| 0.000]  'init_escape_drive_mm': 200,
+[0| 0.000]  'init_escape_rotate_deg': 30.0,
+[0| 0.000]  'post_pickup_reverse_mm': 120,
+[0| 0.000]  'post_pickup_rotate_deg': 150.0,
+[0| 0.000]  'post_dropoff_reverse_mm': 120,
+[0| 0.000]  'post_dropoff_rotate_deg': 90,
+[0| 0.000]  'recover_step_deg': 15.0,
+[0| 0.000]  'recover_max_sweep_deg': 180.0,
+[0| 0.000]  'recover_settle_time': 0.5,
+[0| 0.000]  'min_rotate_deg': 2.0,
+[0| 0.000]  'min_drive_mm': 5.0,
+[0| 0.000]  'max_drive_mm': 2500.0,
+[0| 0.000]  'max_rotate_deg': 90.0,
+[0| 0.000]  'max_motor_power': 0.8,
+[0| 0.000]  'camera_settle_time': 0.5,
+[0| 0.000]  'marker_height_max_distance_mm': 6000,
+[0| 0.000]  'marker_pitch_high_deg': 0.052,
+[0| 0.000]  'marker_pitch_low_deg': 0.02,
+[0| 0.000]  'vision_loss_timeout_s': 0.5,
+[0| 0.000]  'vision_grace_period_s': 0.3,
+[0| 0.000]  'final_commit_distance_mm': 650,
+[0| 0.000]  'final_approach_direct_range_mm': 500,
+[0| 0.000]  'final_approach_backup_mm': 200,
+[0| 0.000]  'height_decision_deadline_mm': 1500,
+[0| 0.000]  'final_commit_distance_high_mm': 1100,
+[0| 0.000]  'final_approach_direct_range_high_mm': 500,
+[0| 0.000]  'final_approach_max_degree_high': 10,
+[0| 0.000]  'visible_max_age_s': 0.35,
+[0| 0.000]  'final_approach_marker_push': 35,
+[0| 0.000]  'reacquire_target_vision_loss': 20,
+[0| 0.000]  'backoff_scan_mm': 200.0,
+[0| 0.000]  'backoff_scan_cap_deg': 60.0,
+[0| 0.000]  'backoff_scan_step_deg': 20.0,
+[0| 0.000]  'backoff_scan_timeout_s': 3.0,
+[0| 0.000]  'wall_angle_backend': 'one_ultrasonic_scan',
+[0| 0.000]  'wall_two_ultrasonic_keys': ('left', 'right'),
+[0| 0.000]  'wall_two_ultrasonic_baseline_mm': 160.0,
+[0| 0.000]  'wall_one_ultrasonic_key': 'front',
+[0| 0.000]  'wall_scan_angle_1_deg': -8.0,
+[0| 0.000]  'wall_scan_angle_2_deg': 8.0,
+[0| 0.000]  'wall_scan_samples_per_angle': 3,
+[0| 0.000]  'wall_scan_settle_time_s': 0.1,
+[0| 0.000]  'wall_ultrasonic_min_mm': 50.0,
+[0| 0.000]  'wall_ultrasonic_max_mm': 2500.0,
+[0| 0.000]  'wall_angle_stable_samples': 2,
+[0| 0.000]  'wall_angle_max_age_s': 0.25,
+[0| 0.000]  'wall_parallel_tolerance_deg': 3.0,
+[0| 0.000]  'wall_parallel_trigger_deg': 10.0,
+[0| 0.000]  'wall_parallel_max_rotate_deg': 15.0,
+[0| 0.000]  'wall_parallel_step_deg': 5.0,
+[0| 0.000]  'wall_parallel_timeout_s': 4.0}
+[0| 0.000] === END CONFIGURATION ===
+[0| 0.000] 
+[0| 0.000] 
+[0| 0.000] === CALIBRATION CAMERA CHECK ===
+[0| 0.000] Calibration cameras: dict_keys(['front'])
+[0| 0.000] === END CALIBRATION CHECK ===
+[0| 0.000] 
+[0| 0.008] sr.robot3.robot - INFO - sr.robot3 version 2026.0.3
+[0| 0.008] sr.robot3.serial_wrapper - INFO - Connected to board PowerBoard: PWR
+[0| 0.064] sr.robot3.serial_wrapper - INFO - Connected to board LedBoard: LED
+[0| 0.080] sr.robot3.serial_wrapper - INFO - Connected to board MotorBoard: MOT
+[0| 0.088] sr.robot3.serial_wrapper - INFO - Connected to board ServoBoard: SERVO
+[0| 0.096] sr.robot3.serial_wrapper - INFO - Connected to board Arduino: Arduino1
+[0| 0.136] sr.robot3.robot - INFO - Found PowerBoard, serial: PWR
+[0| 0.144] sr.robot3.robot - INFO - Found MotorBoard, serial: MOT
+[0| 0.152] sr.robot3.robot - INFO - Found ServoBoard, serial: SERVO
+[0| 0.160] sr.robot3.robot - INFO - Found Arduino, serial: Arduino1
+[0| 0.160] sr.robot3.robot - INFO - Found AprilCamera, serial: Camera
+[0| 0.168] sr.robot3.robot - INFO - Waiting for start button.
+[0| 0.192] sr.robot3.robot - INFO - Start signal received; continuing.
+[0| 0.256] 
+[0| 0.256] === CAMERA SANITY CHECK (IOMap) ===
+[0| 0.256] io.cameras(): ['front']
+[0| 0.328] io.cameras()['front'].see() OK — saw 5 markers
+[0| 0.328] === END CAMERA CHECK ===
+[0| 0.328] 
+[0| 0.328] [BOOT] Forcing VACUUM OFF at startup
+[0| 0.344] [SR1Outputs] VACUUM -> False via OUT_H0 (actual=False)
+[0| 0.608] [BOOT] VACUUM ON test pulse
+[0| 0.624] [SR1Outputs] VACUUM -> True via OUT_H0 (actual=True)
+[0| 0.888] [BOOT] VACUUM OFF again
+[0| 0.904] [SR1Outputs] VACUUM -> False via OUT_H0 (actual=False)
+[0| 1.168] 
+[0| 1.168] === RESOLVED CONFIGURATION ===
+[0| 1.168] {'robot_id': 'sim',
+[0| 1.168]  'hardware_profile': 'sr1',
+[0| 1.168]  'environment': 'simulation',
+[0| 1.168]  'surface': 'simulation',
+[0| 1.168]  'drive_layout': '2WD',
+[0| 1.168]  'wheel_type': 'standard',
+[0| 1.168]  'arena_size': 6000,
+[0| 1.168]  'default_target_kind': 'basic',
+[0| 1.168]  'motion_backend': 'timed',
+[0| 1.168]  'grab_distance_mm': 0.0,
+[0| 1.168]  'motor_polarity': [1, 1],
+[0| 1.168]  'rotate_factor': 1.0,
+[0| 1.168]  'drive_factor': 1.0,
+[0| 1.168]  'init_escape_drive_mm': 200,
+[0| 1.168]  'init_escape_rotate_deg': 30.0,
+[0| 1.168]  'post_pickup_reverse_mm': 120,
+[0| 1.168]  'post_pickup_rotate_deg': 150.0,
+[0| 1.168]  'post_dropoff_reverse_mm': 120,
+[0| 1.168]  'post_dropoff_rotate_deg': 90,
+[0| 1.168]  'recover_step_deg': 15.0,
+[0| 1.168]  'recover_max_sweep_deg': 180.0,
+[0| 1.168]  'recover_settle_time': 0.5,
+[0| 1.168]  'min_rotate_deg': 2.0,
+[0| 1.168]  'min_drive_mm': 5.0,
+[0| 1.168]  'max_drive_mm': 2500.0,
+[0| 1.168]  'max_rotate_deg': 90.0,
+[0| 1.168]  'max_motor_power': 0.8,
+[0| 1.168]  'camera_settle_time': 0.5,
+[0| 1.168]  'marker_height_max_distance_mm': 6000,
+[0| 1.168]  'marker_pitch_high_deg': 0.052,
+[0| 1.168]  'marker_pitch_low_deg': 0.02,
+[0| 1.168]  'vision_loss_timeout_s': 0.5,
+[0| 1.168]  'vision_grace_period_s': 0.3,
+[0| 1.168]  'final_commit_distance_mm': 650,
+[0| 1.168]  'final_approach_direct_range_mm': 500,
+[0| 1.168]  'final_approach_backup_mm': 200,
+[0| 1.168]  'height_decision_deadline_mm': 1500,
+[0| 1.168]  'final_commit_distance_high_mm': 1100,
+[0| 1.168]  'final_approach_direct_range_high_mm': 500,
+[0| 1.168]  'final_approach_max_degree_high': 10,
+[0| 1.168]  'visible_max_age_s': 0.35,
+[0| 1.168]  'final_approach_marker_push': 35,
+[0| 1.168]  'reacquire_target_vision_loss': 20,
+[0| 1.168]  'backoff_scan_mm': 200.0,
+[0| 1.168]  'backoff_scan_cap_deg': 60.0,
+[0| 1.168]  'backoff_scan_step_deg': 20.0,
+[0| 1.168]  'backoff_scan_timeout_s': 3.0,
+[0| 1.168]  'wall_angle_backend': 'one_ultrasonic_scan',
+[0| 1.168]  'wall_two_ultrasonic_keys': ('left', 'right'),
+[0| 1.168]  'wall_two_ultrasonic_baseline_mm': 160.0,
+[0| 1.168]  'wall_one_ultrasonic_key': 'front',
+[0| 1.168]  'wall_scan_angle_1_deg': -8.0,
+[0| 1.168]  'wall_scan_angle_2_deg': 8.0,
+[0| 1.168]  'wall_scan_samples_per_angle': 3,
+[0| 1.168]  'wall_scan_settle_time_s': 0.1,
+[0| 1.168]  'wall_ultrasonic_min_mm': 50.0,
+[0| 1.168]  'wall_ultrasonic_max_mm': 2500.0,
+[0| 1.168]  'wall_angle_stable_samples': 2,
+[0| 1.168]  'wall_angle_max_age_s': 0.25,
+[0| 1.168]  'wall_parallel_tolerance_deg': 3.0,
+[0| 1.168]  'wall_parallel_trigger_deg': 10.0,
+[0| 1.168]  'wall_parallel_max_rotate_deg': 15.0,
+[0| 1.168]  'wall_parallel_step_deg': 5.0,
+[0| 1.168]  'wall_parallel_timeout_s': 4.0}
+[0| 1.168] === END CONFIGURATION ===
+[0| 1.168] 
+[0| 1.168] 
+[0| 1.168] === RUNNING TESTS MODE ===
+[0| 1.168] 
+[0| 1.168] === TEST RUN START ===
+[0| 1.168] 
+[0| 1.168] --- RUN test_io_camera_front (category=io) ---
+[0| 1.296] 
+[0| 1.296] ============================================================
+[0| 1.296] [IO][PASS] io.cameras()['front']
+[0| 1.296] timestamp: 2026-01-31T12:15:27
+[0| 1.296] note: see() ok
+[0| 1.296] data:
+[0| 1.296] {
+[0| 1.296]   "io.cameras()['front'].see()": 5
+[0| 1.296] }
+[0| 1.296] json: {"data":{"io.cameras()['front'].see()":5},"device":"io.cameras()['front']","note":"see() ok","status":"PASS","ts":"2026-01-31T12:15:27"}
+[0| 1.296] ============================================================
+[0| 1.296] [PASS] test_io_camera_front
+[0| 1.296] 
+[0| 1.296] --- RUN test_io_battery (category=io) ---
+[0| 1.368] 
+[0| 1.368] ============================================================
+[0| 1.368] [IO][PASS] io.battery()
+[0| 1.368] timestamp: 2026-01-31T12:15:27
+[0| 1.368] data:
+[0| 1.368] {
+[0| 1.368]   "io.battery()['current']": 0.0,
+[0| 1.368]   "io.battery()['voltage']": 12.0
+[0| 1.368] }
+[0| 1.368] json: {"data":{"io.battery()['current']":0.0,"io.battery()['voltage']":12.0},"device":"io.battery()","note":"","status":"PASS","ts":"2026-01-31T12:15:27"}
+[0| 1.368] ============================================================
+[0| 1.368] [PASS] test_io_battery
+[0| 1.368] 
+[0| 1.368] --- RUN test_io_bumpers (category=io) ---
+[0| 1.456] 
+[0| 1.456] ============================================================
+[0| 1.456] [IO][PASS] io.bumpers()
+[0| 1.456] timestamp: 2026-01-31T12:15:27
+[0| 1.456] data:
+[0| 1.456] {
+[0| 1.456]   "io.bumpers()['fl']": false,
+[0| 1.456]   "io.bumpers()['fr']": false,
+[0| 1.456]   "io.bumpers()['rl']": true,
+[0| 1.456]   "io.bumpers()['rr']": true
+[0| 1.456] }
+[0| 1.456] json: {"data":{"io.bumpers()['fl']":false,"io.bumpers()['fr']":false,"io.bumpers()['rl']":true,"io.bumpers()['rr']":true},"device":"io.bumpers()","note":"","status":"PASS","ts":"2026-01-31T12:15:27"}
+[0| 1.456] ============================================================
+[0| 1.456] [PASS] test_io_bumpers
+[0| 1.456] 
+[0| 1.456] --- RUN test_io_reflectance (category=io) ---
+[0| 1.536] 
+[0| 1.536] ============================================================
+[0| 1.536] [IO][PASS] io.reflectance()
+[0| 1.536] timestamp: 2026-01-31T12:15:27
+[0| 1.536] data:
+[0| 1.536] {
+[0| 1.536]   "io.reflectance()['center']": 2.771,
+[0| 1.536]   "io.reflectance()['left']": 2.727,
+[0| 1.536]   "io.reflectance()['right']": 2.761
+[0| 1.536] }
+[0| 1.536] json: {"data":{"io.reflectance()['center']":2.771,"io.reflectance()['left']":2.727,"io.reflectance()['right']":2.761},"device":"io.reflectance()","note":"","status":"PASS","ts":"2026-01-31T12:15:27"}
+[0| 1.536] ============================================================
+[0| 1.536] [PASS] test_io_reflectance
+[0| 1.536] 
+[0| 1.536] --- RUN test_io_ultrasonics (category=io) ---
+[0| 1.624] 
+[0| 1.624] ============================================================
+[0| 1.624] [IO][PASS] io.ultrasonics()
+[0| 1.624] timestamp: 2026-01-31T12:15:27
+[0| 1.624] data:
+[0| 1.624] {
+[0| 1.624]   "io.ultrasonics()['back']": 17,
+[0| 1.624]   "io.ultrasonics()['front']": 0,
+[0| 1.624]   "io.ultrasonics()['left']": 263,
+[0| 1.624]   "io.ultrasonics()['right']": 0
+[0| 1.624] }
+[0| 1.624] json: {"data":{"io.ultrasonics()['back']":17,"io.ultrasonics()['front']":0,"io.ultrasonics()['left']":263,"io.ultrasonics()['right']":0},"device":"io.ultrasonics()","note":"","status":"PASS","ts":"2026-01-31T12:15:27"}
+[0| 1.624] ============================================================
+[0| 1.624] [PASS] test_io_ultrasonics
+[0| 1.624] 
+[0| 1.624] === TEST RUN END ===
+[0| 1.624] 
+[0| 1.624] === TESTS COMPLETE ===
+[0| 1.624] 
