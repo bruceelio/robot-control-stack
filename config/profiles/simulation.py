@@ -6,6 +6,11 @@ HARDWARE_PROFILE = "sr1"
 ENVIRONMENT = "simulation"
 SURFACE = "simulation"
 
+# Cameras
+CAMERAS = {
+    "front": "sr",
+}
+
 # Drive hardware
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"

@@ -1,44 +1,49 @@
-// NEED TO UPDATE WITH LATEST 2wd_Mega2560.ino configurations !!!
-//
 // Mega2560_mecanum_rc_multipurpose.ino
 //
-// Default configuration (as shipped in this file):
-//   INPUT  = RC PWM per-channel (pulseIn on CH1/CH2/CH4)
-//   OUTPUT = RC PWM (servo-style) outputs to motor controllers / RoboClaw in RC mode
+// Updated with:
+// - FlySky iBus on Serial2 using SERIAL_8N2
+// - RoboClaw packet serial with CRC16
+// - Right-stick translation mapping for mecanum:
+//     CH2 = throttle (right stick up/down)
+//     CH1 = strafe   (right stick left/right)
+//     CH4 = rotate   (left stick left/right)
+// - Signal-loss stop
+// - Configurable drive scaling
 //
-// To switch modes: comment/uncomment the #define values below.
+// Output mapping for RoboClaw packet serial:
+//   RoboClaw A:
+//     M1 = Front Left
+//     M2 = Rear Left
+//   RoboClaw B:
+//     M1 = Front Right
+//     M2 = Rear Right
 
 #include <Arduino.h>
 #include <Servo.h>
+#include <math.h>
 
 // ------------------------- SELECT INPUT MODE -------------------------
-// DEFAULT: PWM input ON, iBUS OFF
-#define USE_INPUT_PWM  1   // RC receiver PWM per channel (CH1/CH2/CH4)
-#define USE_INPUT_IBUS 0   // FlySky iBUS serial (single wire)
+#define USE_INPUT_PWM  0   // RC receiver PWM per channel
+#define USE_INPUT_IBUS 1   // FlySky iBUS serial
 
 // ------------------------- SELECT OUTPUT MODE ------------------------
-// DEFAULT: RC PWM output ON, RoboClaw packet serial OFF
-#define USE_OUTPUT_RC_PWM        1   // Servo pulses to motor controllers / RoboClaw RC mode
-#define USE_OUTPUT_ROBOCLAW_PKT  0   // Packet serial to RoboClaw (requires 2 RoboClaws for 4 motors)
+#define USE_OUTPUT_RC_PWM        0   // Servo pulses to motor controllers / RoboClaw RC mode
+#define USE_OUTPUT_ROBOCLAW_PKT  1   // Packet serial to 2x RoboClaw
 
 // ------------------------- PIN DEFINITIONS ---------------------------
-//
-// Mega external interrupt pins: 2, 3, 18, 19, 20, 21
-// We'll use 2,3,21 for RC PWM inputs to avoid clashing with Serial1 pins (18/19).
 
 #if USE_INPUT_PWM
-  const uint8_t PIN_RC_CH1_PWM = 2;   // CH1 (THROTTLE)  - INT4-capable not required for pulseIn, but nice
-  const uint8_t PIN_RC_CH2_PWM = 3;   // CH2 (STRAFE)
-  const uint8_t PIN_RC_CH4_PWM = 21;  // CH4 (ROTATE)    - avoids Serial1 pins
+  const uint8_t PIN_RC_CH1_PWM = 2;   // CH1
+  const uint8_t PIN_RC_CH2_PWM = 3;   // CH2
+  const uint8_t PIN_RC_CH4_PWM = 21;  // CH4
 #endif
 
 #if USE_INPUT_IBUS
-  // iBUS signal wire -> Mega RX2 (pin 17). We'll use Serial2.
-  const uint8_t PIN_RC_IBUS_RX = 17; // RX2 (informational; Serial2 uses 17/16)
+  // iBUS signal wire -> Mega RX2 (pin 17)
+  const uint8_t PIN_RC_IBUS_RX = 17; // informational only; Serial2 uses pins 17/16
 #endif
 
 #if USE_OUTPUT_RC_PWM
-  // Servo-style outputs (1-2ms @ 50Hz) to motor controllers / RoboClaw RC mode.
   const uint8_t PIN_MTR_FL_PWM = 6;
   const uint8_t PIN_MTR_FR_PWM = 7;
   const uint8_t PIN_MTR_RL_PWM = 8;
@@ -46,7 +51,10 @@
 #endif
 
 #if USE_OUTPUT_ROBOCLAW_PKT
-  // RoboClaw packet serial example uses Serial1 (RX1=19, TX1=18) - do not use those pins elsewhere.
+  // Serial1 = RoboClaw A (left side)
+  // Serial3 = RoboClaw B (right side)
+  const uint8_t ROBOCLAW_A_ADDR = 0x80;
+  const uint8_t ROBOCLAW_B_ADDR = 0x81;   // change if your second RoboClaw uses a different address
 #endif
 
 // ------------------------- CONTROL PARAMETERS ------------------------
@@ -54,6 +62,11 @@ const float STOP_MS = 1.5f;
 const float MAX_MS  = 1.9f;
 const float MIN_MS  = 1.1f;
 const float SPAN_MS = 0.4f;
+
+// Translation / rotation scaling
+const float DRIVE_SCALE  = 0.38f;   // lower top speed; adjust as needed
+const float STRAFE_SCALE = 0.38f;   // match throttle by default
+const float TURN_SCALE   = 0.45f;   // soften turning a bit
 
 static inline float normalize_input(int value) {
   const int deadzone_min = 45;
@@ -67,7 +80,6 @@ static inline float normalize_input(int value) {
 // ------------------------- OUTPUT IMPLEMENTATIONS --------------------
 #if USE_OUTPUT_RC_PWM
 Servo m_fl, m_fr, m_rl, m_rr;
-
 
 static inline int msToUs(float ms) { return (int)(ms * 1000.0f + 0.5f); }
 
@@ -98,15 +110,79 @@ void output_mecanum(float fl_pwr, float fr_pwr, float rl_pwr, float rr_pwr) {
 #endif
 
 #if USE_OUTPUT_ROBOCLAW_PKT
-static const uint8_t ROBOCLAW_ADDR = 0x80;
+// ------------------------- ROBOCLAW CRC16 ---------------------------
+uint16_t crc_update(uint16_t crc, uint8_t data) {
+  crc ^= (uint16_t)data << 8;
+  for (uint8_t i = 0; i < 8; i++) {
+    if (crc & 0x8000) {
+      crc = (crc << 1) ^ 0x1021;
+    } else {
+      crc <<= 1;
+    }
+  }
+  return crc;
+}
+
+// Send a single-byte-speed command to a RoboClaw
+void sendRoboClaw(HardwareSerial &port, uint8_t addr, uint8_t cmd, uint8_t val) {
+  uint16_t crc = 0;
+
+  port.write(addr);
+  crc = crc_update(crc, addr);
+
+  port.write(cmd);
+  crc = crc_update(crc, cmd);
+
+  port.write(val);
+  crc = crc_update(crc, val);
+
+  port.write((crc >> 8) & 0xFF);
+  port.write(crc & 0xFF);
+}
+
+int toRoboSpeed(float pwr) {
+  pwr = constrain(pwr, -1.0f, 1.0f);
+  return (int)(pwr * 127.0f);
+}
+
+// RoboClaw A: FL = M1, RL = M2
+void setFL(int speed) {
+  speed = constrain(speed, -127, 127);
+  if (speed >= 0) sendRoboClaw(Serial1, ROBOCLAW_A_ADDR, 0x00, (uint8_t)speed);   // M1 forward
+  else            sendRoboClaw(Serial1, ROBOCLAW_A_ADDR, 0x01, (uint8_t)(-speed)); // M1 backward
+}
+
+void setRL(int speed) {
+  speed = constrain(speed, -127, 127);
+  if (speed >= 0) sendRoboClaw(Serial1, ROBOCLAW_A_ADDR, 0x04, (uint8_t)speed);   // M2 forward
+  else            sendRoboClaw(Serial1, ROBOCLAW_A_ADDR, 0x05, (uint8_t)(-speed)); // M2 backward
+}
+
+// RoboClaw B: FR = M1, RR = M2
+void setFR(int speed) {
+  speed = constrain(speed, -127, 127);
+  if (speed >= 0) sendRoboClaw(Serial3, ROBOCLAW_B_ADDR, 0x00, (uint8_t)speed);   // M1 forward
+  else            sendRoboClaw(Serial3, ROBOCLAW_B_ADDR, 0x01, (uint8_t)(-speed)); // M1 backward
+}
+
+void setRR(int speed) {
+  speed = constrain(speed, -127, 127);
+  if (speed >= 0) sendRoboClaw(Serial3, ROBOCLAW_B_ADDR, 0x04, (uint8_t)speed);   // M2 forward
+  else            sendRoboClaw(Serial3, ROBOCLAW_B_ADDR, 0x05, (uint8_t)(-speed)); // M2 backward
+}
 
 void stop_all_motors() {
-  // TODO: implement via RoboClaw packet serial
+  setFL(0);
+  setFR(0);
+  setRL(0);
+  setRR(0);
 }
 
 void output_mecanum(float fl_pwr, float fr_pwr, float rl_pwr, float rr_pwr) {
-  // TODO: implement via RoboClaw packet serial (requires 2x RoboClaw for 4 motors)
-  (void)fl_pwr; (void)fr_pwr; (void)rl_pwr; (void)rr_pwr;
+  setFL(toRoboSpeed(fl_pwr));
+  setFR(toRoboSpeed(fr_pwr));
+  setRL(toRoboSpeed(rl_pwr));
+  setRR(toRoboSpeed(rr_pwr));
 }
 #endif
 
@@ -134,16 +210,20 @@ static unsigned long ibus_last_frame_ms = 0;
 static uint16_t ibus_ch[14] = {1500};
 
 bool ibus_read_frame() {
-  while (Serial2.available()) {
-    uint8_t b = (uint8_t)Serial2.read();
+  while (IBUS_SERIAL.available()) {
+    uint8_t b = (uint8_t)IBUS_SERIAL.read();
 
     if (ibus_idx == 0) {
       if (b != 0x20) continue;
       ibus_buf[ibus_idx++] = b;
       continue;
     }
+
     if (ibus_idx == 1) {
-      if (b != 0x40) { ibus_idx = 0; continue; }
+      if (b != 0x40) {
+        ibus_idx = 0;
+        continue;
+      }
       ibus_buf[ibus_idx++] = b;
       continue;
     }
@@ -186,7 +266,7 @@ int ibus_channel0to100(uint8_t ch_index) {
 #endif
 
 // ------------------------- DRIVE LOGIC -------------------------------
-void drive(int throttle_sp, int strafe_sp, int rotate_sp, float input_scale = 0.5f) {
+void drive(int throttle_sp, int strafe_sp, int rotate_sp) {
   float fwd    = normalize_input(throttle_sp);
   float strafe = normalize_input(strafe_sp);
   float rotate = normalize_input(rotate_sp);
@@ -196,10 +276,12 @@ void drive(int throttle_sp, int strafe_sp, int rotate_sp, float input_scale = 0.
     return;
   }
 
-  fwd    *= input_scale;
-  strafe *= input_scale;
-  rotate *= input_scale;
+  // Apply scaling
+  fwd    *= DRIVE_SCALE;
+  strafe *= STRAFE_SCALE;
+  rotate *= TURN_SCALE;
 
+  // Mecanum mix
   float fl = fwd + strafe + rotate;
   float fr = fwd - strafe - rotate;
   float rl = fwd - strafe + rotate;
@@ -225,7 +307,7 @@ void setup() {
 #endif
 
 #if USE_INPUT_IBUS
-  Serial2.begin(115200);
+  IBUS_SERIAL.begin(115200, SERIAL_8N2);
 #endif
 
 #if USE_OUTPUT_RC_PWM
@@ -236,7 +318,8 @@ void setup() {
 #endif
 
 #if USE_OUTPUT_ROBOCLAW_PKT
-  Serial1.begin(38400); // adjust to match RoboClaw setting
+  Serial1.begin(38400); // RoboClaw A
+  Serial3.begin(38400); // RoboClaw B
 #endif
 
   stop_all_motors();
@@ -246,18 +329,24 @@ void loop() {
   int throttle = 50, strafe = 50, rotate = 50;
 
 #if USE_INPUT_PWM
-  throttle = readChannel0to100_PWM(PIN_RC_CH1_PWM);
-  strafe   = readChannel0to100_PWM(PIN_RC_CH2_PWM);
+  // Original PWM mapping can remain whatever your receiver outputs are.
+  throttle = readChannel0to100_PWM(PIN_RC_CH2_PWM);
+  strafe   = readChannel0to100_PWM(PIN_RC_CH1_PWM);
   rotate   = readChannel0to100_PWM(PIN_RC_CH4_PWM);
 #endif
 
 #if USE_INPUT_IBUS
   ibus_read_frame();
-  throttle = ibus_channel0to100(0); // CH1
-  strafe   = ibus_channel0to100(1); // CH2
+
+  // Updated FlySky mapping:
+  // CH2 = right stick up/down   -> throttle
+  // CH1 = right stick left/right -> strafe
+  // CH4 = left stick left/right  -> rotate
+  throttle = ibus_channel0to100(1); // CH2
+  strafe   = ibus_channel0to100(0); // CH1
   rotate   = ibus_channel0to100(3); // CH4
 #endif
 
-  drive(throttle, strafe, rotate, 0.5f);
+  drive(throttle, strafe, rotate);
   delay(20);
 }

@@ -25,6 +25,7 @@ class Config:
     surface: str
     drive_layout: str
     wheel_type: str
+    cameras: dict
 
     # Arena
     arena_size: int
@@ -78,7 +79,6 @@ class Config:
     final_approach_direct_range_mm: float
     final_approach_backup_mm: float
     height_decision_deadline_mm: float
-    marker_height_max_distance_mm: float
 
     final_commit_distance_high_mm: float
     final_approach_direct_range_high_mm: float
@@ -148,6 +148,7 @@ RESOLVE_MAP = {
     "surface": ("profile", "SURFACE"),
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),
+    "cameras": ("profile", "CAMERAS"),
 
     # Arena
     "arena_size": ("arena", "ARENA_SIZE"),
@@ -195,7 +196,6 @@ RESOLVE_MAP = {
     "marker_pitch_high_deg": ("profile", "MARKER_PITCH_HIGH_DEG"),
     "marker_pitch_low_deg": ("profile", "MARKER_PITCH_LOW_DEG"),
     "height_decision_deadline_mm": ("profile", "HEIGHT_DECISION_DEADLINE_MM"),
-    "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
 
     "vision_loss_timeout_s": ("profile", "VISION_LOSS_TIMEOUT_S"),
     "vision_grace_period_s": ("profile", "VISION_GRACE_PERIOD_S"),

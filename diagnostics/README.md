@@ -1,3 +1,4 @@
+diagnostics/README.md
 
 # Diagnostics
 

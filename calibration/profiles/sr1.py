@@ -56,41 +56,39 @@ Conventions (CANONICAL):
 
 CAMERAS = {
     "front": {
-        # ----------------------------------------------
+        # ------------------------------------------
         # Physical mounting (robot frame)
-        # ----------------------------------------------
+        # ------------------------------------------
+        "mount": {
+            "yaw_offset_deg": 0.0,   # camera faces forward
+            "x_offset_mm": 0.0,      # centered (sim)
+            "y_offset_mm": 0.0,
+        },
 
-        # Camera orientation relative to robot forward
-        "yaw_offset_deg": 0.0,
+        # ------------------------------------------
+        # Optical / perception correction
+        # ------------------------------------------
+        "optical": {
+            "distance_scale": 1.0,     # sim camera overestimates distance
+            "bearing_sign": 1.0,        # image X axis inverted vs robot yaw
+            "bearing_offset_deg": 0.0,   # no constant bias
+        },
 
-        # Camera position relative to robot center
-        "x_offset_mm": 0.0,
-        "y_offset_mm": 0.0,
+        # ------------------------------------------
+        # Metadata (non-functional)
+        # ------------------------------------------
+        "meta": {
+            "resolution": (640, 480),
+            "fov_deg": 60.0,
+            "description": "Forward-facing AprilTag camera (simulation)",
+        },
+    },
 
-        # ----------------------------------------------
-        # Optical / perception calibration
-        # ----------------------------------------------
-
-        # Distance scaling factor (camera → real world)
-        "distance_scale": 1.0,
-
-        # Bearing convention correction
-        # Raw camera bearing:
-        #   +ve = left (CCW), -ve = right (CW)
-        "bearing_sign": 1.0,
-
-        # Static angular misalignment correction
-        "bearing_offset_deg": 0.0,
-
-        # ----------------------------------------------
-        # Metadata (non-functional, informational)
-        # ----------------------------------------------
-
-        "resolution": (640, 480),
-        "fov_deg": 60.0,
-        "description": "Front-facing primary camera",
-    }
+    # Example future camera
+    # "rear": {
+    #     "mount": {...},
+    #     "optical": {...},
+    #     "meta": {...},
+    # }
 }
-
-# End of SR1 calibration profile
 

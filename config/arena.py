@@ -79,6 +79,20 @@ def marker_locations(arena_size: int):
 
     return markers
 
+# --------------------------------------------------
+# April Tags
+# --------------------------------------------------
+
+APRILTAG_FAMILY = "tag36h11"
+APRILTAG_ID_GROUPS = {
+    "arena": tuple(range(0, 20)),
+    "object": tuple(range(100, 200)),
+}
+
+APRILTAG_SIZE_BY_GROUP_M = {
+    "arena": 0.15,
+    "object": 0.08,
+}
 
 # --------------------------------------------------
 # Base geometry

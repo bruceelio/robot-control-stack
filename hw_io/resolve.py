@@ -1,23 +1,20 @@
-# hw_io/resolve
+# hw_io/resolve.py
 
 from typing import Any
 
 from hw_io.base import IOMap
-from hw_io.sr1 import SR1IO
+from hw_io.bob_bot import BobBotIO
 
 
 def resolve_io(*, robot: Any, hardware_profile: str) -> IOMap:
-    """
-    Resolve and construct the active IOMap implementation.
-
-    Selection is based ONLY on the hardware profile.
-    Environment (real vs simulation) is irrelevant at this layer.
-    """
 
     if hardware_profile == "sr1":
+        from hw_io.sr1 import SR1IO   # ← lazy import
         return SR1IO(robot)
+
+    if hardware_profile == "bob_bot":
+        return BobBotIO(robot)
 
     raise RuntimeError(
         f"No IOMap implementation for hardware_profile={hardware_profile!r}"
     )
-

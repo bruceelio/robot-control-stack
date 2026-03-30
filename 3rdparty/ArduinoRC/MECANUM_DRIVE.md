@@ -1,278 +1,351 @@
-Closed loop on the Arduino is the right choice
+# Mecanum Drive Guide (Arduino Mega + FlySky iBus + Dual RoboClaw)
 
-For a mecanum drive, it is usually better to have:
+This guide documents the updated mecanum drive configuration using:
 
-* **Pi** send high-level commands
-* **Arduino** run the fast low-level control loop
+- Arduino Mega 2560
+- FlySky receiver via iBus
+- Two RoboClaw motor controllers via packet serial
+- Right-stick translation control
 
-So instead of the Pi directly saying:
+This file assumes the FlySky setup and RoboClaw packet-serial setup are already working.
 
-* motor 1 = 120
-* motor 2 = 95
-* motor 3 = 140
+Related files:
+- FLYSKY.md
+- ROBOCLAW.md
 
-the Pi should say something more like:
+---
 
-* target `vx`
-* target `vy`
-* target `omega`
+## Overview
 
-or:
+The mecanum drive system uses:
 
-* target wheel speeds
-* target pose increment
-* target heading
+    FlySky TX -> Receiver -> Arduino Mega -> RoboClaw A / RoboClaw B -> 4 mecanum wheels
 
-Then the Arduino:
+The Arduino:
+- reads iBus from the receiver
+- converts stick inputs into mecanum wheel commands
+- sends packet-serial motor commands to two RoboClaws
 
-* reads encoder feedback from the RoboClaws
-* computes control corrections
-* updates motor commands at a fixed fast rate
+---
 
-That is much more robust.
+## Control Mapping
 
-## 3) Why this is better for mecanum
+This updated mecanum version uses the transmitter as follows:
 
-Mecanum control benefits from fast, regular timing. The Arduino is better for that because it can do:
+    CH2 -> throttle  -> right stick up/down
+    CH1 -> strafe    -> right stick left/right
+    CH4 -> rotate    -> left stick left/right
 
-* deterministic loop timing
-* immediate encoder reads
-* immediate motor command updates
-* no Linux scheduling jitter
+This gives:
 
-The Raspberry Pi is better for:
+- Right stick = translation
+- Left stick horizontal = rotation
 
-* autonomy
-* path planning
-* vision
-* state machine logic
-* operator interface
-* network comms
+That is the most natural mapping for mecanum drive with your FlySky setup.
 
-So the split should be:
+---
 
-### Raspberry Pi
+## Serial Interfaces
 
-* decide where the robot should go
-* send velocity or motion targets
-* monitor status
-* do higher-level behaviors
+The Arduino Mega uses:
 
-### Arduino Mega
+    Serial2 -> FlySky iBus
+    Serial1 -> RoboClaw A
+    Serial3 -> RoboClaw B
 
-* convert target motion to wheel commands
-* close the loop with encoder feedback
-* handle emergency stops / bumpers
-* talk to RoboClaws
-* handle RC/manual override logic if needed
+### FlySky iBus
 
-That is the usual “high-level brain + low-level motor controller” split.
+iBus uses:
 
-## 4) Best command interface between Pi and Arduino
+    Serial2.begin(115200, SERIAL_8N2);
 
-For mecanum, I would not have the Pi send raw motor PWM except maybe for test mode.
+Pins:
 
-I would define commands like:
+    RX2 = pin 17
+    TX2 = pin 16 (unused)
 
-```text
-CMD_VEL,0.20,0.00,0.10
-```
+### RoboClaw packet serial
 
-Meaning:
+RoboClaw links use:
 
-* `vx = 0.20 m/s`
-* `vy = 0.00 m/s`
-* `omega = 0.10 rad/s`
+    Serial1.begin(38400);
+    Serial3.begin(38400);
 
-Or in integer form to simplify parsing:
+---
 
-```text
-CMD_VEL,200,0,100
-```
+## RoboClaw Mapping
 
-where units are:
+This mecanum code assumes the following wheel-to-controller mapping:
 
-* mm/s
-* mm/s
-* mrad/s
+### RoboClaw A
+- M1 = Front Left
+- M2 = Rear Left
 
-Then the Arduino does:
+### RoboClaw B
+- M1 = Front Right
+- M2 = Rear Right
 
-1. inverse kinematics for mecanum
-2. compare target wheel speed to measured encoder speed
-3. PID on each wheel
-4. send commands to the RoboClaws
+Addresses assumed:
 
-That is the cleanest design.
+    RoboClaw A = 0x80
+    RoboClaw B = 0x81
 
-## 5) Even better than “desired location” on the Arduino: keep roles separated
+If RoboClaw B uses a different address, update the code accordingly.
 
-I would be careful with the phrase “desired location.”
+---
 
-There are really two levels:
+## Packet Serial Format
 
-### Good to put on Arduino
+The mecanum code now uses the corrected RoboClaw packet-serial implementation.
 
-* desired body velocity (`vx`, `vy`, `omega`)
-* desired wheel speeds
-* heading hold
-* wheel PID
-* safety interlocks
+Important point:
 
-### Better to keep on Pi
+    RoboClaw requires CRC16 packet format
 
-* global position estimation
-* path following
-* waypoint navigation
-* obstacle behavior
-* localization / SLAM / vision
+This replaced the earlier simple checksum approach, which did not work reliably.
 
-So I would usually recommend:
+The working implementation now:
+- computes CRC16
+- sends valid packet serial commands
+- correctly drives motors from Arduino
 
-* **Pi sends desired velocity**
-* **Arduino closes the loop on wheel speed**
-* **Pi estimates/decides location goals**
+---
 
-If you push full “go to X,Y,theta” onto the Arduino, the Mega can do it, but the system becomes harder to tune and less flexible.
+## Input Modes and Output Modes
 
-## 6) Practical architecture I’d recommend
+The updated mecanum file supports selectable modes.
 
-### Mode A: normal operation
+### Input mode options
+- RC PWM input
+- FlySky iBus input
 
-Pi sends at, say, **20–50 Hz**:
+### Output mode options
+- RC PWM motor outputs
+- RoboClaw packet serial outputs
 
-```text
-CMD_VEL,vx,vy,omega
-```
+Current preferred configuration:
 
-Mega replies at **20–50 Hz**:
+    USE_INPUT_PWM  = 0
+    USE_INPUT_IBUS = 1
 
-```text
-STAT,encfl,...,encfr,...,encrl,...,encrr,...,bumpers,...,ultra,...
-```
+    USE_OUTPUT_RC_PWM       = 0
+    USE_OUTPUT_ROBOCLAW_PKT = 1
 
-### Mega internal control loop
+That means:
+- input comes from FlySky iBus
+- output goes to two RoboClaws via packet serial
 
-Run at **50–200 Hz**:
+---
 
-* read encoders
-* estimate wheel speeds
-* compute wheel targets from mecanum kinematics
-* PID per wheel
-* send motor commands to RoboClaws
+## Mecanum Drive Logic
 
-### Safety behavior on Mega
+The mecanum wheel mix is:
 
-If command timeout happens, Mega should stop the robot.
+    FL = forward + strafe + rotate
+    FR = forward - strafe - rotate
+    RL = forward - strafe + rotate
+    RR = forward + strafe - rotate
 
-For example:
+After mixing:
+- outputs are normalized
+- commands are limited to the valid range
+- resulting motor commands are sent to RoboClaws
 
-* if no valid `CMD_VEL` received for 200 ms
-* set target speeds to zero
+---
 
-That way, if the Pi crashes, the robot stops.
+## Speed Scaling
 
-## 7) Suggested packet set
+The updated code includes software scaling so the robot is easier to control.
 
-I would use something like this.
+Current values:
 
-### Pi → Mega
+    DRIVE_SCALE  = 0.38
+    STRAFE_SCALE = 0.38
+    TURN_SCALE   = 0.45
 
-Velocity command:
+Purpose:
+- reduce top speed
+- soften turning
+- make 312 RPM motors feel closer to a slower drivetrain
 
-```text
-CMD_VEL,150,0,0
-```
+These can be tuned later.
 
-Stop:
+---
 
-```text
-CMD_STOP
-```
+## Signal Loss Safety
 
-Shooter:
+The code stops the robot if iBus signal is lost.
 
-```text
-CMD_SHOOT,1,200
-```
+Logic:
 
-Collector:
+    if no valid iBus frame is received for more than 200 ms
+    -> stop all motors
 
-```text
-CMD_COLLECT,1,180
-```
+This protects against:
+- transmitter off
+- receiver signal loss
+- iBus communication failure
 
-Mode change:
+---
 
-```text
-CMD_MODE,AUTO
-```
+## Required Wiring Summary
 
-### Mega → Pi
+### FlySky Receiver to Arduino Mega
 
-```text
-STAT,mode,AUTO,vx,145,vy,3,om,1,bfl,0,bfr,0,brl,0,brr,0,usf,42,usr,39,refl,612,refc,702,refr,650,encfl,12345,encfr,12301,encrl,12110,encrr,12150
-```
+Use the receiver SERVO port:
 
-## 8) About RoboClaw
+    SERVO right  -> Arduino pin 17
+    SERVO middle -> Arduino 5V
+    SERVO left   -> Arduino GND
 
-Since the RoboClaws already have encoder and motor-control features, there are two possible designs:
+### Arduino Mega to RoboClaw A
 
-### Option 1: Arduino does the wheel PID
+    Mega pin 18 (TX1) -> RoboClaw A S1
+    Mega GND          -> RoboClaw A GND
 
-* Mega reads encoder counts from RoboClaws
-* Mega computes PID
-* Mega sends motor commands
+Optional:
 
-### Option 2: RoboClaw does the wheel speed PID
+    Mega pin 19 (RX1) <- RoboClaw A S2
 
-* Mega sends target speeds to RoboClaws
-* RoboClaws close the motor loop internally
-* Mega handles mecanum kinematics and supervision
+### Arduino Mega to RoboClaw B
 
-If your RoboClaw mode supports reliable closed-loop speed commands, **Option 2 is often better**. Then:
+    Mega pin 14 (TX3) -> RoboClaw B S1
+    Mega GND          -> RoboClaw B GND
 
-* Pi sends `vx, vy, omega` to Mega
-* Mega converts to 4 wheel target speeds
-* Mega sends wheel speed targets to RoboClaw A/B
-* RoboClaws do the low-level encoder speed regulation
+Optional:
 
-That is a very solid setup.
+    Mega pin 15 (RX3) <- RoboClaw B S2
 
-## 9) Recommended final control stack
+Important:
+- all grounds must be common
+- use packet serial mode on both RoboClaws
 
-Given your hardware, this is what I would choose:
+---
 
-### Raspberry Pi
+## Required RoboClaw Configuration
 
-* localization / autonomy / manual UI
-* decides target chassis motion
-* sends `vx, vy, omega` to Mega
+For each RoboClaw:
 
-### Arduino Mega
+- Control Mode = Packet Serial
+- Baud Rate = 38400
+- Correct address assigned
+- Settings written
+- Power cycled after writing
 
-* receives target chassis motion
-* computes mecanum wheel speed setpoints
-* supervises bumpers / ultrasonics / RC override
-* sends closed-loop speed commands to RoboClaws
-* handles shooter and collector outputs
+Suggested addresses:
 
-### RoboClaws
+    RoboClaw A = 0x80
+    RoboClaw B = 0x81
 
-* low-level motor speed regulation for the 4 drive motors
+---
 
-That is likely the strongest design for your robot.
+## Expected Driving Behavior
 
-## 10) Bottom line
+With the updated mapping:
 
-* **Yes**, for mecanum, the **Pi should send high-level motion targets**, and the **Arduino should handle the fast closed-loop motor control**.
+- Right stick up/down = forward/backward
+- Right stick left/right = strafe left/right
+- Left stick left/right = rotate in place
 
-The only refinement I’d make is this:
+Examples:
 
-* have the Pi send **velocity targets**, not raw motor commands
-* let the Mega do **mecanum kinematics + safety**
-* let the **RoboClaws do wheel-speed closed loop** if available
+- push right stick up -> robot moves forward
+- push right stick right -> robot strafes right
+- push left stick left -> robot rotates left
+- combine translation + rotation -> diagonal curved motion
 
-That will give you a much more stable robot.
+---
 
-I can sketch the exact message protocol and the mecanum equations for your 4-wheel layout next.
+## First Test Procedure
+
+Before first mecanum test:
+
+1. Confirm FlySky iBus test works
+2. Confirm each RoboClaw can move motors correctly
+3. Put wheels off the ground
+4. Upload the mecanum code
+5. Test one axis at a time:
+   - throttle
+   - strafe
+   - rotate
+6. Verify each wheel direction
+
+If a wheel spins the wrong way:
+- swap that motor's leads
+or
+- invert that wheel in code
+
+---
+
+## Common Issues
+
+### Robot does not move
+Check:
+- iBus is working
+- receiver is bound
+- RoboClaws are in Packet Serial mode
+- baud rate is 38400
+- addresses match the code
+- grounds are connected
+
+### Robot moves strangely
+Check:
+- wheel mapping to M1/M2 is correct
+- one or more motors may be reversed
+- FlySky channel mapping may be wrong
+
+### One side works, the other does not
+Check:
+- RoboClaw B address
+- Serial3 wiring
+- GND connection to RoboClaw B
+
+### Motors respond in Motion Studio but not from Arduino
+Check:
+- packet serial CRC16 implementation
+- Arduino serial port used
+- address and baud match
+
+---
+
+## Current File Roles
+
+At this point the three documentation files are:
+
+### FLYSKY.md
+Documents:
+- Arduino IDE setup
+- iBus receiver wiring
+- live iBus testing
+- channel verification
+
+### ROBOCLAW.md
+Documents:
+- RoboClaw packet-serial configuration
+- address and baud settings
+- packet-serial testing
+- grounding and control wiring
+
+### MECANUM_DRIVE.md
+Documents:
+- updated mecanum control mapping
+- dual RoboClaw architecture
+- wheel/controller mapping
+- packet-serial output assumptions
+- speed scaling and safety behavior
+
+---
+
+## Summary
+
+The updated mecanum system now uses:
+
+- right-stick translation
+- left-stick rotation
+- FlySky iBus on Serial2
+- RoboClaw packet serial with CRC16
+- two RoboClaws for four-wheel mecanum drive
+- speed scaling for more controllable motion
+- signal-loss stop logic for safety
+
+This is the current working architecture for the mecanum variation.

@@ -19,6 +19,7 @@ PROFILE_MAP = {
     "sim": "simulation",
     "simulation": "simulation",
     "sr1": "sr1",
+    "bob_bot": "simulation",   # temporary reuse
 }
 
 
