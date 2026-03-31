@@ -1,13 +1,8 @@
 # diagnostics/camera_only.py
-
 from __future__ import annotations
 
 import math
 import time
-
-from config import CONFIG
-from hw_io.resolve import resolve_io
-
 
 CAMERA_NAME = "front"
 SAMPLES = 20
@@ -26,10 +21,8 @@ def _fmt(value, fmt: str) -> str:
     return format(value, fmt)
 
 
-def run(robot):
+def run(robot, io):
     print("\n=== CAMERA ONLY DIAGNOSTIC ===")
-
-    io = resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
 
     cams = io.cameras()
     print(f"[DIAG] Available cameras: {list(cams.keys())}")

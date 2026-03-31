@@ -498,10 +498,10 @@ calibration/cameras/pi3_640_480.py
 python3 apriltag_pi3_test.py --preview drm
 ```
 
-### With calibration
+### With calibration (replace with actual values)
 
 ```bash
-python3 apriltag_pi3_test.py --preview drm --fx ... --fy ... --cx ... --cy ...
+python3 apriltag_pi3_test.py --preview drm --fx 620 --fy 610 --cx 320 --cy 240 --tag-size-m 0.08
 ```
 
 ### Debug frame capture

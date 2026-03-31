@@ -180,7 +180,7 @@ class Controller:
             print("\n=== RUNNING DIAGNOSTICS MODE ===")
             from diagnostics.runner import run_diagnostics
             try:
-                run_diagnostics(self.robot)
+                run_diagnostics(robot=self.robot, io=self.io)
                 safe_cue(self.lvl2, BuzzerCue.SUCCESS)
             except Exception:
                 safe_cue(self.lvl2, BuzzerCue.ERROR)

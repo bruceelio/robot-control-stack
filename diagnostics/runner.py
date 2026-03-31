@@ -9,11 +9,13 @@ They may move the robot and read sensors.
 They run ONCE and then exit.
 """
 
-def run_diagnostics(robot):
+def run_diagnostics(robot, io):
     # from diagnostics.camera_angles import run
     # from diagnostics.rotation_calibration import run
     # from diagnostics.drive_timing import run
     # from diagnostics.rotation_timing import run
-    from diagnostics.marker_pitches import run
+    # from diagnostics.marker_pitches import run
+    from diagnostics.camera_only import run
 
-    run(robot)
+
+    run(robot=robot, io=io)

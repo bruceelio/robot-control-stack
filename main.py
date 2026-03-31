@@ -1,4 +1,5 @@
 from __future__ import annotations
+from config.strategy import RUN_MODE, RunMode
 
 import os
 import sys
@@ -187,12 +188,15 @@ def main() -> int:
         # - flash LED while waiting
         # - show selected profile/mode
         # ----------------------------------------------------
-        wait_for_start_signal()
+        # -----------------------------------------
+        # Start control logic
+        # -----------------------------------------
 
-        # ----------------------------------------------------
-        # EXECUTION
-        # ----------------------------------------------------
-        print("[MAIN] Launching controller.run()")
+        if RUN_MODE in (RunMode.TESTS, RunMode.DIAGNOSTICS):
+            print("[MAIN] Non-autonomous mode selected; skipping start wait")
+        else:
+            wait_for_start_signal()
+
         controller.run()
 
         print("[MAIN] controller.run() returned normally")

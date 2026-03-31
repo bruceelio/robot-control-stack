@@ -11,9 +11,9 @@ Replace with real calibrated values when available.
 
 # Format:
 # CAMERA_PARAMS = (fx, fy, cx, cy)
-# default values (920, 920, 320, 240)
+# default values (950, 950, 320, 240)   (typical webcam 600 but Pi3 around 950)
 
-CAMERA_PARAMS = (920.0, 920.0, 320.0, 240.0)    #default values
+CAMERA_PARAMS = (950.0, 950.0, 320.0, 240.0)    #default values
 
 DIST_COEFFS = None
 
