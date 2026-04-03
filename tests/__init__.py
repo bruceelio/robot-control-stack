@@ -6,3 +6,4 @@ from . import test_hal_io
 from . import test_io_checkout
 from . import test_motion
 from . import test_safety
+from . import test_mega_serial_link

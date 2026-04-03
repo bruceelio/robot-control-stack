@@ -5,13 +5,13 @@ from tests.registry import TESTS
 def run_tests(
     robot=None,
     *,
-    only="test_buzzer_patterns",
+    only="test_mega_serial_drive_and_grip",
     category=None,
 ):
     """
     Run registered tests.
 
-    only="test_name"  -> run a single test
+    only="test_name"  -> run a single test (not file but test name)
     category="io"     -> run tests in that category
     """
     print("\n=== TEST RUN START ===")

@@ -5,6 +5,7 @@
 #include <Servo.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 // ------------------------- CONFIG -------------------------
 #define ROBOCLAW_ADDR 0x80
@@ -263,17 +264,29 @@ void handlePiCommand(char *line) {
     return;
   }
 
-  float a, b;
-  if (sscanf(line, "DRV %f %f", &a, &b) == 2) {
-    piLeftCmd = constrain(a, -1.0f, 1.0f);
-    piRightCmd = constrain(b, -1.0f, 1.0f);
-    PI_SERIAL.println("OK DRV");
-    return;
+  if (strncmp(line, "DRV ", 4) == 0) {
+    char *p = line + 4;
+    char *tok1 = strtok(p, " ");
+    char *tok2 = strtok(nullptr, " ");
+
+    if (tok1 && tok2) {
+      float a = atof(tok1);
+      float b = atof(tok2);
+
+      piLeftCmd = constrain(a, -1.0f, 1.0f);
+      piRightCmd = constrain(b, -1.0f, 1.0f);
+
+      PI_SERIAL.println("OK DRV");
+      return;
+    }
   }
 
-  float grip;
-  if (sscanf(line, "GRIP %f", &grip) == 1) {
+  if (strncmp(line, "GRIP ", 5) == 0) {
+    char *p = line + 5;
+    float grip = atof(p);
+
     piGripCmd = constrain(grip, -1.0f, 1.0f);
+
     PI_SERIAL.println("OK GRIP");
     return;
   }
