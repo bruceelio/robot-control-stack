@@ -3,10 +3,13 @@
 #include <Arduino.h>
 #include <math.h>
 #include <Servo.h>
+#include <string.h>
+#include <stdio.h>
 
 // ------------------------- CONFIG -------------------------
 #define ROBOCLAW_ADDR 0x80
 
+#define PI_SERIAL Serial        // USB serial to Raspberry Pi
 #define IBUS_SERIAL Serial2     // RX2 = pin 17
 #define ROBOCLAW_SERIAL Serial1 // TX1 = pin 18
 
@@ -17,8 +20,7 @@ static const uint8_t SERVO_GRIP_RIGHT_PIN = 13;
 // FlySky channel assignment (1-based for readability)
 // CH1 = right stick left/right
 // CH2 = right stick up/down
-// CH5/CH6 are commonly switches on FlySky radios.
-// Change this to match the switch/knob you assigned for the gripper.
+// CH5/CH6 are commonly switches/knobs on FlySky radios.
 static const uint8_t CH_GRIP = 5;
 
 // Grip servo calibration in microseconds.
@@ -28,6 +30,20 @@ static const int LEFT_CLOSED_US  = 2200;
 
 static const int RIGHT_OPEN_US   = 2100;
 static const int RIGHT_CLOSED_US = 800;
+
+// ------------------------- PI CONTROL ---------------------
+static const char DEVICE_ID[] = "MEGA_AUX_1";
+static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 300;
+
+bool piAutoRequested = false;
+unsigned long piLastHeartbeatMs = 0;
+
+float piLeftCmd = 0.0f;
+float piRightCmd = 0.0f;
+float piGripCmd = -1.0f;   // -1=open, +1=closed
+
+char piLineBuf[64];
+uint8_t piLineIdx = 0;
 
 // ------------------------- IBUS ---------------------------
 static const uint8_t IBUS_FRAME_LEN = 32;
@@ -146,7 +162,7 @@ void setLeft(int speed) {
   speed = constrain(speed, -127, 127);
 
   if (speed >= 0) {
-    sendRoboClaw(0x00, (uint8_t)speed);   // M1 forward
+    sendRoboClaw(0x00, (uint8_t)speed);    // M1 forward
   } else {
     sendRoboClaw(0x01, (uint8_t)(-speed)); // M1 backward
   }
@@ -156,7 +172,7 @@ void setRight(int speed) {
   speed = constrain(speed, -127, 127);
 
   if (speed >= 0) {
-    sendRoboClaw(0x04, (uint8_t)speed);   // M2 forward
+    sendRoboClaw(0x04, (uint8_t)speed);    // M2 forward
   } else {
     sendRoboClaw(0x05, (uint8_t)(-speed)); // M2 backward
   }
@@ -186,8 +202,112 @@ void updateGripFromIbus() {
   setGripPosition(gripUs);
 }
 
+void setGripNormalized(float pos) {
+  pos = constrain(pos, -1.0f, 1.0f);
+  uint16_t gripUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, 1000, 2000);
+  setGripPosition(gripUs);
+}
+
+void setDriveNormalized(float left, float right) {
+  left  = constrain(left,  -1.0f, 1.0f);
+  right = constrain(right, -1.0f, 1.0f);
+
+  setLeft(toRoboSpeed(left));
+  setRight(toRoboSpeed(right));
+}
+
+// ------------------------- PI SERIAL ----------------------
+bool piHeartbeatFresh() {
+  return (millis() - piLastHeartbeatMs) <= PI_HEARTBEAT_TIMEOUT_MS;
+}
+
+bool piHasControl() {
+  return piAutoRequested && piHeartbeatFresh();
+}
+
+void handlePiCommand(char *line) {
+  while (*line == ' ') line++;
+
+  if (strcmp(line, "HELLO") == 0) {
+    PI_SERIAL.print("ID ");
+    PI_SERIAL.println(DEVICE_ID);
+    return;
+  }
+
+  if (strcmp(line, "MODE AUTO") == 0) {
+    piAutoRequested = true;
+    piLastHeartbeatMs = millis();
+    PI_SERIAL.println("OK MODE AUTO");
+    return;
+  }
+
+  if (strcmp(line, "MODE TELEOP") == 0) {
+    piAutoRequested = false;
+    PI_SERIAL.println("OK MODE TELEOP");
+    return;
+  }
+
+  if (strcmp(line, "STOP") == 0) {
+    piLeftCmd = 0.0f;
+    piRightCmd = 0.0f;
+    stopMotors();
+    PI_SERIAL.println("OK STOP");
+    return;
+  }
+
+  unsigned long hbSeq = 0;
+  if (sscanf(line, "HB %lu", &hbSeq) == 1) {
+    piLastHeartbeatMs = millis();
+    PI_SERIAL.print("OK HB ");
+    PI_SERIAL.println(hbSeq);
+    return;
+  }
+
+  float a, b;
+  if (sscanf(line, "DRV %f %f", &a, &b) == 2) {
+    piLeftCmd = constrain(a, -1.0f, 1.0f);
+    piRightCmd = constrain(b, -1.0f, 1.0f);
+    PI_SERIAL.println("OK DRV");
+    return;
+  }
+
+  float grip;
+  if (sscanf(line, "GRIP %f", &grip) == 1) {
+    piGripCmd = constrain(grip, -1.0f, 1.0f);
+    PI_SERIAL.println("OK GRIP");
+    return;
+  }
+
+  PI_SERIAL.print("ERR ");
+  PI_SERIAL.println(line);
+}
+
+void servicePiSerial() {
+  while (PI_SERIAL.available()) {
+    char c = (char)PI_SERIAL.read();
+
+    if (c == '\r') continue;
+
+    if (c == '\n') {
+      piLineBuf[piLineIdx] = '\0';
+      if (piLineIdx > 0) {
+        handlePiCommand(piLineBuf);
+      }
+      piLineIdx = 0;
+      continue;
+    }
+
+    if (piLineIdx < sizeof(piLineBuf) - 1) {
+      piLineBuf[piLineIdx++] = c;
+    } else {
+      piLineIdx = 0;
+    }
+  }
+}
+
 // ------------------------- SETUP --------------------------
 void setup() {
+  PI_SERIAL.begin(115200);
   IBUS_SERIAL.begin(115200, SERIAL_8N2);
   ROBOCLAW_SERIAL.begin(38400);
 
@@ -196,13 +316,31 @@ void setup() {
   setGripPosition(1000);  // start open
 
   stopMotors();
+
+  PI_SERIAL.print("BOOT ");
+  PI_SERIAL.println(DEVICE_ID);
 }
 
 // ------------------------- LOOP ---------------------------
 void loop() {
+  servicePiSerial();
   readIbusFrame();
 
-  // Safety: stop drive if signal lost.
+  // If Pi has fresh heartbeat and requested AUTO, Pi owns the outputs.
+  if (piHasControl()) {
+    setDriveNormalized(piLeftCmd, piRightCmd);
+    setGripNormalized(piGripCmd);
+    delay(20);
+    return;
+  }
+
+  // If AUTO was requested but heartbeat expired, drop back to teleop.
+  if (piAutoRequested && !piHeartbeatFresh()) {
+    piAutoRequested = false;
+    stopMotors();
+  }
+
+  // Safety: stop drive if FlySky signal lost.
   // Keep servos at their last commanded position.
   if (millis() - ibus_last_frame_ms > 200) {
     stopMotors();
