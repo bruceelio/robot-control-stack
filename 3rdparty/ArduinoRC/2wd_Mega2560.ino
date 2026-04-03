@@ -1,7 +1,8 @@
-// Mega2560_2WD_FlySky_iBus_RoboClaw_RIGHT_STICK.ino
+// 3rdparty/ArduinoRC/2wd_Mega2560.ino
 
 #include <Arduino.h>
 #include <math.h>
+#include <Servo.h>
 
 // ------------------------- CONFIG -------------------------
 #define ROBOCLAW_ADDR 0x80
@@ -9,12 +10,40 @@
 #define IBUS_SERIAL Serial2     // RX2 = pin 17
 #define ROBOCLAW_SERIAL Serial1 // TX1 = pin 18
 
+// Servo pins
+static const uint8_t SERVO_GRIP_LEFT_PIN  = 11;
+static const uint8_t SERVO_GRIP_RIGHT_PIN = 13;
+
+// FlySky channel assignment (1-based for readability)
+// CH1 = right stick left/right
+// CH2 = right stick up/down
+// CH5/CH6 are commonly switches on FlySky radios.
+// Change this to match the switch/knob you assigned for the gripper.
+static const uint8_t CH_GRIP = 5;
+
+// Grip servo calibration.
+// Tune these four values to match your linkage.
+// Left and right are intentionally opposite because the arms mirror each other.
+static const int LEFT_OPEN_ANGLE   = 35;
+static const int LEFT_CLOSED_ANGLE = 115;
+static const int RIGHT_OPEN_ANGLE  = 145;
+static const int RIGHT_CLOSED_ANGLE= 65;
+
+// Thresholds for a switch-style control.
+static const uint16_t IBUS_LOW_THRESHOLD  = 1300;
+static const uint16_t IBUS_HIGH_THRESHOLD = 1700;
+
 // ------------------------- IBUS ---------------------------
 static const uint8_t IBUS_FRAME_LEN = 32;
 uint8_t ibus_buf[IBUS_FRAME_LEN];
 uint8_t ibus_idx = 0;
 uint16_t ibus_ch[14] = {1500};
 unsigned long ibus_last_frame_ms = 0;
+
+Servo gripLeftServo;
+Servo gripRightServo;
+
+bool gripClosed = false;
 
 bool readIbusFrame() {
   while (IBUS_SERIAL.available()) {
@@ -60,13 +89,17 @@ bool readIbusFrame() {
   return false;
 }
 
-int ibusToPercent(uint8_t ch) {
-  if (ch >= 14) return 50;
+uint16_t ibusMicros(uint8_t chZeroBased) {
+  if (chZeroBased >= 14) return 1500;
 
-  uint16_t us = ibus_ch[ch];
+  uint16_t us = ibus_ch[chZeroBased];
   if (us < 1000) us = 1000;
   if (us > 2000) us = 2000;
+  return us;
+}
 
+int ibusToPercent(uint8_t chZeroBased) {
+  uint16_t us = ibusMicros(chZeroBased);
   return map(us, 1000, 2000, 0, 100);
 }
 
@@ -140,10 +173,43 @@ void stopMotors() {
   setRight(0);
 }
 
+// ------------------------- SERVOS -------------------------
+void setGripClosed(bool closed) {
+  gripClosed = closed;
+
+  if (closed) {
+    gripLeftServo.write(LEFT_CLOSED_ANGLE);
+    gripRightServo.write(RIGHT_CLOSED_ANGLE);
+  } else {
+    gripLeftServo.write(LEFT_OPEN_ANGLE);
+    gripRightServo.write(RIGHT_OPEN_ANGLE);
+  }
+}
+
+void updateGripFromIbus() {
+  // CH_GRIP is 1-based in the config block; convert to 0-based here.
+  const uint8_t idx = CH_GRIP - 1;
+  const uint16_t gripUs = ibusMicros(idx);
+
+  // Simple switch behavior:
+  // low  -> open
+  // high -> closed
+  // middle -> hold current state
+  if (gripUs <= IBUS_LOW_THRESHOLD) {
+    setGripClosed(false);
+  } else if (gripUs >= IBUS_HIGH_THRESHOLD) {
+    setGripClosed(true);
+  }
+}
+
 // ------------------------- SETUP --------------------------
 void setup() {
   IBUS_SERIAL.begin(115200, SERIAL_8N2);
   ROBOCLAW_SERIAL.begin(38400);
+
+  gripLeftServo.attach(SERVO_GRIP_LEFT_PIN);
+  gripRightServo.attach(SERVO_GRIP_RIGHT_PIN);
+  setGripClosed(false);
 
   stopMotors();
 }
@@ -152,7 +218,8 @@ void setup() {
 void loop() {
   readIbusFrame();
 
-  // Safety: stop if signal lost
+  // Safety: stop drive if signal lost.
+  // Keep servos at their last commanded position.
   if (millis() - ibus_last_frame_ms > 200) {
     stopMotors();
     return;
@@ -185,9 +252,10 @@ void loop() {
     right /= maxVal;
   }
 
-  // Output
+  // Output drive and gripper
   setLeft(toRoboSpeed(left));
   setRight(toRoboSpeed(right));
+  updateGripFromIbus();
 
   delay(20);
 }

@@ -1,8 +1,35 @@
-3rdparty/cameras/Pi3/README.md
+3rdparty/cameras/Pi3/README_PI3 .md
 
 # Pi Camera 3
 
-This folder contains tools for Raspberry Pi Camera Module 3 bring-up, focus setup, calibration, configuration testing, and AprilTag validation.
+# ⚠️ CRITICAL: Virtual Environment Setup
+
+Picamera2 is installed via system packages (APT), not pip.
+
+If you use a Python virtual environment, it MUST be created with:
+
+```bash
+python3 -m venv --system-site-packages ~/apriltag-env
+```
+
+Otherwise, you will get:
+
+ModuleNotFoundError: No module named 'picamera2'
+
+# Required setup
+
+Activate environment:
+
+```bash
+source ~/apriltag-env/bin/activate
+```
+Verify:
+
+```bash
+python3 -c "from picamera2 import Picamera2; print('OK')"
+python3 -c "from pupil_apriltags import Detector; print('OK')"
+```
+
 
 ---
 
@@ -501,7 +528,7 @@ python3 apriltag_pi3_test.py --preview drm
 ### With calibration (replace with actual values)
 
 ```bash
-python3 apriltag_pi3_test.py --preview drm --fx 620 --fy 610 --cx 320 --cy 240 --tag-size-m 0.08
+python3 apriltag_pi3_test.py --preview drm --fx 950 --fy 950 --cx 320 --cy 240 --tag-size-m 0.08
 ```
 
 ### Debug frame capture

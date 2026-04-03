@@ -145,6 +145,7 @@ Expected:
 
 ```
 /home/bt/apriltag-env/bin/python3
+
 ```
 
 ---
@@ -178,10 +179,28 @@ OK
 
 # 8. Running the Robot Code
 
+If you use a Python virtual environment, it MUST be created with:
+
+```bash
+python3 -m venv --system-site-packages ~/apriltag-env
+```
+
+Otherwise, you will get:
+
+ModuleNotFoundError: No module named 'picamera2'
+
+# Required setup
+
 Activate environment:
 
 ```bash
 source ~/apriltag-env/bin/activate
+```
+Verify:
+
+```bash
+python3 -c "from picamera2 import Picamera2; print('OK')"
+python3 -c "from pupil_apriltags import Detector; print('OK')"
 ```
 
 Run:
