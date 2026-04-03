@@ -23,11 +23,11 @@ static const uint8_t CH_GRIP = 5;
 
 // Grip servo calibration in microseconds.
 // Keep the known-good open endpoints and extend the closed endpoints as needed.
-static const int LEFT_OPEN_US    = 1000;
-static const int LEFT_CLOSED_US  = 2300;
+static const int LEFT_OPEN_US    = 900;
+static const int LEFT_CLOSED_US  = 2200;
 
-static const int RIGHT_OPEN_US   = 2000;
-static const int RIGHT_CLOSED_US = 700;
+static const int RIGHT_OPEN_US   = 2100;
+static const int RIGHT_CLOSED_US = 800;
 
 // ------------------------- IBUS ---------------------------
 static const uint8_t IBUS_FRAME_LEN = 32;
