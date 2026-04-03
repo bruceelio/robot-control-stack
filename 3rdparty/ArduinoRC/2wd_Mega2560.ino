@@ -21,13 +21,13 @@ static const uint8_t SERVO_GRIP_RIGHT_PIN = 13;
 // Change this to match the switch/knob you assigned for the gripper.
 static const uint8_t CH_GRIP = 5;
 
-// Grip servo calibration.
-// Tune these four values to match your linkage.
-// Left and right are intentionally opposite because the arms mirror each other.
-static const int LEFT_OPEN_ANGLE   = 35;
-static const int LEFT_CLOSED_ANGLE = 115;
-static const int RIGHT_OPEN_ANGLE  = 145;
-static const int RIGHT_CLOSED_ANGLE= 65;
+// Grip servo calibration in microseconds.
+// Keep the known-good open endpoints and extend the closed endpoints as needed.
+static const int LEFT_OPEN_US    = 1000;
+static const int LEFT_CLOSED_US  = 2300;
+
+static const int RIGHT_OPEN_US   = 2000;
+static const int RIGHT_CLOSED_US = 700;
 
 // ------------------------- IBUS ---------------------------
 static const uint8_t IBUS_FRAME_LEN = 32;
@@ -171,11 +171,11 @@ void stopMotors() {
 void setGripPosition(uint16_t gripUs) {
   gripUs = constrain(gripUs, 1000, 2000);
 
-  int leftAngle  = map(gripUs, 1000, 2000, LEFT_OPEN_ANGLE,  LEFT_CLOSED_ANGLE);
-  int rightAngle = map(gripUs, 1000, 2000, RIGHT_OPEN_ANGLE, RIGHT_CLOSED_ANGLE);
+  int leftUs  = map(gripUs, 1000, 2000, LEFT_OPEN_US,  LEFT_CLOSED_US);
+  int rightUs = map(gripUs, 1000, 2000, RIGHT_OPEN_US, RIGHT_CLOSED_US);
 
-  gripLeftServo.write(leftAngle);
-  gripRightServo.write(rightAngle);
+  gripLeftServo.writeMicroseconds(leftUs);
+  gripRightServo.writeMicroseconds(rightUs);
 }
 
 void updateGripFromIbus() {
