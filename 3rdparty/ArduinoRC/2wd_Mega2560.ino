@@ -29,10 +29,6 @@ static const int LEFT_CLOSED_ANGLE = 115;
 static const int RIGHT_OPEN_ANGLE  = 145;
 static const int RIGHT_CLOSED_ANGLE= 65;
 
-// Thresholds for a switch-style control.
-static const uint16_t IBUS_LOW_THRESHOLD  = 1300;
-static const uint16_t IBUS_HIGH_THRESHOLD = 1700;
-
 // ------------------------- IBUS ---------------------------
 static const uint8_t IBUS_FRAME_LEN = 32;
 uint8_t ibus_buf[IBUS_FRAME_LEN];
@@ -42,8 +38,6 @@ unsigned long ibus_last_frame_ms = 0;
 
 Servo gripLeftServo;
 Servo gripRightServo;
-
-bool gripClosed = false;
 
 bool readIbusFrame() {
   while (IBUS_SERIAL.available()) {
@@ -174,16 +168,14 @@ void stopMotors() {
 }
 
 // ------------------------- SERVOS -------------------------
-void setGripClosed(bool closed) {
-  gripClosed = closed;
+void setGripPosition(uint16_t gripUs) {
+  gripUs = constrain(gripUs, 1000, 2000);
 
-  if (closed) {
-    gripLeftServo.write(LEFT_CLOSED_ANGLE);
-    gripRightServo.write(RIGHT_CLOSED_ANGLE);
-  } else {
-    gripLeftServo.write(LEFT_OPEN_ANGLE);
-    gripRightServo.write(RIGHT_OPEN_ANGLE);
-  }
+  int leftAngle  = map(gripUs, 1000, 2000, LEFT_OPEN_ANGLE,  LEFT_CLOSED_ANGLE);
+  int rightAngle = map(gripUs, 1000, 2000, RIGHT_OPEN_ANGLE, RIGHT_CLOSED_ANGLE);
+
+  gripLeftServo.write(leftAngle);
+  gripRightServo.write(rightAngle);
 }
 
 void updateGripFromIbus() {
@@ -191,15 +183,7 @@ void updateGripFromIbus() {
   const uint8_t idx = CH_GRIP - 1;
   const uint16_t gripUs = ibusMicros(idx);
 
-  // Simple switch behavior:
-  // low  -> open
-  // high -> closed
-  // middle -> hold current state
-  if (gripUs <= IBUS_LOW_THRESHOLD) {
-    setGripClosed(false);
-  } else if (gripUs >= IBUS_HIGH_THRESHOLD) {
-    setGripClosed(true);
-  }
+  setGripPosition(gripUs);
 }
 
 // ------------------------- SETUP --------------------------
@@ -209,7 +193,7 @@ void setup() {
 
   gripLeftServo.attach(SERVO_GRIP_LEFT_PIN);
   gripRightServo.attach(SERVO_GRIP_RIGHT_PIN);
-  setGripClosed(false);
+  setGripPosition(1000);  // start open
 
   stopMotors();
 }
