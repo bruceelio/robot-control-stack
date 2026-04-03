@@ -34,7 +34,7 @@ static const int RIGHT_CLOSED_US = 800;
 
 // ------------------------- PI CONTROL ---------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";
-static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 300;
+static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 3000;
 
 bool piAutoRequested = false;
 unsigned long piLastHeartbeatMs = 0;
