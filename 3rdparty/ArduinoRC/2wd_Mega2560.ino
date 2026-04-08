@@ -2,35 +2,27 @@
 //
 // BobBot / Mega reusable control sketch
 //
-// Design intent:
-// - keep ALL important wiring assignments in one block at the top
-// - keep named software points mapped in one place
-// - allow the same sketch to be reused across projects by editing constants,
-//   not by searching through the whole file
+// Hardware-native protocol only.
+// No semantic motor names are used on the wire.
 //
-// Current active functions:
-// - FlySky iBus teleop drive on CH1/CH2
-// - FlySky gripper control on CH5
-// - Pi USB serial AUTO mode with heartbeat
-// - named motor endpoints:
-//     drive_front_left
-//     drive_front_right
-//     shooter
-//     collector
-// - named servo endpoints:
-//     gripper
-//     lift
-// - read helpers:
-//     DI / AI / LIMIT / QUAD / BATTERY
+// Current direct / linked control surfaces:
+//   LINK 18 19 M1 <value>          -> RoboClaw A M1
+//   LINK 18 19 M2 <value>          -> RoboClaw A M2
+//   LINK 14 15 M1 <value>          -> RoboClaw B M1 (future / wired)
+//   LINK 14 15 M2 <value>          -> RoboClaw B M2 (future / wired)
 //
-// Notes:
-// - RoboClaw A (pins 18/19) is currently the active drive link
-// - drive_front_left  -> RoboClaw A M1
-// - drive_front_right -> RoboClaw A M2
-// - RoboClaw B (pins 14/15) is wired but not currently used in this sketch
-// - gripper is a paired mirrored servo group on pins 11 and 13
-// - lift is a single servo on pin 12
-// - shooter / collector use Cytron MDD20A wiring defined below
+//   SERVO_WRITE <pin> <value>
+//   GROUP_WRITE <pin1> <v1> <pin2> <v2>
+//   HBRIDGE_WRITE <ina> <inb> <en_diag> <pwm> <value>
+//
+//   READ DI <pin>
+//   READ AI <pin_or_name>
+//   READ BATTERY voltage
+//   READ LIMIT lift_high|lift_low
+//   READ QUAD <pinA> <pinB>
+//   READ RANGE <trig> <echo>
+//
+// FlySky teleop remains active when Pi AUTO mode is not active.
 
 #include <Arduino.h>
 #include <math.h>
@@ -50,11 +42,11 @@
 #define IBUS_SERIAL Serial2       // pins 16/17
 #define ROBOCLAW_A_SERIAL Serial1 // pins 18/19
 
-static const uint8_t PIN_USB_RX0 = 0;   // reserved internal USB serial
-static const uint8_t PIN_USB_TX0 = 1;   // reserved internal USB serial
+static const uint8_t PIN_USB_RX0 = 0;
+static const uint8_t PIN_USB_TX0 = 1;
 
-static const uint8_t PIN_RC_IBUS_TX = 16; // reserved (FlySky iBus TX)
-static const uint8_t PIN_RC_IBUS_RX = 17; // active iBus input
+static const uint8_t PIN_RC_IBUS_TX = 16;
+static const uint8_t PIN_RC_IBUS_RX = 17;
 
 static const uint8_t PIN_ROBOCLAW_B_TX = 14;
 static const uint8_t PIN_ROBOCLAW_B_RX = 15;
@@ -63,11 +55,11 @@ static const uint8_t PIN_ROBOCLAW_A_TX = 18;
 static const uint8_t PIN_ROBOCLAW_A_RX = 19;
 
 // ------------------------- DIRECT PWM / SERVO ------------
-static const uint8_t PIN_SHOOTER_PWM       = 4;
-static const uint8_t PIN_COLLECTOR_PWM     = 5;
-static const uint8_t PIN_SPARE_PWM_6       = 6;
-static const uint8_t PIN_SPARE_PWM_7       = 7;
-static const uint8_t PIN_SPARE_PWM_8       = 8;
+static const uint8_t PIN_SHOOTER_PWM   = 4;
+static const uint8_t PIN_COLLECTOR_PWM = 5;
+static const uint8_t PIN_SPARE_PWM_6   = 6;
+static const uint8_t PIN_SPARE_PWM_7   = 7;
+static const uint8_t PIN_SPARE_PWM_8   = 8;
 
 static const uint8_t PIN_SHOOTER_FEED_LEFT  = 9;
 static const uint8_t PIN_SHOOTER_FEED_RIGHT = 10;
@@ -101,24 +93,14 @@ static const uint8_t PIN_COLLECTOR_INA     = 33;
 static const uint8_t PIN_COLLECTOR_INB     = 34;
 static const uint8_t PIN_COLLECTOR_EN_DIAG = 35;
 
-// ------------------------- LOGICAL LINK MAPPING ----------
+// ------------------------- ROBOCLAW ADDRESSES ------------
 #define ROBOCLAW_ADDR_A 0x80
-// Optional future second RoboClaw address, if needed:
-// #define ROBOCLAW_ADDR_B 0x81
-
-// Current logical mapping:
-static const char MOTOR_NAME_DRIVE_FRONT_LEFT[]  = "drive_front_left";
-static const char MOTOR_NAME_DRIVE_FRONT_RIGHT[] = "drive_front_right";
-static const char MOTOR_NAME_SHOOTER[]           = "shooter";
-static const char MOTOR_NAME_COLLECTOR[]         = "collector";
-
-static const char SERVO_NAME_GRIPPER[]           = "gripper";
-static const char SERVO_NAME_LIFT[]              = "lift";
+#define ROBOCLAW_ADDR_B 0x81   // adjust if second RoboClaw uses a different address
 
 // ------------------------- FLYSKY CHANNELS ---------------
-static const uint8_t CH_DRIVE_ROTATE = 1; // right stick left/right
+static const uint8_t CH_DRIVE_ROTATE   = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
-static const uint8_t CH_GRIP = 5; // currently assigned gripper control
+static const uint8_t CH_GRIP           = 5; // current gripper control
 
 // ------------------------- SERVO CALIBRATION -------------
 static const int GRIP_LEFT_OPEN_US      = 900;
@@ -143,15 +125,21 @@ static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 500;
 bool piAutoRequested = false;
 unsigned long piLastHeartbeatMs = 0;
 
-// Named outputs controlled by Pi AUTO mode
-float piDriveFrontLeftCmd  = 0.0f;
-float piDriveFrontRightCmd = 0.0f;
-float piShooterCmd         = 0.0f;
-float piCollectorCmd       = 0.0f;
-float piGripCmd            = -1.0f;   // -1=open, +1=closed
-float piLiftCmd            = 0.0f;    // -1=down, +1=up
+// Pi-owned output state while AUTO is active
+float piLink_18_19_M1 = 0.0f;
+float piLink_18_19_M2 = 0.0f;
+float piLink_14_15_M1 = 0.0f;
+float piLink_14_15_M2 = 0.0f;
 
-char piLineBuf[128];
+float piShooterCmd   = 0.0f;
+float piCollectorCmd = 0.0f;
+
+// Current actual state of direct servos
+float directServoState[70];
+bool  directServoAttached[70];
+Servo directServoObjects[70];
+
+char piLineBuf[160];
 uint8_t piLineIdx = 0;
 
 // ------------------------- iBus --------------------------
@@ -161,7 +149,7 @@ uint8_t ibus_idx = 0;
 uint16_t ibus_ch[14] = {1500};
 unsigned long ibus_last_frame_ms = 0;
 
-// ------------------------- servos ------------------------
+// Dedicated servo handles for the always-known servos
 Servo gripLeftServo;
 Servo gripRightServo;
 Servo liftServo;
@@ -268,26 +256,62 @@ int toRoboSpeed(float pwr) {
   return (int)(pwr * 127.0f);
 }
 
-// Current drive mapping:
-//   drive_front_left  -> RoboClaw A M1
-//   drive_front_right -> RoboClaw A M2
-void writeDriveFrontLeft(float pwr) {
+void writeRoboClawM1(HardwareSerial &port, uint8_t addr, float pwr) {
   int speed = constrain(toRoboSpeed(pwr), -127, 127);
-
-  if (speed >= 0) sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x00, (uint8_t)speed);
-  else sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x01, (uint8_t)(-speed));
+  if (speed >= 0) sendRoboClaw(port, addr, 0x00, (uint8_t)speed);
+  else sendRoboClaw(port, addr, 0x01, (uint8_t)(-speed));
 }
 
-void writeDriveFrontRight(float pwr) {
+void writeRoboClawM2(HardwareSerial &port, uint8_t addr, float pwr) {
   int speed = constrain(toRoboSpeed(pwr), -127, 127);
-
-  if (speed >= 0) sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x04, (uint8_t)speed);
-  else sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x05, (uint8_t)(-speed));
+  if (speed >= 0) sendRoboClaw(port, addr, 0x04, (uint8_t)speed);
+  else sendRoboClaw(port, addr, 0x05, (uint8_t)(-speed));
 }
 
-void stopDrive() {
-  writeDriveFrontLeft(0.0f);
-  writeDriveFrontRight(0.0f);
+bool writeLinkCommand(int txPin, int rxPin, const char *channel, float value) {
+  // Current supported links:
+  //   18/19 -> RoboClaw A
+  //   14/15 -> RoboClaw B
+  if (txPin == 18 && rxPin == 19) {
+    if (strcmp(channel, "M1") == 0) {
+      piLink_18_19_M1 = constrain(value, -1.0f, 1.0f);
+      return true;
+    }
+    if (strcmp(channel, "M2") == 0) {
+      piLink_18_19_M2 = constrain(value, -1.0f, 1.0f);
+      return true;
+    }
+  }
+
+  if (txPin == 14 && rxPin == 15) {
+    if (strcmp(channel, "M1") == 0) {
+      piLink_14_15_M1 = constrain(value, -1.0f, 1.0f);
+      return true;
+    }
+    if (strcmp(channel, "M2") == 0) {
+      piLink_14_15_M2 = constrain(value, -1.0f, 1.0f);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void applyPiLinkOutputs() {
+  writeRoboClawM1(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, piLink_18_19_M1);
+  writeRoboClawM2(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, piLink_18_19_M2);
+
+  // Wired for future use. Safe to leave at 0.0 if RoboClaw B is not present.
+  writeRoboClawM1(ROBOCLAW_B_SERIAL, ROBOCLAW_ADDR_B, piLink_14_15_M1);
+  writeRoboClawM2(ROBOCLAW_B_SERIAL, ROBOCLAW_ADDR_B, piLink_14_15_M2);
+}
+
+void stopLinks() {
+  piLink_18_19_M1 = 0.0f;
+  piLink_18_19_M2 = 0.0f;
+  piLink_14_15_M1 = 0.0f;
+  piLink_14_15_M2 = 0.0f;
+  applyPiLinkOutputs();
 }
 
 // =========================================================
@@ -298,10 +322,6 @@ void writeHBridge(uint8_t ina, uint8_t inb, uint8_t enDiag, uint8_t pwmPin, floa
   value = constrain(value, -1.0f, 1.0f);
   int pwm = (int)(fabs(value) * 255.0f);
 
-  // Simple direction convention:
-  //   +value => INA high, INB low
-  //   -value => INA low,  INB high
-  //   0      => coast
   if (value > 0.001f) {
     digitalWrite(ina, HIGH);
     digitalWrite(inb, LOW);
@@ -314,49 +334,82 @@ void writeHBridge(uint8_t ina, uint8_t inb, uint8_t enDiag, uint8_t pwmPin, floa
     pwm = 0;
   }
 
-  // EN/DIAG is treated as an enable line here.
   digitalWrite(enDiag, HIGH);
   analogWrite(pwmPin, pwm);
-}
-
-void writeShooterMotor(float value) {
-  writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, value);
-}
-
-void writeCollectorMotor(float value) {
-  writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, value);
 }
 
 // =========================================================
 // SERVOS
 // =========================================================
 
-void setGripPositionUs(uint16_t gripUs) {
-  gripUs = constrain(gripUs, 1000, 2000);
+void ensureServoAttached(uint8_t pin) {
+  if (pin >= 70) return;
+  if (directServoAttached[pin]) return;
+
+  if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT || pin == PIN_LIFT) {
+    // These are already attached to dedicated Servo objects.
+    directServoAttached[pin] = true;
+    return;
+  }
+
+  directServoObjects[pin].attach(pin);
+  directServoAttached[pin] = true;
+}
+
+void writeGenericServo(uint8_t pin, float value) {
+  value = constrain(value, -1.0f, 1.0f);
+
+  // Special-case the known actuators so their project calibration is preserved.
+  if (pin == PIN_LIFT) {
+    uint16_t liftUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
+    liftServo.writeMicroseconds(liftUs);
+    directServoState[pin] = value;
+    return;
+  }
+
+  // Generic direct servo mapping for other pins.
+  ensureServoAttached(pin);
+  if (pin >= 70) return;
+
+  uint16_t us = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
+  directServoObjects[pin].writeMicroseconds(us);
+  directServoState[pin] = value;
+}
+
+void setGripNormalized(float pos) {
+  pos = constrain(pos, -1.0f, 1.0f);
+  uint16_t gripUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, 1000, 2000);
 
   int leftUs  = map(gripUs, 1000, 2000, GRIP_LEFT_OPEN_US,  GRIP_LEFT_CLOSED_US);
   int rightUs = map(gripUs, 1000, 2000, GRIP_RIGHT_OPEN_US, GRIP_RIGHT_CLOSED_US);
 
   gripLeftServo.writeMicroseconds(leftUs);
   gripRightServo.writeMicroseconds(rightUs);
-}
 
-void setGripNormalized(float pos) {
-  pos = constrain(pos, -1.0f, 1.0f);
-  uint16_t gripUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, 1000, 2000);
-  setGripPositionUs(gripUs);
+  directServoState[PIN_GRIP_LEFT] = pos;
+  directServoState[PIN_GRIP_RIGHT] = -pos;
 }
 
 void setLiftNormalized(float pos) {
-  pos = constrain(pos, -1.0f, 1.0f);
-  uint16_t liftUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
-  liftServo.writeMicroseconds(liftUs);
+  writeGenericServo(PIN_LIFT, pos);
+}
+
+void writeServoGroup(uint8_t pin1, float value1, uint8_t pin2, float value2) {
+  // Preserve the calibrated gripper behavior when this exact pair is used.
+  if (pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT && fabs(value2 + value1) < 0.0001f) {
+    setGripNormalized(value1);
+    return;
+  }
+
+  writeGenericServo(pin1, value1);
+  writeGenericServo(pin2, value2);
 }
 
 void updateGripFromIbus() {
   const uint8_t idx = CH_GRIP - 1;
   const uint16_t gripUs = ibusMicros(idx);
-  setGripPositionUs(gripUs);
+  float gripNorm = map((int)gripUs, 1000, 2000, -1000, 1000) / 1000.0f;
+  setGripNormalized(gripNorm);
 }
 
 // =========================================================
@@ -368,7 +421,6 @@ int readDigitalPin(uint8_t pin) {
 }
 
 long readAnalogSource(const char *name) {
-  // Current implementation supports A0..A15 or numeric strings.
   if (name[0] == 'A' || name[0] == 'a') {
     int idx = atoi(name + 1);
     return analogRead(idx);
@@ -379,24 +431,24 @@ long readAnalogSource(const char *name) {
 }
 
 long readQuadPair(uint8_t pinA, uint8_t pinB) {
-  // Placeholder/simple snapshot. Replace with proper counter logic when encoder
-  // accumulation is added.
   int a = digitalRead(pinA) ? 1 : 0;
   int b = digitalRead(pinB) ? 1 : 0;
   return (a << 1) | b;
 }
 
 long readRangePair(uint8_t trigPin, uint8_t echoPin) {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
 
-  long duration = pulseIn(echoPin, HIGH, 30000UL); // timeout ~30ms
+  long duration = pulseIn(echoPin, HIGH, 30000UL);
   if (duration <= 0) return -1;
 
-  // Distance in mm (approx): duration_us * 0.1715
   long distanceMm = (long)(duration * 0.1715f);
   return distanceMm;
 }
@@ -411,48 +463,6 @@ bool piHeartbeatFresh() {
 
 bool piHasControl() {
   return piAutoRequested && piHeartbeatFresh();
-}
-
-bool setMotorByName(const char *name, float value) {
-  value = constrain(value, -1.0f, 1.0f);
-
-  if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_LEFT) == 0) {
-    piDriveFrontLeftCmd = value;
-    return true;
-  }
-
-  if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_RIGHT) == 0) {
-    piDriveFrontRightCmd = value;
-    return true;
-  }
-
-  if (strcmp(name, MOTOR_NAME_SHOOTER) == 0) {
-    piShooterCmd = value;
-    return true;
-  }
-
-  if (strcmp(name, MOTOR_NAME_COLLECTOR) == 0) {
-    piCollectorCmd = value;
-    return true;
-  }
-
-  return false;
-}
-
-bool setServoByName(const char *name, float value) {
-  value = constrain(value, -1.0f, 1.0f);
-
-  if (strcmp(name, SERVO_NAME_GRIPPER) == 0) {
-    piGripCmd = value;
-    return true;
-  }
-
-  if (strcmp(name, SERVO_NAME_LIFT) == 0) {
-    piLiftCmd = value;
-    return true;
-  }
-
-  return false;
 }
 
 void replyValue(const char *kind, long value) {
@@ -485,13 +495,9 @@ void handlePiCommand(char *line) {
   }
 
   if (strcmp(line, "STOP") == 0) {
-    piDriveFrontLeftCmd = 0.0f;
-    piDriveFrontRightCmd = 0.0f;
-    piShooterCmd = 0.0f;
-    piCollectorCmd = 0.0f;
-    stopDrive();
-    writeShooterMotor(0.0f);
-    writeCollectorMotor(0.0f);
+    stopLinks();
+    writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
+    writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
     PI_SERIAL.println("OK STOP");
     return;
   }
@@ -504,41 +510,70 @@ void handlePiCommand(char *line) {
     return;
   }
 
-  char kind[16];
-  char name[32];
+  int txPin = 0;
+  int rxPin = 0;
+  char channel[8];
   float value = 0.0f;
 
-  // SET MOTOR drive_front_left 0.400
-  // SET SERVO lift 1.000
-  if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
-    if (strcmp(kind, "MOTOR") == 0) {
-      if (setMotorByName(name, value)) {
-        PI_SERIAL.print("OK SET MOTOR ");
-        PI_SERIAL.println(name);
-      } else {
-        PI_SERIAL.print("ERR SET MOTOR ");
-        PI_SERIAL.println(name);
-      }
-      return;
+  // LINK 18 19 M1 0.400
+  if (sscanf(line, "LINK %d %d %7s %f", &txPin, &rxPin, channel, &value) == 4) {
+    if (writeLinkCommand(txPin, rxPin, channel, value)) {
+      PI_SERIAL.print("OK LINK ");
+      PI_SERIAL.print(txPin);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.print(rxPin);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.println(channel);
+    } else {
+      PI_SERIAL.print("ERR LINK ");
+      PI_SERIAL.print(txPin);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.print(rxPin);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.println(channel);
     }
-
-    if (strcmp(kind, "SERVO") == 0) {
-      if (setServoByName(name, value)) {
-        PI_SERIAL.print("OK SET SERVO ");
-        PI_SERIAL.println(name);
-      } else {
-        PI_SERIAL.print("ERR SET SERVO ");
-        PI_SERIAL.println(name);
-      }
-      return;
-    }
+    return;
   }
 
-  // READ DI 26
-  // READ AI A1
-  // READ LIMIT lift_high
-  // READ QUAD 22 23
-  // READ RANGE 2 3
+  int pin = 0;
+
+  // SERVO_WRITE 12 0.250
+  if (sscanf(line, "SERVO_WRITE %d %f", &pin, &value) == 2) {
+    writeGenericServo((uint8_t)pin, value);
+    PI_SERIAL.print("OK SERVO_WRITE ");
+    PI_SERIAL.println(pin);
+    return;
+  }
+
+  int pin1 = 0, pin2 = 0;
+  float value1 = 0.0f, value2 = 0.0f;
+
+  // GROUP_WRITE 11 0.500 13 -0.500
+  if (sscanf(line, "GROUP_WRITE %d %f %d %f", &pin1, &value1, &pin2, &value2) == 4) {
+    writeServoGroup((uint8_t)pin1, value1, (uint8_t)pin2, value2);
+    PI_SERIAL.print("OK GROUP_WRITE ");
+    PI_SERIAL.print(pin1);
+    PI_SERIAL.print(" ");
+    PI_SERIAL.println(pin2);
+    return;
+  }
+
+  int ina = 0, inb = 0, enDiag = 0, pwm = 0;
+
+  // HBRIDGE_WRITE 30 31 32 4 0.700
+  if (sscanf(line, "HBRIDGE_WRITE %d %d %d %d %f", &ina, &inb, &enDiag, &pwm, &value) == 5) {
+    writeHBridge((uint8_t)ina, (uint8_t)inb, (uint8_t)enDiag, (uint8_t)pwm, value);
+    PI_SERIAL.print("OK HBRIDGE_WRITE ");
+    PI_SERIAL.print(ina);
+    PI_SERIAL.print(" ");
+    PI_SERIAL.print(inb);
+    PI_SERIAL.print(" ");
+    PI_SERIAL.print(enDiag);
+    PI_SERIAL.print(" ");
+    PI_SERIAL.println(pwm);
+    return;
+  }
+
   char rkind[16];
   char a1[32];
   char a2[32];
@@ -584,32 +619,6 @@ void handlePiCommand(char *line) {
     }
   }
 
-  // Backward compatibility during migration
-  if (strncmp(line, "DRV ", 4) == 0) {
-    char *p = line + 4;
-    char *tok1 = strtok(p, " ");
-    char *tok2 = strtok(nullptr, " ");
-
-    if (tok1 && tok2) {
-      piDriveFrontLeftCmd = constrain(atof(tok1), -1.0f, 1.0f);
-      piDriveFrontRightCmd = constrain(atof(tok2), -1.0f, 1.0f);
-      PI_SERIAL.println("OK DRV");
-      return;
-    }
-  }
-
-  if (strncmp(line, "GRIP ", 5) == 0) {
-    piGripCmd = constrain(atof(line + 5), -1.0f, 1.0f);
-    PI_SERIAL.println("OK GRIP");
-    return;
-  }
-
-  if (strncmp(line, "LIFT ", 5) == 0) {
-    piLiftCmd = constrain(atof(line + 5), -1.0f, 1.0f);
-    PI_SERIAL.println("OK LIFT");
-    return;
-  }
-
   PI_SERIAL.print("ERR ");
   PI_SERIAL.println(line);
 }
@@ -645,6 +654,9 @@ void setup() {
   ROBOCLAW_A_SERIAL.begin(38400);
   ROBOCLAW_B_SERIAL.begin(38400);
 
+  memset(directServoState, 0, sizeof(directServoState));
+  memset(directServoAttached, 0, sizeof(directServoAttached));
+
   // Direct outputs
   pinMode(PIN_SHOOTER_PWM, OUTPUT);
   pinMode(PIN_COLLECTOR_PWM, OUTPUT);
@@ -657,11 +669,7 @@ void setup() {
   pinMode(PIN_COLLECTOR_INB, OUTPUT);
   pinMode(PIN_COLLECTOR_EN_DIAG, OUTPUT);
 
-  // Ultrasonic pins are only examples/future use; configure on demand or here.
-  pinMode(2, OUTPUT);
-  pinMode(3, INPUT);
-
-  // Limits / quadrature inputs
+  // Inputs
   pinMode(PIN_LIFT_LIMIT_HIGH, INPUT_PULLUP);
   pinMode(PIN_LIFT_LIMIT_LOW, INPUT_PULLUP);
 
@@ -672,17 +680,21 @@ void setup() {
   pinMode(PIN_SHOOTER_ENC_A, INPUT_PULLUP);
   pinMode(PIN_SHOOTER_ENC_B, INPUT_PULLUP);
 
-  // Servos
+  // Dedicated servos
   gripLeftServo.attach(PIN_GRIP_LEFT);
   gripRightServo.attach(PIN_GRIP_RIGHT);
   liftServo.attach(PIN_LIFT);
 
+  directServoAttached[PIN_GRIP_LEFT] = true;
+  directServoAttached[PIN_GRIP_RIGHT] = true;
+  directServoAttached[PIN_LIFT] = true;
+
   setGripNormalized(-1.0f); // open
   setLiftNormalized(0.0f);  // neutral / midpoint
 
-  stopDrive();
-  writeShooterMotor(0.0f);
-  writeCollectorMotor(0.0f);
+  stopLinks();
+  writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
+  writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
 
   PI_SERIAL.print("BOOT ");
   PI_SERIAL.println(DEVICE_ID);
@@ -696,33 +708,25 @@ void loop() {
   servicePiSerial();
   readIbusFrame();
 
-  // Pi AUTO owns outputs while heartbeat is fresh.
   if (piHasControl()) {
-    writeDriveFrontLeft(piDriveFrontLeftCmd);
-    writeDriveFrontRight(piDriveFrontRightCmd);
-    writeShooterMotor(piShooterCmd);
-    writeCollectorMotor(piCollectorCmd);
-    setGripNormalized(piGripCmd);
-    setLiftNormalized(piLiftCmd);
+    applyPiLinkOutputs();
     delay(20);
     return;
   }
 
-  // Drop back to teleop on timeout
   if (piAutoRequested && !piHeartbeatFresh()) {
     piAutoRequested = false;
-    stopDrive();
-    writeShooterMotor(0.0f);
-    writeCollectorMotor(0.0f);
+    stopLinks();
+    writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
+    writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
   }
 
-  // Safety: if FlySky signal is lost, stop drive.
   if (millis() - ibus_last_frame_ms > 200) {
-    stopDrive();
+    stopLinks();
     return;
   }
 
-  // Differential drive from FlySky
+  // Differential drive from FlySky -> current drive link
   int throttle = ibusToPercent(CH_DRIVE_THROTTLE - 1);
   int rotate   = ibusToPercent(CH_DRIVE_ROTATE - 1);
 
@@ -744,8 +748,8 @@ void loop() {
     right /= maxVal;
   }
 
-  writeDriveFrontLeft(left);
-  writeDriveFrontRight(right);
+  writeRoboClawM1(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, left);
+  writeRoboClawM2(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, right);
   updateGripFromIbus();
 
   delay(20);
