@@ -372,15 +372,16 @@ void setLiftNormalized(float pos) {
   writeGenericServo(PIN_LIFT, pos);
 }
 
-void writeServoGroup(uint8_t pin1, float value1, uint8_t pin2, float value2) {
+bool writeServoGroup(uint8_t pin1, float value1, uint8_t pin2, float value2) {
   if (pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT && fabs(value2 + value1) < 0.0001f) {
     piGripCmd = constrain(value1, -1.0f, 1.0f);
     setGripNormalized(piGripCmd);
-    return;
+    return true;   // gripper-special-case used
   }
 
   writeGenericServo(pin1, value1);
   writeGenericServo(pin2, value2);
+  return false;    // generic group path used
 }
 
 void updateGripFromIbus() {
@@ -546,26 +547,34 @@ void handlePiCommand(char *line) {
   }
 
   if (strncmp(line, "GROUP_WRITE ", 12) == 0) {
-    char *p = line + 12;
-    char *tokPin1 = strtok(p, " ");
-    char *tokVal1 = strtok(nullptr, " ");
-    char *tokPin2 = strtok(nullptr, " ");
-    char *tokVal2 = strtok(nullptr, " ");
+  char *p = line + 12;
+  char *tokPin1 = strtok(p, " ");
+  char *tokVal1 = strtok(nullptr, " ");
+  char *tokPin2 = strtok(nullptr, " ");
+  char *tokVal2 = strtok(nullptr, " ");
 
-    if (tokPin1 && tokVal1 && tokPin2 && tokVal2) {
-      int pin1 = atoi(tokPin1);
-      float value1 = atof(tokVal1);
-      int pin2 = atoi(tokPin2);
-      float value2 = atof(tokVal2);
+  if (tokPin1 && tokVal1 && tokPin2 && tokVal2) {
+    int pin1 = atoi(tokPin1);
+    float value1 = atof(tokVal1);
+    int pin2 = atoi(tokPin2);
+    float value2 = atof(tokVal2);
 
-      writeServoGroup((uint8_t)pin1, value1, (uint8_t)pin2, value2);
-      PI_SERIAL.print("OK GROUP_WRITE ");
+    bool usedGripPath = writeServoGroup((uint8_t)pin1, value1, (uint8_t)pin2, value2);
+
+    if (usedGripPath) {
+      PI_SERIAL.print("OK GROUP_WRITE GRIP ");
       PI_SERIAL.print(pin1);
       PI_SERIAL.print(" ");
       PI_SERIAL.println(pin2);
-      return;
+    } else {
+      PI_SERIAL.print("OK GROUP_WRITE GENERIC ");
+      PI_SERIAL.print(pin1);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.println(pin2);
     }
+    return;
   }
+}
 
   if (strncmp(line, "HBRIDGE_WRITE ", 14) == 0) {
     char *p = line + 14;
