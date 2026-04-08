@@ -1,4 +1,4 @@
-A
+
 # Raspberry Pi ↔ Arduino Mega Link
 
 This document defines the control link between the Raspberry Pi and the Arduino Mega.

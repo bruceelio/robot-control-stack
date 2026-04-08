@@ -226,6 +226,33 @@ bool piHasControl() {
   return piAutoRequested && piHeartbeatFresh();
 }
 
+bool setMotorByName(const char* name, float value) {
+  value = constrain(value, -1.0f, 1.0f);
+
+  if (strcmp(name, "drive_front_left") == 0) {
+    piLeftCmd = value;
+    return true;
+  }
+
+  if (strcmp(name, "drive_front_right") == 0) {
+    piRightCmd = value;
+    return true;
+  }
+
+  return false;
+}
+
+bool setServoByName(const char* name, float value) {
+  value = constrain(value, -1.0f, 1.0f);
+
+  if (strcmp(name, "gripper") == 0) {
+    piGripCmd = value;
+    return true;
+  }
+
+  return false;
+}
+
 void handlePiCommand(char *line) {
   while (*line == ' ') line++;
 
@@ -264,6 +291,35 @@ void handlePiCommand(char *line) {
     return;
   }
 
+  char kind[16];
+  char name[32];
+  float value = 0.0f;
+
+  if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
+    if (strcmp(kind, "MOTOR") == 0) {
+      if (setMotorByName(name, value)) {
+        PI_SERIAL.print("OK SET MOTOR ");
+        PI_SERIAL.println(name);
+      } else {
+        PI_SERIAL.print("ERR SET MOTOR ");
+        PI_SERIAL.println(name);
+      }
+      return;
+    }
+
+    if (strcmp(kind, "SERVO") == 0) {
+      if (setServoByName(name, value)) {
+        PI_SERIAL.print("OK SET SERVO ");
+        PI_SERIAL.println(name);
+      } else {
+        PI_SERIAL.print("ERR SET SERVO ");
+        PI_SERIAL.println(name);
+      }
+      return;
+    }
+  }
+
+  // Optional temporary backward compatibility during migration
   if (strncmp(line, "DRV ", 4) == 0) {
     char *p = line + 4;
     char *tok1 = strtok(p, " ");

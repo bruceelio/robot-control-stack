@@ -1,4 +1,4 @@
-3rdparte/RaspberryPi.README.md
+3rdparty/RaspberryPi/README_RASPBERRYPI.md
 
 # ⚠️ CRITICAL: Virtual Environment Setup
 
