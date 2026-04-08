@@ -119,6 +119,9 @@ float piLink_18_19_M2 = 0.0f;
 float piLink_14_15_M1 = 0.0f;
 float piLink_14_15_M2 = 0.0f;
 
+float piGripCmd = -1.0f;   // open
+float piLiftCmd = 0.0f;    // neutral
+
 float directServoState[70];
 bool  directServoAttached[70];
 Servo directServoObjects[70];
@@ -371,7 +374,8 @@ void setLiftNormalized(float pos) {
 
 void writeServoGroup(uint8_t pin1, float value1, uint8_t pin2, float value2) {
   if (pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT && fabs(value2 + value1) < 0.0001f) {
-    setGripNormalized(value1);
+    piGripCmd = constrain(value1, -1.0f, 1.0f);
+    setGripNormalized(piGripCmd);
     return;
   }
 
@@ -470,6 +474,10 @@ void handlePiCommand(char *line) {
 
   if (strcmp(line, "STOP") == 0) {
     stopLinks();
+    piGripCmd = -1.0f;
+    piLiftCmd = 0.0f;
+    setGripNormalized(piGripCmd);
+    setLiftNormalized(piLiftCmd);
     writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
     writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
     PI_SERIAL.println("OK STOP");
@@ -524,7 +532,13 @@ void handlePiCommand(char *line) {
       int pin = atoi(tokPin);
       float value = atof(tokVal);
 
-      writeGenericServo((uint8_t)pin, value);
+      if (pin == PIN_LIFT) {
+        piLiftCmd = constrain(value, -1.0f, 1.0f);
+        setLiftNormalized(piLiftCmd);
+      } else {
+        writeGenericServo((uint8_t)pin, value);
+      }
+
       PI_SERIAL.print("OK SERVO_WRITE ");
       PI_SERIAL.println(pin);
       return;
@@ -714,6 +728,8 @@ void loop() {
 
   if (piHasControl()) {
     applyPiLinkOutputs();
+    setGripNormalized(piGripCmd);
+    setLiftNormalized(piLiftCmd);
     delay(20);
     return;
   }
@@ -721,6 +737,8 @@ void loop() {
   if (piAutoRequested && !piHeartbeatFresh()) {
     piAutoRequested = false;
     stopLinks();
+    setGripNormalized(piGripCmd);
+    setLiftNormalized(piLiftCmd);
     writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
     writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
   }
