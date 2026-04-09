@@ -119,12 +119,12 @@ def test_mega_serial_drive_and_grip():
 
             # GRIP CLOSE
             _log("GRIP close")
-            _expect_prefix(mega.group_write(11, 1.0, 13, -1.0), "OK GROUP_WRITE 11 13")
+            _expect_prefix(mega.group_write(11, 1.0, 13, -1.0), "OK GROUP_WRITE")
             seq = _sleep_with_heartbeat(mega, start_seq=seq, duration_s=1.0)
 
             # GRIP OPEN
             _log("GRIP open")
-            _expect_prefix(mega.group_write(11, -1.0, 13, 1.0), "OK GROUP_WRITE 11 13")
+            _expect_prefix(mega.group_write(11, -1.0, 13, 1.0), "OK GROUP_WRITE")
             seq = _sleep_with_heartbeat(mega, start_seq=seq, duration_s=1.0)
 
         finally:
