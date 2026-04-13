@@ -119,6 +119,7 @@ static const char SERVO_NAME_LIFT[]              = "lift";
 static const uint8_t CH_DRIVE_ROTATE = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
 static const uint8_t CH_GRIP = 5; // currently assigned gripper control
+static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
 
 // ------------------------- SERVO CALIBRATION -------------
 static const int GRIP_LEFT_OPEN_US      = 900;
@@ -357,6 +358,19 @@ void updateGripFromIbus() {
   const uint8_t idx = CH_GRIP - 1;
   const uint16_t gripUs = ibusMicros(idx);
   setGripPositionUs(gripUs);
+}
+
+void updateLiftFromIbus() {
+  const uint8_t idx = CH_LIFT - 1;
+  const uint16_t liftUs = ibusMicros(idx);
+
+  // Map knob range directly to normalized lift command:
+  // 1000us -> -1.0 (down)
+  // 1500us ->  0.0 (mid)
+  // 2000us -> +1.0 (up)
+  float pos = (float)map(liftUs, 1000, 2000, -1000, 1000) / 1000.0f;
+
+  setLiftNormalized(pos);
 }
 
 // =========================================================
@@ -747,6 +761,7 @@ void loop() {
   writeDriveFrontLeft(left);
   writeDriveFrontRight(right);
   updateGripFromIbus();
+  updateLiftFromIbus();
 
   delay(20);
 }
