@@ -1,5 +1,6 @@
 // 3rdparty/ArduinoRC/2wd_Mega2560.ino
 //
+// (9) added lift
 // BobBot / Mega reusable control sketch
 //
 // Design intent:
