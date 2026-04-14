@@ -1,3 +1,5 @@
+navigation/path_planning/README_NAV_PATH_PLANNING.md
+
 # Alternative Path Planning Algorithms
 
 This document compares several path planning algorithms suitable for use within:
@@ -10,16 +12,17 @@ It is intended to complement the navigation architecture and justify the selecti
 
 # Architecture Context
 
-The system is structured as:
-
 - Strategy layer → decides *what to do*
-- Planner layer → decides *where to go*
+- Path Planning → decides *where to go*
+- Motion Planning → decides *how to move feasibly*
 - Controller layer → decides *how to follow the path*
 - Motion layer → executes commands
 
-The planner produces a **collision-free path** (sequence of waypoints or poses).
+The path planner produces a **collision-free path** (sequence of waypoints or poses).
 
-Controllers convert this path into motion.
+Motion planning refines this path into a **feasible trajectory or drivable path**.
+
+Controllers track this refined output.
 
 ---
 

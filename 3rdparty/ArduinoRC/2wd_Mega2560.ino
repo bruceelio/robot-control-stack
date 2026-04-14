@@ -57,8 +57,8 @@ static const int LEFT_CLOSED_US  = 2200;
 static const int RIGHT_OPEN_US   = 2100;
 static const int RIGHT_CLOSED_US = 800;
 
-static const int LIFT_DOWN_US    = 1000;
-static const int LIFT_UP_US      = 2000;
+static const int LIFT_DOWN_US    = 900;
+static const int LIFT_UP_US      = 2100;
 
 static const char BATTERY_VOLTAGE_PIN[] = "47";
 static const char DEVICE_ID[] = "MEGA_AUX_1";

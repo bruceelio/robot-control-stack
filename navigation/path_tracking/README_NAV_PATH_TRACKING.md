@@ -1,4 +1,4 @@
-navigation/controllers/README_NAV_CONTROLLERS.md
+navigation/path_tracking/README_NAV_PATH_TRACKING.md
 
 # Alternative Path-Following Controllers
 
@@ -12,16 +12,15 @@ It is intended to complement the global planner design and support a modular nav
 
 # Architecture Context
 
-The system is structured as:
-
 - Strategy layer → decides *what to do*
-- Planner layer → decides *where to go*
+- Path Planning → decides *where to go*
+- Motion Planning → decides *how to move feasibly*
 - Controller layer → decides *how to follow the path*
 - Motion layer → executes commands
 
 A* is a **global planner only**.
 
-Controllers convert a planned path into motion commands.
+Controllers track a trajectory or refined path produced by motion planning.
 
 ---
 
