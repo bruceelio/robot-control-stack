@@ -128,8 +128,8 @@ static const int GRIP_LEFT_CLOSED_US    = 2200;
 static const int GRIP_RIGHT_OPEN_US     = 2100;
 static const int GRIP_RIGHT_CLOSED_US   = 800;
 
-static const int LIFT_DOWN_US           = 1000;
-static const int LIFT_UP_US             = 2000;
+static const int LIFT_DOWN_US           = 900;
+static const int LIFT_UP_US             = 2100;
 
 // ------------------------- BATTERY INPUT -----------------
 static const char BATTERY_VOLTAGE_PIN[] = "47"; // update if/when battery source changes
