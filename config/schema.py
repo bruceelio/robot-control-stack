@@ -26,6 +26,7 @@ class Config:
     drive_layout: str
     wheel_type: str
     cameras: dict
+    encoders: dict
 
     # Arena
     arena_size: int
@@ -149,6 +150,7 @@ RESOLVE_MAP = {
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),
     "cameras": ("profile", "CAMERAS"),
+    "encoders": ("computed", "encoders"),
 
     # Arena
     "arena_size": ("arena", "ARENA_SIZE"),
