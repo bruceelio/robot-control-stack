@@ -75,13 +75,24 @@ class Localisation:
         self.accept(obs)
         return True
 
-    def estimate(self, *, arena_observations: Sequence[dict], now_s: float) -> PoseObservation | None:
+    def estimate(
+            self,
+            *,
+            io,
+            arena_observations: Sequence[dict] | None = None,
+            now_s: float,
+    ) -> PoseObservation | None:
         """
         Controller-facing: pick the best PoseObservation from providers.
         """
         best: Optional[PoseObservation] = None
         for p in self.providers:
-            obs = p.estimate(arena_detections=arena_observations, now_s=now_s)
+            obs = p.estimate(
+                io=io,
+                now_s=now_s,
+                current_pose=self.pose,
+                arena_detections=arena_observations,
+            )
             if obs is None:
                 continue
             if best is None or obs.confidence > best.confidence:
