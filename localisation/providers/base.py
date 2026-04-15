@@ -1,20 +1,37 @@
 # localisation/providers/base.py
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Sequence
-from localisation.pose_types import PoseObservation
+
+from localisation.pose_types import Pose, PoseObservation
 
 
 class PoseProvider(ABC):
     name: str = "provider"
 
     @abstractmethod
-    def estimate(self, *, arena_detections: Sequence[dict], now_s: float) -> PoseObservation | None:
+    def estimate(
+        self,
+        *,
+        io,
+        now_s: float,
+        current_pose: Pose | None,
+        arena_detections: Sequence[dict] | None = None,
+    ) -> PoseObservation | None:
         """
         Return a PoseObservation if possible, else None.
 
-        arena_detections: list of dicts like:
-          {"id": int, "distance_mm": float, "bearing_deg": float, "camera": str, ...}
+        Parameters
+        ----------
+        io:
+            Resolved robot io interface.
+        now_s:
+            Current timestamp.
+        current_pose:
+            Last accepted pose, or None if no pose has been seeded yet.
+        arena_detections:
+            Optional arena detections for vision-based providers.
         """
         raise NotImplementedError

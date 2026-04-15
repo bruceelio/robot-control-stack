@@ -68,9 +68,8 @@ class Localisation:
             timestamp=float(timestamp),
         )
 
-
-    def update_from_vision(self, *, arena_detections: Sequence[dict], now_s: float) -> bool:
-        obs = self.estimate(arena_observations=arena_detections, now_s=now_s)
+    def update_from_vision(self, *, io, arena_detections: Sequence[dict], now_s: float) -> bool:
+        obs = self.estimate(io=io, arena_observations=arena_detections, now_s=now_s)
         if obs is None:
             return False
         self.accept(obs)
