@@ -11,6 +11,8 @@ CAMERAS = {
     "front": "sr",
 }
 
+ENCODERS = {}
+
 # Drive hardware
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"

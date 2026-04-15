@@ -1,10 +1,11 @@
-# localisation/__init__.py
+# localisation/providers/__init__.py
+
 """
 Localisation package.
 
 Public API:
 - Pose / PoseObservation types
-- Localisation estimator
+- Localisation subsystem
 """
 
 from .pose_types import Pose, PoseObservation

@@ -21,13 +21,13 @@ class StartupScript(Enum):
     ACIDIC_GRAB = auto()
 
 
-ROBOT_PROFILE = RobotProfile.BOB_BOT
-# ROBOT_PROFILE = RobotProfile.SIMULATION
+# ROBOT_PROFILE = RobotProfile.BOB_BOT
+ROBOT_PROFILE = RobotProfile.SIMULATION
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-# RUN_MODE = RunMode.NORMAL
-RUN_MODE = RunMode.TESTS
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
 

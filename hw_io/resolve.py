@@ -3,16 +3,15 @@
 from typing import Any
 
 from hw_io.base import IOMap
-from hw_io.bob_bot import BobBotIO
 
 
 def resolve_io(*, robot: Any, hardware_profile: str) -> IOMap:
-
     if hardware_profile == "sr1":
-        from hw_io.sr1 import SR1IO   # ← lazy import
+        from hw_io.sr1 import SR1IO
         return SR1IO(robot)
 
     if hardware_profile == "bob_bot":
+        from hw_io.bob_bot import BobBotIO
         return BobBotIO(robot)
 
     raise RuntimeError(

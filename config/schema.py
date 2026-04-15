@@ -281,11 +281,11 @@ def resolve(*, arena, profile, strategy) -> Config:
         * profile.SURFACE_MULTIPLIERS[profile.SURFACE]["drive"]
     )
 
-
     computed = {
         "rotate_factor": rotate_factor,
         "drive_factor": drive_factor,
-            }
+        "encoders": getattr(profile, "ENCODERS", {}),
+    }
 
     values = {}
 

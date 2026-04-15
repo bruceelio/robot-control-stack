@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import List, Optional, Sequence
 
+from localisation.arbitration import Arbitrator
 from localisation.pose_types import Pose, PoseObservation
 from localisation.providers.base import PoseProvider
 
@@ -13,7 +14,9 @@ class Localisation:
     """
     Owns the robot's current pose.
 
-    - update_from_vision(...) queries providers and selects best observation
+    - update_from_vision(...) asks the arbitrator for the best observation
+      and accepts it if one is available
+    - estimate(...) remains as a compatibility wrapper around arbitration
     - apply_motion(...) updates pose by dead-reckoning when you drive/rotate
       (used as a temporary estimate between vision updates)
     """
@@ -24,14 +27,18 @@ class Localisation:
             from localisation.providers import default_providers
             providers = default_providers()
 
-        self.providers = list(providers)
+        self.arbitrator = Arbitrator(providers)
         self.pose: Optional[Pose] = None
 
     def has_position(self) -> bool:
         return self.pose is not None and self.pose.position_valid
 
     def has_heading(self) -> bool:
-        return self.pose is not None and self.pose.heading_valid and self.pose.heading is not None
+        return (
+            self.pose is not None
+            and self.pose.heading_valid
+            and self.pose.heading is not None
+        )
 
     # -------------------------
     # Compatibility shims (legacy behaviours)
@@ -53,7 +60,14 @@ class Localisation:
             return None, None
         return (self.pose.x, self.pose.y), self.pose.heading
 
-    def set_pose(self, position, heading=None, *, source: str = "manual", timestamp: float = 0.0) -> None:
+    def set_pose(
+        self,
+        position,
+        heading=None,
+        *,
+        source: str = "manual",
+        timestamp: float = 0.0,
+    ) -> None:
         """
         Legacy setter used by older code paths.
         """
@@ -68,36 +82,54 @@ class Localisation:
             timestamp=float(timestamp),
         )
 
-    def update_from_vision(self, *, io, arena_detections: Sequence[dict], now_s: float) -> bool:
-        obs = self.estimate(io=io, arena_observations=arena_detections, now_s=now_s)
-        if obs is None:
-            return False
-        self.accept(obs)
-        return True
-
     def estimate(
-            self,
-            *,
-            io,
-            arena_observations: Sequence[dict] | None = None,
-            now_s: float,
+        self,
+        *,
+        now_s: float,
+        io=None,
+        arena_detections: Sequence[dict] | None = None,
+        arena_observations: Sequence[dict] | None = None,
     ) -> PoseObservation | None:
         """
-        Controller-facing: pick the best PoseObservation from providers.
+        Compatibility wrapper: delegate estimation to the arbitrator.
+
+        Supports both:
+        - arena_detections   (preferred)
+        - arena_observations (legacy)
+
+        Also supports older callers which do not pass io.
         """
-        best: Optional[PoseObservation] = None
-        for p in self.providers:
-            obs = p.estimate(
-                io=io,
-                now_s=now_s,
-                current_pose=self.pose,
-                arena_detections=arena_observations,
-            )
-            if obs is None:
-                continue
-            if best is None or obs.confidence > best.confidence:
-                best = obs
-        return best
+        if arena_detections is None:
+            arena_detections = arena_observations
+
+        return self.arbitrator.estimate(
+            io=io,
+            now_s=now_s,
+            current_pose=self.pose,
+            arena_detections=arena_detections,
+        )
+
+    def update_from_vision(
+        self,
+        *,
+        io,
+        arena_detections: Sequence[dict],
+        now_s: float,
+    ) -> bool:
+        """
+        Ask the arbitrator for the best observation from configured providers.
+        Accept it if present.
+        """
+        obs = self.estimate(
+            io=io,
+            now_s=now_s,
+            arena_detections=arena_detections,
+        )
+        if obs is None:
+            return False
+
+        self.accept(obs)
+        return True
 
     def accept(self, obs: PoseObservation) -> None:
         """
@@ -145,7 +177,7 @@ class Localisation:
 
         - Requires a pose position.
         - Heading must be known to update x/y from drive.
-          If heading is unknown, we only update heading if rotate is provided AND heading exists.
+        - If heading is unknown, forward motion is not integrated.
         """
         if self.pose is None or not self.pose.position_valid:
             return
@@ -154,18 +186,15 @@ class Localisation:
         y = self.pose.y
         heading = self.pose.heading
 
-        # Update heading if we have one
         if heading is not None:
             heading = self._wrap_rad(heading + math.radians(rotate_deg))
 
-            # Update position if we have heading and a drive command
             if abs(drive_mm) > 0.0:
                 x += float(drive_mm) * math.cos(heading)
                 y += float(drive_mm) * math.sin(heading)
 
             heading_valid = True
         else:
-            # Heading unknown: cannot reliably integrate forward motion
             heading_valid = False
 
         self.pose = Pose(
