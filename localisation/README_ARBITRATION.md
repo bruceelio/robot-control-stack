@@ -1,155 +1,175 @@
-### 1) Localisation is an “estimator + arbitrator”
+localisation/README_ARBITRATION.md
 
-Localisation should not “compute pose” in one monolithic function. Instead it:
-
-* collects **pose observations** from one or more methods
-* picks the best one (or fuses later)
-* maintains the current `Pose` state with validity + staleness
-
-So you get a single owner of truth, but many suppliers.
+# Localisation Arbitration Design
 
 ---
 
-## Recommended folder layout
+## 1. Estimator + Arbitrator Model
 
-```
+Localisation should:
+
+- gather observations from multiple providers
+- compare them
+- select the best
+- maintain pose state
+
+One system owns pose, many provide evidence.
+
+---
+
+## 2. Folder Structure
+
 localisation/
-  __init__.py
-  localisation.py          # owns state: current pose, validity, staleness, apply_motion
-  pose_types.py            # Pose, PoseObservation, confidence model
+  localisation.py
+  arbitration.py
+  pose_types.py
+
   providers/
-    __init__.py
-    base.py                # PoseProvider interface
-    cam1_markers2.py       # current method (1 camera, 2 arena markers)
-    cam1_markers3.py       # alternate (1 camera, 3+ markers)
-    cam2_markers2.py       # later (two cameras, min markers)
-    ...                    # add more as needed
-  arbitration.py           # priority/scoring logic (simple now, smarter later)
-```
+    base.py
 
-This matches your “location.py chooses priority, separate implementations per method” idea, but avoids filename sprawl at the top-level.
+    startup/
+      startup_config.py
 
----
+    vision/
+      cam1_markers2.py
 
-## The key interface: `PoseObservation`
+    motion/
+      commanded_motion.py
 
-Each provider returns a `PoseObservation` rather than directly setting pose:
+    odometry/
+      wheel_odometry.py
 
-**Fields you’ll want from day one:**
-
-* `position: (x, y)` always when available
-* `heading: Optional[float]` (can be `None`)
-* `covariance` *or* a simpler `confidence` scalar (start simple)
-* `timestamp`
-* `source` (e.g., `"cam1_markers2"`)
-* `markers_used` (count + ids) for debug
-
-Example semantics (no code dump, just what it represents):
-
-* Provider A (cam1, 2 markers) might return:
-
-  * position OK, heading unknown, confidence 0.6
-* Provider B (cam1, 3 markers) might return:
-
-  * position OK, heading weak, confidence 0.75
-* Provider C (cam2, 4+ markers) might return:
-
-  * position+heading strong, confidence 0.9
-
-Localisation then decides which to accept.
+    inertial/
+      imu_heading.py
 
 ---
 
-## How arbitration should work (simple now, scalable later)
+## 3. Providers Represent Evidence Sources
 
-Start with a **scoring function**, not a rigid “priority order”. It’ll save you pain later.
+Providers are not split by simulation vs real.
 
-A good early scoring heuristic:
+They represent:
 
-* base score by provider type (e.g., 2 cameras tends to be better)
-* * bonus for more markers used (up to a cap)
-* * bonus if heading is present
-* − penalty if observation is old
-* − penalty if it jumps too far from last pose (sanity gating)
+- startup knowledge
+- vision fixes
+- motion propagation
+- odometry
+- inertial support
 
-So you can keep *one* configuration table like:
+All are valid in both simulation and real-world contexts.
 
-```text
+---
+
+## 4. PoseObservation Interface
+
+Each provider returns:
+
+- position
+- heading (optional)
+- timestamp
+- confidence
+- validity
+- source
+- diagnostics
+
+---
+
+## 5. Scoring Instead of Priority
+
+Do NOT use fixed priority.
+
+Use scoring based on:
+
+- base provider weight
+- freshness
+- presence of position
+- presence of heading
+- consistency with current pose
+- diagnostics
+
+---
+
+## 6. Example Weighting
+
 provider_weight:
-  cam1_markers2: 0.6
-  cam1_markers3: 0.75
-  cam2_markers2: 0.8
-  cam2_markers3plus: 0.9
-```
 
-Then adjust with marker count and freshness.
+- startup_config: 0.4
+- cam1_markers2: 0.8
+- commanded_motion: 0.3
+- wheel_odometry: 0.5
 
-This is better than “provider A always wins”, because sometimes a “lower tier” provider can be fresh while a “higher tier” one is stale or glitching.
+Weights are only starting points.
 
 ---
 
-## Where the providers get their inputs
+## 7. Provider Inputs
 
-A provider should take **raw detections**, not read the camera itself. That keeps it testable and clean.
+Providers should use:
 
-So the flow becomes:
+raw perception data
 
-* `perception` returns: “arena markers seen this frame” (bearing, distance, id, camera_id)
-* `localisation` feeds those detections into each provider
-* each provider tries to compute a `PoseObservation`
-* arbitration picks best and updates pose
+NOT direct hardware access.
 
-This removes the cross-contamination cleanly.
+Flow:
 
----
-
-## Naming your provider files
-
-Your instinct “location_*camera*_markers*.py” is understandable, but as you add variations it’ll get messy.
-
-I’d name by **capability**, not exact inputs, and include camera count / marker requirements only when it matters:
-
-* `vision_singlecam_trilateration.py` (2-marker position only)
-* `vision_singlecam_multimarker.py` (3+ markers)
-* `vision_multicam_fusion.py` (later)
-
-Or if you really want explicitness:
-
-* `cam1_markers2.py`, `cam1_markers3plus.py`, `cam2_markers2plus.py`
-
-That stays readable without becoming absurd.
+perception → detections → providers → observations → arbitration
 
 ---
 
-## What this means for your current code (minimal step)
+## 8. Naming
 
-You can implement this without a big refactor by doing just these steps:
+Use clear capability-based names:
 
-1. Create `localisation/providers/cam1_markers2.py` and move your current `estimate_pose` math there.
-2. Localisation calls it each tick with “arena marker detections”.
-3. Perception stops storing pose; it only provides marker detections and object detections.
-
-Nothing else needs to know *how* pose was computed.
-
----
-
-## One important future detail: heading is a first-class citizen
-
-Design the `Pose` as:
-
-* `position_valid: bool`
-* `heading_valid: bool`
-
-Because your near-term providers may only give position, and it’s crucial not to accidentally treat heading as “0 = valid”.
-
-That single change prevents a lot of downstream weirdness.
+- startup_config
+- cam1_markers2
+- commanded_motion
+- wheel_odometry
 
 ---
 
-If you want, I’ll propose the exact *class skeletons* (interfaces only) for:
+## 9. Validity Separation
 
-* `PoseObservation`
-* `PoseProvider`
-* `Localisation.update_from_vision(detections)`
+Track separately:
 
-…so you can implement provider-by-provider without touching behaviors yet.
+- position_valid
+- heading_valid
+
+Never assume heading = 0 is valid.
+
+---
+
+## 10. Migration Plan
+
+Minimal steps:
+
+1. move current vision method into provider
+2. return PoseObservation
+3. centralise pose in localisation.py
+4. add arbitration
+5. add motion provider
+
+---
+
+## 11. Key Principle
+
+Providers may exist but be low quality.
+
+Arbitration must:
+
+- prefer best evidence
+- handle weak providers
+- allow fallback naturally
+
+---
+
+## Final Summary
+
+Localisation works by:
+
+multiple providers → scored observations → best selected
+
+This ensures:
+
+- flexibility
+- robustness
+- consistency across environments

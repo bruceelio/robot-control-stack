@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Optional, Sequence
+from typing import Iterable, Optional
 
-from localisation.pose_types import Pose, PoseObservation
-from localisation.providers.base import PoseProvider
+from localisation.providers.base import PoseProvider, PoseObservation
 
 
 class Arbitrator:
@@ -25,14 +24,7 @@ class Arbitrator:
     def __init__(self, providers: Iterable[PoseProvider]):
         self.providers = list(providers)
 
-    def estimate(
-        self,
-        *,
-        io,
-        now_s: float,
-        current_pose: Pose | None,
-        arena_detections: Sequence[dict] | None = None,
-    ) -> PoseObservation | None:
+    def estimate(self, *, now_s: float) -> PoseObservation | None:
         """
         Return the best PoseObservation from configured providers,
         or None if no usable observation is available.
@@ -40,12 +32,7 @@ class Arbitrator:
         best: Optional[PoseObservation] = None
 
         for provider in self.providers:
-            obs = provider.estimate(
-                io=io,
-                now_s=now_s,
-                current_pose=current_pose,
-                arena_detections=arena_detections,
-            )
+            obs = provider.get_observation(now_s)
             if obs is None:
                 continue
 
@@ -65,6 +52,9 @@ class Arbitrator:
         Keep this intentionally minimal for now so the refactor is structural,
         not behavioural. More policy can be added later.
         """
+        if not obs.is_usable():
+            return False
+
         if not (0.0 <= obs.confidence <= 1.0):
             return False
 

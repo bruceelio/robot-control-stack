@@ -6,8 +6,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from config import CONFIG
 from config.arena import marker_locations
-from localisation.pose_types import PoseObservation
-from localisation.providers.base import PoseProvider
+from localisation.providers.base import PoseObservation, PoseProvider
 from navigation.pose_trilaterate import trilaterate_point
 
 
@@ -17,28 +16,14 @@ class Cam1Markers2Provider(PoseProvider):
 
     Faithful port of the original estimate_pose logic:
     - Uses ALL pairs of visible arena markers
-    - For each pair, gets both circle intersection candidates (C1, C2)
+    - For each pair, gets both circle intersection candidates
     - Keeps candidates inside arena bounds
     - Averages all kept candidates -> (x, y)
-    - heading is unknown; we return heading=None
-      (If you need legacy behaviour temporarily, set legacy_heading_zero=True)
+    - heading is unknown unless legacy_heading_zero=True
 
-    Input:
-        arena_detections: list[dict] with keys like:
-            {
-                "id": int,
-                "distance_mm": float,
-                "bearing_deg": float,
-                "camera": str,
-            }
-
-    Notes:
-    - bearing_deg is intentionally unused here. This matches the old estimator.
-    - io and current_pose are accepted to satisfy the common PoseProvider interface,
-      but are not used by this provider.
+    This provider currently expects detections to be supplied via
+    `set_detections(...)` before `get_observation(...)` is called.
     """
-
-    name = "cam1_markers2"
 
     def __init__(
         self,
@@ -47,6 +32,8 @@ class Cam1Markers2Provider(PoseProvider):
         border_margin_mm: float = 0.0,
         legacy_heading_zero: bool = False,
     ):
+        super().__init__("cam1_markers2")
+
         self.arena_size_mm = (
             float(arena_size_mm)
             if arena_size_mm is not None
@@ -58,28 +45,27 @@ class Cam1Markers2Provider(PoseProvider):
         # World coordinates of arena markers: id -> (x, y)
         self._arena_markers = marker_locations(self.arena_size_mm)
 
-    def estimate(
-        self,
-        *,
-        io,
-        now_s: float,
-        current_pose,
-        arena_detections: Sequence[dict] | None = None,
-    ) -> PoseObservation | None:
+        # Latest externally supplied detections
+        self._arena_detections: List[Dict[str, Any]] = []
+
+    def set_detections(self, arena_detections: Sequence[dict] | None) -> None:
         """
-        Estimate pose from arena marker detections.
+        Supply the latest arena detections for later use by get_observation().
+        """
+        self._arena_detections = list(arena_detections or [])
+
+    def get_observation(self, now_s: float) -> PoseObservation | None:
+        """
+        Estimate pose from the latest supplied arena marker detections.
 
         Returns:
             PoseObservation if a usable position estimate can be formed,
             otherwise None.
         """
-        del io
-        del current_pose
-
-        if not arena_detections:
+        if not self._arena_detections:
             return None
 
-        detections = self._normalise(arena_detections)
+        detections = self._normalise(self._arena_detections)
         if len(detections) < 2:
             return None
 
@@ -134,7 +120,6 @@ class Cam1Markers2Provider(PoseProvider):
 
         heading = 0.0 if self.legacy_heading_zero else None
 
-        # Confidence heuristic: more valid candidates => higher confidence (capped)
         confidence = min(0.95, 0.50 + 0.05 * len(positions))
 
         meta: Dict[str, Any] = {
@@ -149,11 +134,20 @@ class Cam1Markers2Provider(PoseProvider):
             x=float(x),
             y=float(y),
             heading=heading,
+            position_valid=True,
+            heading_valid=heading is not None,
             confidence=float(confidence),
             source=self.name,
             timestamp=float(now_s),
+            is_absolute=True,
             meta=meta,
         )
+
+    def reseed(self, pose) -> None:
+        """
+        Vision is absolute, so it usually does not need reseeding.
+        """
+        return None
 
     def _normalise(self, arena_detections: Sequence[dict]) -> List[Dict[str, Any]]:
         out: List[Dict[str, Any]] = []

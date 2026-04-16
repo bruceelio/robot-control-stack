@@ -4,13 +4,14 @@
 Localisation providers subpackage.
 
 Exports:
+- PoseObservation value type
 - PoseProvider base interface
 - Concrete provider implementations
 - default_providers(): sensible default provider ordering
 """
 
-from .base import PoseProvider
-from localisation.providers.vision.pose_cam1_markers2 import Cam1Markers2Provider
+from .base import PoseObservation, PoseProvider
+from .vision.pose_cam1_markers2 import Cam1Markers2Provider
 
 
 def default_providers():
@@ -23,6 +24,7 @@ def default_providers():
 
 
 __all__ = [
+    "PoseObservation",
     "PoseProvider",
     "Cam1Markers2Provider",
     "default_providers",

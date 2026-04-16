@@ -1,4 +1,4 @@
-# localisation/providers/__init__.py
+# localisation/__init__.py
 
 """
 Localisation package.
@@ -8,7 +8,8 @@ Public API:
 - Localisation subsystem
 """
 
-from .pose_types import Pose, PoseObservation
+from .pose_types import Pose
+from .providers.base import PoseObservation
 from .localisation import Localisation
 
 __all__ = [

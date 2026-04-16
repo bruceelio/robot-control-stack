@@ -6,17 +6,17 @@ import math
 from typing import List, Optional, Sequence
 
 from localisation.arbitration import Arbitrator
-from localisation.pose_types import Pose, PoseObservation
-from localisation.providers.base import PoseProvider
+from localisation.pose_types import Pose
+from localisation.providers.base import PoseProvider, PoseObservation
 
 
 class Localisation:
     """
     Owns the robot's current pose.
 
-    - update_from_vision(...) asks the arbitrator for the best observation
-      and accepts it if one is available
-    - estimate(...) remains as a compatibility wrapper around arbitration
+    - update_from_vision(...) feeds detections into providers, asks the arbitrator
+      for the best observation, and accepts it if one is available
+    - estimate(...) remains as a compatibility wrapper
     - apply_motion(...) updates pose by dead-reckoning when you drive/rotate
       (used as a temporary estimate between vision updates)
     """
@@ -27,6 +27,7 @@ class Localisation:
             from localisation.providers import default_providers
             providers = default_providers()
 
+        self.providers = providers
         self.arbitrator = Arbitrator(providers)
         self.pose: Optional[Pose] = None
 
@@ -91,7 +92,7 @@ class Localisation:
         arena_observations: Sequence[dict] | None = None,
     ) -> PoseObservation | None:
         """
-        Compatibility wrapper: delegate estimation to the arbitrator.
+        Compatibility wrapper around provider-fed arbitration.
 
         Supports both:
         - arena_detections   (preferred)
@@ -99,15 +100,19 @@ class Localisation:
 
         Also supports older callers which do not pass io.
         """
+        del io  # currently unused in the provider-fed path
+
         if arena_detections is None:
             arena_detections = arena_observations
 
-        return self.arbitrator.estimate(
-            io=io,
-            now_s=now_s,
-            current_pose=self.pose,
-            arena_detections=arena_detections,
-        )
+        arena_detections = list(arena_detections or [])
+
+        # Feed fresh detections into providers that support it.
+        for provider in self.providers:
+            if hasattr(provider, "set_detections"):
+                provider.set_detections(arena_detections)
+
+        return self.arbitrator.estimate(now_s=now_s)
 
     def update_from_vision(
         self,
@@ -138,6 +143,8 @@ class Localisation:
         Position always comes from the observation.
         Heading is only replaced if the observation provides one.
         Otherwise, preserve the current heading if available.
+
+        Also reseeds all providers after accepting a new pose.
         """
         prev_heading = self.pose.heading if self.pose is not None else None
         prev_heading_valid = self.pose.heading_valid if self.pose is not None else False
@@ -150,14 +157,17 @@ class Localisation:
             heading_valid = prev_heading_valid and (heading is not None)
 
         self.pose = Pose(
-            x=obs.x,
-            y=obs.y,
+            x=obs.x if obs.x is not None else 0.0,
+            y=obs.y if obs.y is not None else 0.0,
             heading=heading,
-            position_valid=True,
+            position_valid=obs.position_valid,
             heading_valid=heading_valid,
             source=obs.source,
             timestamp=obs.timestamp,
         )
+
+        for provider in self.providers:
+            provider.reseed(self.pose)
 
     def invalidate(self) -> None:
         """
@@ -185,11 +195,14 @@ class Localisation:
             timestamp=self.pose.timestamp,
         )
 
+        for provider in self.providers:
+            provider.invalidate()
+
     def apply_motion(self, *, drive_mm: float = 0.0, rotate_deg: float = 0.0) -> None:
         """
         Update pose by applying a commanded motion.
 
-        - Requires a pose position.
+        - Requires a valid position.
         - Heading must be known to update x/y from drive.
         - If heading is unknown, forward motion is not integrated.
         """
