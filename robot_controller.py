@@ -1,6 +1,8 @@
 # robot_controller.py
 
+import math
 import time
+
 from level2.level2_canonical import Level2
 from perception import Perception, sense
 from localisation import Localisation
@@ -19,6 +21,8 @@ from motion_backends import create_motion_backend
 from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
 from config.strategy import STARTUP_SCRIPT, StartupScript
+from config.arena import get_start_pose
+from config.strategy import START_BASE, START_SLOT
 
 from calibration import CALIBRATION
 from calibration.resolve import resolve
@@ -110,6 +114,27 @@ class Controller:
         self.perception = Perception(self.io)
 
         self.localisation = Localisation()
+
+        start_x, start_y, start_heading = get_start_pose(START_BASE, START_SLOT)
+        self.localisation.set_pose(
+            (start_x, start_y),
+            heading=start_heading,
+            source="startup_config",
+            timestamp=time.time(),
+        )
+        print(
+            f"[LOC][START] base={START_BASE} slot={START_SLOT} "
+            f"pose=({start_x:.1f}, {start_y:.1f}, {math.degrees(start_heading):.1f}deg)"
+        )
+
+        self._last_loc_method = "startup_config"
+
+        print("[LOC][METHOD] None -> startup_config")
+        print(
+            f"[LOC] arena=0 pose_obs=NO method=startup_config "
+            f"pos_valid=YES hdg_valid=YES "
+            f"x={start_x:.1f} y={start_y:.1f} hdg={math.degrees(start_heading):.1f}"
+        )
 
         # -------------------------
         # Configuration & Calibration
@@ -215,12 +240,43 @@ class Controller:
             now_s=time.time(),
         )
 
-        print(f"[LOC] arena={len(arena_obs)} pose_obs={'YES' if pose_obs else 'NO'}")
-
         if pose_obs is not None:
+            print(
+                f"[LOC][ACCEPT] src={pose_obs.source} "
+                f"x={pose_obs.x:.1f} y={pose_obs.y:.1f} "
+                f"hdg={'None' if pose_obs.heading is None else f'{math.degrees(pose_obs.heading):.1f}'} "
+                f"conf={pose_obs.confidence:.2f}"
+            )
             self.localisation.accept(pose_obs)
+
+        pose = self.localisation.pose
+
+        if pose is None:
+            current_method = "none"
+            pos_valid = "NO"
+            hdg_valid = "NO"
+            x_str = "None"
+            y_str = "None"
+            hdg_str = "None"
         else:
-            self.localisation.invalidate()
+            current_method = pose.source
+            pos_valid = "YES" if pose.position_valid else "NO"
+            hdg_valid = "YES" if pose.heading_valid else "NO"
+            x_str = f"{pose.x:.1f}"
+            y_str = f"{pose.y:.1f}"
+            hdg_str = "None" if pose.heading is None else f"{math.degrees(pose.heading):.1f}"
+
+        if current_method != self._last_loc_method:
+            print(f"[LOC][METHOD] {self._last_loc_method} -> {current_method}")
+            self._last_loc_method = current_method
+
+        print(
+            f"[LOC] arena={len(arena_obs)} "
+            f"pose_obs={'YES' if pose_obs else 'NO'} "
+            f"method={current_method} "
+            f"pos_valid={pos_valid} hdg_valid={hdg_valid} "
+            f"x={x_str} y={y_str} hdg={hdg_str}"
+        )
 
         # -------------------------
         # SCRIPTED START

@@ -133,14 +133,28 @@ class Localisation:
 
     def accept(self, obs: PoseObservation) -> None:
         """
-        Controller-facing: accept an observation and set pose.
+        Controller-facing: accept an observation and update pose.
+
+        Position always comes from the observation.
+        Heading is only replaced if the observation provides one.
+        Otherwise, preserve the current heading if available.
         """
+        prev_heading = self.pose.heading if self.pose is not None else None
+        prev_heading_valid = self.pose.heading_valid if self.pose is not None else False
+
+        if obs.heading is not None:
+            heading = obs.heading
+            heading_valid = True
+        else:
+            heading = prev_heading
+            heading_valid = prev_heading_valid and (heading is not None)
+
         self.pose = Pose(
             x=obs.x,
             y=obs.y,
-            heading=obs.heading,
+            heading=heading,
             position_valid=True,
-            heading_valid=(obs.heading is not None),
+            heading_valid=heading_valid,
             source=obs.source,
             timestamp=obs.timestamp,
         )

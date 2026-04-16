@@ -146,3 +146,23 @@ def base_dock_pose(base: BaseID, arena_size: int):
 
     raise ValueError(base)
 
+START_POSES = {
+    1: {  # slot 1
+        0: (-2015.5, +1823.5, 0.0),
+        1: (+1823.5, +2015.5, -1.5708),
+        2: (+2015.5, -1823.5, 3.1416),
+        3: (-1823.5, -2015.5, +1.5708),
+    },
+    2: {  # slot 2
+        0: (-1787.5, -162.5, 0.0),
+        1: (-162.5, +1787.5, -1.5708),
+        2: (+1787.5, +162.5, 3.1416),
+        3: (+162.5, -1787.5, +1.5708),
+    },
+}
+
+def get_start_pose(base: int, slot: int):
+    try:
+        return START_POSES[slot][base]
+    except KeyError as e:
+        raise ValueError(f"Unknown start pose base={base} slot={slot}") from e
