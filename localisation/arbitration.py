@@ -24,12 +24,16 @@ class Arbitrator:
     def __init__(self, providers: Iterable[PoseProvider]):
         self.providers = list(providers)
 
+    def _score(self, provider: PoseProvider, obs: PoseObservation, now_s: float) -> float:
+        return provider.base_weight * obs.confidence
+
     def estimate(self, *, now_s: float) -> PoseObservation | None:
         """
         Return the best PoseObservation from configured providers,
         or None if no usable observation is available.
         """
         best: Optional[PoseObservation] = None
+        best_score: float = float("-inf")
 
         for provider in self.providers:
             obs = provider.get_observation(now_s)
@@ -39,8 +43,11 @@ class Arbitrator:
             if not self._is_valid_observation(obs, now_s=now_s):
                 continue
 
-            if best is None or obs.confidence > best.confidence:
+            score = self._score(provider, obs, now_s)
+
+            if best is None or score > best_score:
                 best = obs
+                best_score = score
 
         return best
 

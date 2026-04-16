@@ -35,9 +35,10 @@ class PoseObservation:
     # True = absolute reference (e.g. vision, startup)
     # False = relative/integrated (e.g. odometry, motion, OTOS)
     is_absolute: bool = False
+    quality: str = "poor"  # "good" | "poor" | "bad"
 
     # --- diagnostics ---
-    meta: Dict[str, Any] = field(default_factory=dict)
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
 
     def can_reseed_position(self) -> bool:
         """
@@ -68,7 +69,10 @@ class PoseObservation:
         """
         True if this observation contributes anything useful.
         """
-        return self.position_valid or self.heading_valid
+        return (
+                (self.position_valid or self.heading_valid)
+                and self.quality != "bad"
+        )
 
     def age(self, now_s: float) -> float:
         """
@@ -80,7 +84,11 @@ class PoseObservation:
         """
         Compact debug-friendly representation.
         """
-        parts = [f"src={self.source}", f"conf={self.confidence:.2f}"]
+        parts = [
+            f"src={self.source}",
+            f"q={self.quality}",
+            f"conf={self.confidence:.2f}",
+        ]
 
         if self.position_valid:
             parts.append(f"x={self.x:.1f}")
@@ -107,8 +115,9 @@ class PoseProvider(ABC):
     or relative (deadwheel odometry, commanded motion, IMU-integrated heading).
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, base_weight: float = 1.0):
         self.name = name
+        self.base_weight = float(base_weight)
 
     @abstractmethod
     def get_observation(self, now_s: float) -> Optional[PoseObservation]:

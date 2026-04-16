@@ -32,7 +32,7 @@ class Cam1Markers2Provider(PoseProvider):
         border_margin_mm: float = 0.0,
         legacy_heading_zero: bool = False,
     ):
-        super().__init__("cam1_markers2")
+        super().__init__("cam1_markers2", base_weight=0.8)
 
         self.arena_size_mm = (
             float(arena_size_mm)
@@ -120,14 +120,23 @@ class Cam1Markers2Provider(PoseProvider):
 
         heading = 0.0 if self.legacy_heading_zero else None
 
-        confidence = min(0.95, 0.50 + 0.05 * len(positions))
+        if len(positions) >= 6:
+            quality = "good"
+            confidence = min(1.0, 0.85 + min(0.1, 0.02 * len(positions)))
+        elif len(positions) >= 2:
+            quality = "poor"
+            confidence = 0.5 + 0.05 * len(positions)
+        else:
+            quality = "bad"
+            confidence = 0.0
 
-        meta: Dict[str, Any] = {
+        diagnostics: Dict[str, Any] = {
             "camera": detections[0].get("camera", "unknown"),
             "markers_seen": [d["id"] for d in detections],
             "pairs_used": pairs_used,
             "candidate_count": len(positions),
             "arena_size_mm": self.arena_size_mm,
+            "quality_reason": "multi_marker_triangulation",
         }
 
         return PoseObservation(
@@ -140,7 +149,8 @@ class Cam1Markers2Provider(PoseProvider):
             source=self.name,
             timestamp=float(now_s),
             is_absolute=True,
-            meta=meta,
+            quality=quality,
+            diagnostics=diagnostics,
         )
 
     def reseed(self, pose) -> None:
