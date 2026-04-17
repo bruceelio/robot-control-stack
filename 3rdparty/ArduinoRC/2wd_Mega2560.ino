@@ -51,6 +51,7 @@ static const uint8_t PIN_COLLECTOR_EN_DIAG = 35;
 static const uint8_t CH_DRIVE_ROTATE   = 1;
 static const uint8_t CH_DRIVE_THROTTLE = 2;
 static const uint8_t CH_GRIP           = 5;
+static const uint8_t CH_LIFT           = 6;
 
 static const int LEFT_OPEN_US    = 900;
 static const int LEFT_CLOSED_US  = 2200;
