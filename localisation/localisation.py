@@ -198,6 +198,36 @@ class Localisation:
         for provider in self.providers:
             provider.invalidate()
 
+    def begin_commanded_drive(
+        self,
+        *,
+        distance_mm: float,
+        duration_s: float,
+        now_s: float,
+    ) -> None:
+        for provider in self.providers:
+            if hasattr(provider, "begin_drive"):
+                provider.begin_drive(
+                    distance_mm=float(distance_mm),
+                    duration_s=float(duration_s),
+                    now_s=float(now_s),
+                )
+
+    def begin_commanded_rotate(
+        self,
+        *,
+        angle_deg: float,
+        duration_s: float,
+        now_s: float,
+    ) -> None:
+        for provider in self.providers:
+            if hasattr(provider, "begin_rotate"):
+                provider.begin_rotate(
+                    angle_deg=float(angle_deg),
+                    duration_s=float(duration_s),
+                    now_s=float(now_s),
+                )
+
     def apply_motion(self, *, drive_mm: float = 0.0, rotate_deg: float = 0.0) -> None:
         """
         Update pose by applying a commanded motion.

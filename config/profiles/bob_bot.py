@@ -21,3 +21,29 @@ ENCODERS = {
     "deadwheel_perpendicular": "gobilda_swingarm_odometry_pod_48mm",
 #    "shooter": "gobilda_yellowjacket_312rpm",
 }
+
+"""
+# All poses are relative to base_link:
+# base_link = midpoint between the two drive wheels
+# +x forward, +y left, +z up
+
+CAMERA_MOUNTS = {
+    "front": {
+        "x_mm": 85.0,
+        "y_mm": -110.0,
+        "z_mm": 210.0,
+        "roll_deg": 0.0,
+        "pitch_deg": -18.0,
+        "yaw_deg": 8.0,
+    }
+}
+
+GRIPPER_MOUNT = {
+    "x_mm": 160.0,
+    "y_mm": 0.0,
+    "z_mm": 35.0,
+    "roll_deg": 0.0,
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+}
+"""

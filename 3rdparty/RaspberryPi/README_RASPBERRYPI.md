@@ -130,6 +130,8 @@ scp -r hw_io bt@192.168.8.236:/home/bt/robot
 scp -r diagnostics bt@192.168.8.236:/home/bt/robot
 scp main.py bt@192.168.8.236:/home/bt/robot
 scp robot_controller.py bt@192.168.8.236:/home/bt/robot
+
+scp -r zone_0/* bt@192.168.8.236:/home/bt/robot
 ```
 
 ### Common mistake

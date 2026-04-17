@@ -123,6 +123,26 @@ Lower-tier providers may win if they are fresher or more reliable.
 
 ---
 
+## 6. Position and Heading May Expire Differently
+
+Position and heading are not equally trustworthy.
+
+In particular:
+
+- a provider may supply a useful x/y estimate without supplying a trustworthy heading
+- vision-based fixes may improve map position even when heading cannot be solved confidently
+- the system should not silently preserve an old heading simply because a new observation omitted heading
+- stale heading is often more harmful than stale position because it corrupts subsequent motion propagation
+
+For this reason:
+
+- position validity and heading validity are tracked independently
+- heading may be invalidated earlier than position
+- last-resort providers may continue to report coarse x/y after heading has been dropped
+- motion propagation that depends on heading should only occur while heading is explicitly trusted
+
+---
+
 # Observability Levels
 
 | Provider type   | Position | Heading |
@@ -186,10 +206,20 @@ localisation/
 
 ## Motion-Based
 
-- based on commanded movement
-- works without hardware sensors
-- drifts over time
-- valid on real robots as fallback
+- based on commanded movement rather than measured movement
+- primarily acts as a last-resort localisation provider
+- intended to preserve coarse map position even when stronger providers are unavailable
+- position may remain usable for longer than heading
+- heading is only trusted when recently established by a provider that explicitly supplied a valid heading
+- if heading is lost or invalidated, commanded motion should stop pretending to know orientation
+- once heading is invalid, commanded motion should no longer propagate x/y from drive commands
+- drift is expected and should be measured on the physical robot rather than assumed from simulation alone
+
+Design intent:
+
+- x/y should live as long as possible because coarse map location is still useful for recovery
+- heading should be dropped sooner because stale heading is more dangerous than stale position
+- if the robot is relying on commanded motion, localisation has already degraded, so this provider should behave conservatively rather than optimistically
 
 ---
 
@@ -247,6 +277,10 @@ Responsibilities:
 - score observations
 - select best estimate
 - maintain pose
+
+Additional arbitration rule:
+
+- when accepting an observation which has valid position but no valid heading, the system may update x/y without keeping an older heading alive unless that heading remains independently justified
 
 ---
 

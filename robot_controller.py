@@ -232,12 +232,19 @@ class Controller:
 
     def update(self):
         next_tick()
+
+        now_s = time.time()
+
+        # Bind runtime context to backend
+        self.motion_backend.localisation = self.localisation
+        self.motion_backend.now_s = now_s
+
         # Always sense first
         arena_obs, objects = sense(self.io, self.perception)
 
         pose_obs = self.localisation.estimate(
             arena_observations=arena_obs,
-            now_s=time.time(),
+            now_s=now_s,
         )
 
         if pose_obs is not None:
