@@ -1,16 +1,7 @@
 // 3rdparty/ArduinoRC/2wd_Mega2560.ino
 //
-// Merged candidate sketch:
-// - keeps hardware-native pin/link protocol from 2wd_Mega2560.ino
-// - keeps AUTO + heartbeat ownership model
-// - restores simple, reliable gripper behavior from arduiono_work.ino
-// - preserves TeleOP differential drive + grip + lift behavior
-// - adds backward-compatible semantic commands for easier migration/testing
-//
-// Key change for gripper:
-//   GROUP_WRITE for pins 11/13 now accepts a mirrored pair, but the preferred
-//   route is also to use SERVO_WRITE 11 <value> or SERVO_WRITE 13 <value>,
-//   which drives the mirrored gripper as a single logical mechanism.
+// Hardware-native Mega sketch with rollback-style gripper path.
+// Keeps new LINK motor protocol, restores old simple gripper behavior.
 
 #include <Arduino.h>
 #include <math.h>
@@ -74,13 +65,6 @@ static const char BATTERY_VOLTAGE_PIN[] = "47";
 static const char DEVICE_ID[] = "MEGA_AUX_1";
 static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 500;
 
-static const char MOTOR_NAME_DRIVE_FRONT_LEFT[]  = "drive_front_left";
-static const char MOTOR_NAME_DRIVE_FRONT_RIGHT[] = "drive_front_right";
-static const char MOTOR_NAME_SHOOTER[]           = "shooter";
-static const char MOTOR_NAME_COLLECTOR[]         = "collector";
-static const char SERVO_NAME_GRIPPER[]           = "gripper";
-static const char SERVO_NAME_LIFT[]              = "lift";
-
 bool piAutoRequested = false;
 unsigned long piLastHeartbeatMs = 0;
 
@@ -88,10 +72,8 @@ float piLink_18_19_M1 = 0.0f;
 float piLink_18_19_M2 = 0.0f;
 float piLink_14_15_M1 = 0.0f;
 float piLink_14_15_M2 = 0.0f;
-float piShooterCmd = 0.0f;
-float piCollectorCmd = 0.0f;
+
 float piLiftCmd = 0.0f;
-float piGripCmd = -1.0f;   // -1 open, +1 closed
 uint16_t piGripLeftUs = LEFT_OPEN_US;
 uint16_t piGripRightUs = RIGHT_OPEN_US;
 
@@ -236,7 +218,49 @@ void ensureServoAttached(uint8_t pin) {
   directServoAttached[pin] = true;
 }
 
-void setGripPositionUs(uint16_t gripUs) {
+void writeGenericServoUs(uint8_t pin, uint16_t us) {
+  us = constrain(us, 500, 2500);
+
+  if (pin == PIN_LIFT) {
+    liftServo.writeMicroseconds(us);
+    return;
+  }
+
+  // Treat either gripper pin as one logical mirrored gripper command.
+  if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
+    uint16_t logicalGripUs = (uint16_t)constrain(map((long)us, 1000, 2000, 1000, 2000), 1000, 2000);
+    setGripPosition(logicalGripUs);
+    return;
+  }
+
+  ensureServoAttached(pin);
+  if (pin >= 70) return;
+  directServoObjects[pin].writeMicroseconds(us);
+}
+
+void writeGenericServo(uint8_t pin, float value) {
+  value = constrain(value, -1.0f, 1.0f);
+
+  if (pin == PIN_LIFT) {
+    uint16_t liftUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
+    liftServo.writeMicroseconds(liftUs);
+    return;
+  }
+
+  // Treat either gripper pin as one logical mirrored gripper command.
+  if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
+    uint16_t gripUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
+    setGripPosition(gripUs);
+    return;
+  }
+
+  ensureServoAttached(pin);
+  if (pin >= 70) return;
+  uint16_t us = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
+  directServoObjects[pin].writeMicroseconds(us);
+}
+
+void setGripPosition(uint16_t gripUs) {
   gripUs = constrain(gripUs, 1000, 2000);
   int leftUs  = map(gripUs, 1000, 2000, LEFT_OPEN_US,  LEFT_CLOSED_US);
   int rightUs = map(gripUs, 1000, 2000, RIGHT_OPEN_US, RIGHT_CLOSED_US);
@@ -244,13 +268,6 @@ void setGripPositionUs(uint16_t gripUs) {
   gripRightServo.writeMicroseconds(rightUs);
   piGripLeftUs = leftUs;
   piGripRightUs = rightUs;
-}
-
-void setGripNormalized(float pos) {
-  pos = constrain(pos, -1.0f, 1.0f);
-  uint16_t gripUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, 1000, 2000);
-  setGripPositionUs(gripUs);
-  piGripCmd = pos;
 }
 
 void setGripUs(uint16_t leftUs, uint16_t rightUs) {
@@ -262,59 +279,24 @@ void setGripUs(uint16_t leftUs, uint16_t rightUs) {
   piGripRightUs = rightUs;
 }
 
-void writeGenericServoUs(uint8_t pin, uint16_t us) {
-  if (pin == PIN_LIFT) {
-    liftServo.writeMicroseconds(us);
-    return;
-  }
-  if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
-    // Treat either gripper servo pin as the logical paired gripper.
-    uint16_t gripUs = constrain(us, 1000, 2000);
-    setGripPositionUs(gripUs);
-    return;
-  }
-  ensureServoAttached(pin);
-  if (pin >= 70) return;
-  directServoObjects[pin].writeMicroseconds(us);
-}
-
-void writeGenericServo(uint8_t pin, float value) {
-  value = constrain(value, -1.0f, 1.0f);
-  if (pin == PIN_LIFT) {
-    uint16_t liftUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
-    liftServo.writeMicroseconds(liftUs);
-    piLiftCmd = value;
-    return;
-  }
-  if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
-    // Preferred workaround: a single SERVO_WRITE on either grip pin controls both.
-    setGripNormalized(value);
-    return;
-  }
-  ensureServoAttached(pin);
-  if (pin >= 70) return;
-  uint16_t us = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
-  directServoObjects[pin].writeMicroseconds(us);
-}
-
 void updateGripFromIbus() {
   const uint8_t idx = CH_GRIP - 1;
   const uint16_t gripUs = ibusMicros(idx);
-  setGripPositionUs(gripUs);
+  setGripPosition(gripUs);
+}
+
+void updateLiftFromIbus() {
+  const uint8_t idx = CH_LIFT - 1;
+  const uint16_t liftUs = ibusMicros(idx);
+  float pos = ((float)liftUs - 1500.0f) / 500.0f;
+  pos = constrain(pos, -1.0f, 1.0f);
+  setLiftNormalized(pos);
 }
 
 void setLiftNormalized(float pos) {
   pos = constrain(pos, -1.0f, 1.0f);
   uint16_t liftUs = (uint16_t)map((int)(pos * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
   liftServo.writeMicroseconds(liftUs);
-  piLiftCmd = pos;
-}
-
-void updateLiftFromIbus() {
-  const uint8_t idx = CH_LIFT - 1;
-  const uint16_t liftUs = ibusMicros(idx);
-  float pos = (float)map(liftUs, 1000, 2000, -1000, 1000) / 1000.0f;
-  setLiftNormalized(pos);
 }
 
 int readDigitalPin(uint8_t pin) { return digitalRead(pin); }
@@ -339,22 +321,6 @@ long readRangePair(uint8_t trigPin, uint8_t echoPin) {
 bool piHeartbeatFresh() { return (millis() - piLastHeartbeatMs) <= PI_HEARTBEAT_TIMEOUT_MS; }
 bool piHasControl() { return piAutoRequested && piHeartbeatFresh(); }
 
-bool setMotorByName(const char *name, float value) {
-  value = constrain(value, -1.0f, 1.0f);
-  if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_LEFT) == 0) { piLink_18_19_M1 = value; return true; }
-  if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_RIGHT) == 0) { piLink_18_19_M2 = value; return true; }
-  if (strcmp(name, MOTOR_NAME_SHOOTER) == 0) { piShooterCmd = value; return true; }
-  if (strcmp(name, MOTOR_NAME_COLLECTOR) == 0) { piCollectorCmd = value; return true; }
-  return false;
-}
-
-bool setServoByName(const char *name, float value) {
-  value = constrain(value, -1.0f, 1.0f);
-  if (strcmp(name, SERVO_NAME_GRIPPER) == 0) { setGripNormalized(value); return true; }
-  if (strcmp(name, SERVO_NAME_LIFT) == 0) { setLiftNormalized(value); return true; }
-  return false;
-}
-
 void replyValue(const char *kind, long value) {
   PI_SERIAL.print("OK ");
   PI_SERIAL.print(kind);
@@ -370,10 +336,9 @@ void handlePiCommand(char *line) {
   if (strcmp(line, "MODE TELEOP") == 0) { piAutoRequested = false; PI_SERIAL.println("OK MODE TELEOP"); return; }
   if (strcmp(line, "STOP") == 0) {
     stopLinks();
-    piShooterCmd = 0.0f;
-    piCollectorCmd = 0.0f;
-    setGripNormalized(-1.0f);
-    setLiftNormalized(0.0f);
+    piLiftCmd = 0.0f;
+    setGripPosition(1000);
+    setLiftNormalized(piLiftCmd);
     writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
     writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
     PI_SERIAL.println("OK STOP");
@@ -401,6 +366,33 @@ void handlePiCommand(char *line) {
     }
   }
 
+  if (strncmp(line, "GROUP_WRITE ", 12) == 0) {
+    char *p = line + 12;
+    char *tokPin1 = strtok(p, " ");
+    char *tokVal1 = strtok(nullptr, " ");
+    char *tokPin2 = strtok(nullptr, " ");
+    char *tokVal2 = strtok(nullptr, " ");
+
+    if (tokPin1 && tokVal1 && tokPin2 && tokVal2) {
+      int pin1 = atoi(tokPin1), pin2 = atoi(tokPin2);
+      float val1 = atof(tokVal1), val2 = atof(tokVal2);
+
+      if ((pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) ||
+          (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
+        writeGenericServo((uint8_t)PIN_GRIP_LEFT, val1);
+      } else {
+        writeGenericServo((uint8_t)pin1, val1);
+        writeGenericServo((uint8_t)pin2, val2);
+      }
+
+      PI_SERIAL.print("OK GROUP_WRITE ");
+      PI_SERIAL.print(pin1);
+      PI_SERIAL.print(" ");
+      PI_SERIAL.println(pin2);
+      return;
+    }
+  }
+
   if (strncmp(line, "GROUP_US_WRITE ", 15) == 0) {
     char *p = line + 15;
     char *tokPin1 = strtok(p, " ");
@@ -409,6 +401,8 @@ void handlePiCommand(char *line) {
     char *tokUs2  = strtok(nullptr, " ");
     if (tokPin1 && tokUs1 && tokPin2 && tokUs2) {
       int pin1 = atoi(tokPin1), us1 = atoi(tokUs1), pin2 = atoi(tokPin2), us2 = atoi(tokUs2);
+      if (us1 < 500) us1 = 500; if (us1 > 2500) us1 = 2500;
+      if (us2 < 500) us2 = 500; if (us2 > 2500) us2 = 2500;
       if (pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) {
         setGripUs((uint16_t)us1, (uint16_t)us2);
         PI_SERIAL.print("OK GROUP_US_WRITE GRIP "); PI_SERIAL.print(pin1); PI_SERIAL.print(" "); PI_SERIAL.println(pin2);
@@ -421,30 +415,6 @@ void handlePiCommand(char *line) {
     }
   }
 
-  if (strncmp(line, "GROUP_WRITE ", 12) == 0) {
-    char *p = line + 12;
-    char *tokPin1 = strtok(p, " ");
-    char *tokVal1 = strtok(nullptr, " ");
-    char *tokPin2 = strtok(nullptr, " ");
-    char *tokVal2 = strtok(nullptr, " ");
-    if (tokPin1 && tokVal1 && tokPin2 && tokVal2) {
-      int pin1 = atoi(tokPin1), pin2 = atoi(tokPin2);
-      float value1 = atof(tokVal1), value2 = atof(tokVal2);
-      if ((pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) ||
-          (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
-        // Accept old paired gripper command, but collapse to one logical command.
-        // Prefer the first value as the source of truth.
-        setGripNormalized(value1);
-        PI_SERIAL.print("OK GROUP_WRITE "); PI_SERIAL.print(pin1); PI_SERIAL.print(" "); PI_SERIAL.println(pin2);
-      } else {
-        writeGenericServo((uint8_t)pin1, value1);
-        writeGenericServo((uint8_t)pin2, value2);
-        PI_SERIAL.print("OK GROUP_WRITE "); PI_SERIAL.print(pin1); PI_SERIAL.print(" "); PI_SERIAL.println(pin2);
-      }
-      return;
-    }
-  }
-
   if (strncmp(line, "SERVO_WRITE ", 12) == 0) {
     char *p = line + 12;
     char *tokPin = strtok(p, " ");
@@ -452,7 +422,12 @@ void handlePiCommand(char *line) {
     if (tokPin && tokVal) {
       int pin = atoi(tokPin);
       float value = atof(tokVal);
-      writeGenericServo((uint8_t)pin, value);
+      if (pin == PIN_LIFT) {
+        piLiftCmd = constrain(value, -1.0f, 1.0f);
+        setLiftNormalized(piLiftCmd);
+      } else {
+        writeGenericServo((uint8_t)pin, value);
+      }
       PI_SERIAL.print("OK SERVO_WRITE "); PI_SERIAL.println(pin);
       return;
     }
@@ -472,51 +447,6 @@ void handlePiCommand(char *line) {
       PI_SERIAL.print("OK HBRIDGE_WRITE "); PI_SERIAL.print(ina); PI_SERIAL.print(" "); PI_SERIAL.print(inb); PI_SERIAL.print(" "); PI_SERIAL.print(enDiag); PI_SERIAL.print(" "); PI_SERIAL.println(pwm);
       return;
     }
-  }
-
-  char kind[16], name[32];
-  float value = 0.0f;
-  if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
-    if (strcmp(kind, "MOTOR") == 0) {
-      if (setMotorByName(name, value)) {
-        PI_SERIAL.print("OK SET MOTOR "); PI_SERIAL.println(name);
-      } else {
-        PI_SERIAL.print("ERR SET MOTOR "); PI_SERIAL.println(name);
-      }
-      return;
-    }
-    if (strcmp(kind, "SERVO") == 0) {
-      if (setServoByName(name, value)) {
-        PI_SERIAL.print("OK SET SERVO "); PI_SERIAL.println(name);
-      } else {
-        PI_SERIAL.print("ERR SET SERVO "); PI_SERIAL.println(name);
-      }
-      return;
-    }
-  }
-
-  if (strncmp(line, "DRV ", 4) == 0) {
-    char *p = line + 4;
-    char *tok1 = strtok(p, " ");
-    char *tok2 = strtok(nullptr, " ");
-    if (tok1 && tok2) {
-      piLink_18_19_M1 = constrain(atof(tok1), -1.0f, 1.0f);
-      piLink_18_19_M2 = constrain(atof(tok2), -1.0f, 1.0f);
-      PI_SERIAL.println("OK DRV");
-      return;
-    }
-  }
-
-  if (strncmp(line, "GRIP ", 5) == 0) {
-    setGripNormalized(atof(line + 5));
-    PI_SERIAL.println("OK GRIP");
-    return;
-  }
-
-  if (strncmp(line, "LIFT ", 5) == 0) {
-    setLiftNormalized(atof(line + 5));
-    PI_SERIAL.println("OK LIFT");
-    return;
   }
 
   char rkind[16], a1[32], a2[32];
@@ -568,6 +498,7 @@ void setup() {
   pinMode(PIN_COLLECTOR_INA, OUTPUT);
   pinMode(PIN_COLLECTOR_INB, OUTPUT);
   pinMode(PIN_COLLECTOR_EN_DIAG, OUTPUT);
+
   pinMode(PIN_LIFT_LIMIT_HIGH, INPUT_PULLUP);
   pinMode(PIN_LIFT_LIMIT_LOW, INPUT_PULLUP);
   pinMode(PIN_DEADWHEEL_PARALLEL_A, INPUT_PULLUP);
@@ -585,7 +516,7 @@ void setup() {
   directServoAttached[PIN_GRIP_RIGHT] = true;
   directServoAttached[PIN_LIFT] = true;
 
-  setGripNormalized(-1.0f);
+  setGripPosition(1000);
   setLiftNormalized(0.0f);
 
   stopLinks();
@@ -602,9 +533,8 @@ void loop() {
 
   if (piHasControl()) {
     applyPiLinkOutputs();
-    writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, piShooterCmd);
-    writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, piCollectorCmd);
-    setGripNormalized(piGripCmd);
+    gripLeftServo.writeMicroseconds(piGripLeftUs);
+    gripRightServo.writeMicroseconds(piGripRightUs);
     setLiftNormalized(piLiftCmd);
     delay(20);
     return;
@@ -613,6 +543,9 @@ void loop() {
   if (piAutoRequested && !piHeartbeatFresh()) {
     piAutoRequested = false;
     stopLinks();
+    gripLeftServo.writeMicroseconds(piGripLeftUs);
+    gripRightServo.writeMicroseconds(piGripRightUs);
+    setLiftNormalized(piLiftCmd);
     writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, 0.0f);
     writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, 0.0f);
   }
