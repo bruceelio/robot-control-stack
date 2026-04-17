@@ -51,7 +51,6 @@ static const uint8_t PIN_COLLECTOR_EN_DIAG = 35;
 static const uint8_t CH_DRIVE_ROTATE   = 1;
 static const uint8_t CH_DRIVE_THROTTLE = 2;
 static const uint8_t CH_GRIP           = 5;
-static const uint8_t CH_LIFT           = 6;
 
 static const int LEFT_OPEN_US    = 900;
 static const int LEFT_CLOSED_US  = 2200;
@@ -219,20 +218,12 @@ void ensureServoAttached(uint8_t pin) {
 }
 
 void writeGenericServoUs(uint8_t pin, uint16_t us) {
-  us = constrain(us, 500, 2500);
-
-  if (pin == PIN_LIFT) {
-    liftServo.writeMicroseconds(us);
-    return;
-  }
-
-  // Treat either gripper pin as one logical mirrored gripper command.
+  if (pin == PIN_LIFT) { liftServo.writeMicroseconds(us); return; }
   if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
-    uint16_t logicalGripUs = (uint16_t)constrain(map((long)us, 1000, 2000, 1000, 2000), 1000, 2000);
+    uint16_t logicalGripUs = (uint16_t)constrain(us, 1000, 2000);
     setGripPosition(logicalGripUs);
     return;
   }
-
   ensureServoAttached(pin);
   if (pin >= 70) return;
   directServoObjects[pin].writeMicroseconds(us);
@@ -240,20 +231,16 @@ void writeGenericServoUs(uint8_t pin, uint16_t us) {
 
 void writeGenericServo(uint8_t pin, float value) {
   value = constrain(value, -1.0f, 1.0f);
-
   if (pin == PIN_LIFT) {
     uint16_t liftUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, LIFT_DOWN_US, LIFT_UP_US);
     liftServo.writeMicroseconds(liftUs);
     return;
   }
-
-  // Treat either gripper pin as one logical mirrored gripper command.
   if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
     uint16_t gripUs = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
     setGripPosition(gripUs);
     return;
   }
-
   ensureServoAttached(pin);
   if (pin >= 70) return;
   uint16_t us = (uint16_t)map((int)(value * 1000.0f), -1000, 1000, 1000, 2000);
@@ -372,11 +359,9 @@ void handlePiCommand(char *line) {
     char *tokVal1 = strtok(nullptr, " ");
     char *tokPin2 = strtok(nullptr, " ");
     char *tokVal2 = strtok(nullptr, " ");
-
     if (tokPin1 && tokVal1 && tokPin2 && tokVal2) {
       int pin1 = atoi(tokPin1), pin2 = atoi(tokPin2);
       float val1 = atof(tokVal1), val2 = atof(tokVal2);
-
       if ((pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) ||
           (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
         writeGenericServo((uint8_t)PIN_GRIP_LEFT, val1);
@@ -384,11 +369,7 @@ void handlePiCommand(char *line) {
         writeGenericServo((uint8_t)pin1, val1);
         writeGenericServo((uint8_t)pin2, val2);
       }
-
-      PI_SERIAL.print("OK GROUP_WRITE ");
-      PI_SERIAL.print(pin1);
-      PI_SERIAL.print(" ");
-      PI_SERIAL.println(pin2);
+      PI_SERIAL.print("OK GROUP_WRITE "); PI_SERIAL.print(pin1); PI_SERIAL.print(" "); PI_SERIAL.println(pin2);
       return;
     }
   }
