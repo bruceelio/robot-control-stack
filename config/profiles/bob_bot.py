@@ -22,6 +22,13 @@ ENCODERS = {
 #    "shooter": "gobilda_yellowjacket_312rpm",
 }
 
+# Lower commanded power
+MAX_MOTOR_POWER = 0.5
+
+# Increase timed duration scaling
+BASE_ROTATE_FACTOR = 2.5
+BASE_DRIVE_FACTOR = 2.5
+
 """
 # All poses are relative to base_link:
 # base_link = midpoint between the two drive wheels
