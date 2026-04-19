@@ -93,12 +93,12 @@ class MegaSerialClient:
         return self.link_write(14, 15, channel, value)
 
     def servo_write(self, pin: int, value: float) -> str:
-        value = max(0.0, min(1.0, float(value)))
+        value = max(-1.0, min(1.0, float(value)))
         return self.send(f"SERVO_WRITE {pin} {value:.3f}")
 
     def group_write(self, pin1: int, value1: float, pin2: int, value2: float) -> str:
-        value1 = max(0.0, min(1.0, float(value1)))
-        value2 = max(0.0, min(1.0, float(value2)))
+        value1 = max(-1.0, min(1.0, float(value1)))
+        value2 = max(-1.0, min(1.0, float(value2)))
         return self.send(f"GROUP_WRITE {pin1} {value1:.3f} {pin2} {value2:.3f}")
 
     def hbridge_write(self, *, ina: int, inb: int, en_diag: int, pwm: int, value: float) -> str:

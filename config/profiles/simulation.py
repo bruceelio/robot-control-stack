@@ -49,13 +49,14 @@ RECOVER_SETTLE_TIME = 0.5
 
 # Motion limits
 MIN_ROTATE_DEG = 2.0
-MAX_ROTATE_DEG = 90.0
+MAX_ROTATE_DEG = 180.0
 MIN_DRIVE_MM = 5.0          # only for seek_and_collect
 MAX_DRIVE_MM = 2500.0
 MAX_MOTOR_POWER = 0.8
 
 # Vision / perception
 CAMERA_SETTLE_TIME = 0.5
+CAMERA_FRESH_OBS_MAX_AGE_S = 0.12
 MARKER_HEIGHT_MAX_DISTANCE_MM = 2000
 
 # These are actual radians (so AI doesn't implode on itself)

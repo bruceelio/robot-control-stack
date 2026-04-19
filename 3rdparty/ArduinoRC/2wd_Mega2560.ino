@@ -136,7 +136,7 @@ static const char BATTERY_VOLTAGE_PIN[] = "47"; // update if/when battery source
 
 // ------------------------- SYSTEM ------------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";
-static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 500;
+static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (500 ms)
 
 // =========================================================
 // STATE

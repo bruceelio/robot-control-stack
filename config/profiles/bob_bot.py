@@ -26,8 +26,21 @@ ENCODERS = {
 MAX_MOTOR_POWER = 0.5
 
 # Increase timed duration scaling
-BASE_ROTATE_FACTOR = 2.5
-BASE_DRIVE_FACTOR = 2.5
+BASE_ROTATE_FACTOR = 1.0
+BASE_DRIVE_FACTOR = 1.0
+
+# InitEscape
+INIT_ESCAPE_DRIVE_MM = 400
+INIT_ESCAPE_ROTATE_DEG = 40.0
+
+CAMERA_SETTLE_TIME = 0.8
+CAMERA_FRESH_OBS_MAX_AGE_S = 0.12
+
+# These are actual radians (so AI doesn't implode on itself)
+MARKER_PITCH_HIGH_DEG = -0.05               # 0.0523598776 is 3 degrees
+MARKER_PITCH_LOW_DEG = 0.05
+HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low are will never commit
+MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 
 """
 # All poses are relative to base_link:

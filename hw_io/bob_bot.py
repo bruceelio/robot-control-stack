@@ -74,8 +74,13 @@ class MegaDriveMotor:
     @power.setter
     def power(self, value: float) -> None:
         value = max(-1.0, min(1.0, float(value)))
+
+        # If starting a new motion burst, re-arm every time.
+        starting_motion = (abs(self._power) < 1e-6) and (abs(value) > 1e-6)
+        if starting_motion:
+            self._owner.ensure_auto_mode(force=True)
+
         self._power = value
-        self._owner.ensure_auto_mode()
         self._owner._heartbeat_if_due(force=True)
         print(f"[BOBBOT MOTOR] terminal={self._terminal} value={value}")
         resp = self._mega.link_18_19(self._terminal, self._polarity * value)
@@ -106,7 +111,7 @@ class MegaServoSigned:
         if value is None:
             return
         value = max(-1.0, min(1.0, float(value)))
-        self._owner.ensure_auto_mode()
+        self._owner.ensure_auto_mode(force=True)
         self._owner._heartbeat_if_due(force=True)
         self._write_fn(value)
 
@@ -142,11 +147,12 @@ class BobBotIO(IOMap):
 
         now = time.monotonic()
         stale_s = float(getattr(CONFIG, "mega_auto_stale_s", 0.4))
-
         needs_rearm = force or (not self._auto_entered) or ((now - self._last_hb_t) > stale_s)
 
         if not needs_rearm:
             return
+
+        print("[MEGA INIT] re-arming AUTO")
 
         try:
             print(f"[MEGA INIT] {self.mega.hello()}")
@@ -161,6 +167,7 @@ class BobBotIO(IOMap):
             self._heartbeat_if_due(force=True)
         except Exception as e:
             print(f"[MEGA INIT] mode_auto failed: {e}")
+            self._auto_entered = False
 
     def _make_mega_client(self) -> MegaSerialClient | None:
         enabled = bool(getattr(CONFIG, "mega_enabled", True))

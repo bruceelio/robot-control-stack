@@ -201,7 +201,7 @@ class Level2:
         # Assumption: lift is servo 0, SR-style -1..+1
         try:
             servos[0].position = -1
-            self.SLEEP(0.4)
+            self.SLEEP(1.0)
         except Exception as e:
             print("[Level2] LIFT_DOWN failed:", e)
 
@@ -214,7 +214,11 @@ class Level2:
 
         try:
             servos[0].position = 1
-            self.SLEEP(0.4)
+
+            t_end = time.time() + 1.0
+            while time.time() < t_end:
+                servos[0].position = 1  # keep reasserting
+                self.io.sleep(0.05)
         except Exception as e:
             print("[Level2] LIFT_UP failed:", e)
 

@@ -8,7 +8,7 @@ class LiftUp(Primitive):
     Raise the lift to the upper position.
     """
 
-    def __init__(self, settle_time=0.5):
+    def __init__(self, settle_time=1.0):
         super().__init__()
         self.settle_time = settle_time
         self._start_time = None

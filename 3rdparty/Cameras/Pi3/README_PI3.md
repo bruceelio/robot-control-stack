@@ -228,8 +228,6 @@ For each configuration, evaluate:
 
 ## Phase 5 — Calibration
 
-## Phase 5 — Calibration
-
 ### Goal
 
 Measure the camera intrinsics for the **exact setup you will use**:

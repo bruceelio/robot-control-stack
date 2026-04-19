@@ -18,30 +18,30 @@ DRIVE_SWITCH_MM = 800
 
 # Power levels (open-loop)
 DRIVE_POWER_SHORT = 0.20
-DRIVE_POWER_LONG  = 0.30
+DRIVE_POWER_LONG  = 0.35
 
 # Distance → time calibration
-DRIVE_M_SHORT = 0.00133
-DRIVE_B_SHORT = 0.06
+DRIVE_M_SHORT = 0.00421
+DRIVE_B_SHORT = -0.0063
 
-DRIVE_M_LONG  = 0.00103
-DRIVE_B_LONG  = 0.05
+DRIVE_M_LONG  = 0.00208
+DRIVE_B_LONG  = -0.030
 
 # =========================
 # Timed Rotation Calibration
 # =========================
 
-ROTATE_SWITCH_DEG = 60
+ROTATE_SWITCH_DEG = 25
 
 # Small-angle rotations (precision)
-ROTATE_POWER_SMALL = 0.20
-ROTATE_M_SMALL = 0.0048
-ROTATE_B_SMALL = 0.12
+ROTATE_POWER_SMALL = 0.10
+ROTATE_M_SMALL = 0.025
+ROTATE_B_SMALL = 0.0
 
 # Large-angle rotations (momentum)
-ROTATE_POWER_LARGE = 0.30
-ROTATE_M_LARGE = 0.0048
-ROTATE_B_LARGE = 0.12
+ROTATE_POWER_LARGE = 0.20
+ROTATE_M_LARGE = 0.0125
+ROTATE_B_LARGE = -0.0413
 
 
 # Rotation calibration

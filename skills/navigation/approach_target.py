@@ -205,6 +205,7 @@ class ApproachTunables:
 
     # Vision / timing
     camera_settle_time_s: float
+    camera_fresh_obs_max_age_s: float
     vision_loss_timeout_s: float
     visible_max_age_s: float
 
@@ -265,6 +266,12 @@ class ApproachTarget(Primitive):
 
         self._dogleg_cooldown_until: Optional[float] = None
 
+        # After a motion+settle cycle, require a fresh camera observation
+        # before replanning. This prevents stale last_seen_* state from
+        # causing repeated blind rotate/drive loops.
+        self._require_fresh_obs_after_settle: bool = False
+        self._fresh_obs_wait_started: Optional[float] = None
+
     @property
     def approached_target_id(self) -> Optional[int]:
         return self.target_id
@@ -276,6 +283,7 @@ class ApproachTarget(Primitive):
             min_drive_mm=float(_cfg(config, "min_drive_mm", 5.0)),
             max_drive_mm=float(_cfg(config, "max_drive_mm", 2500.0)),
             camera_settle_time_s=float(_cfg(config, "camera_settle_time", 0.30)),
+            camera_fresh_obs_max_age_s=float(_cfg(config, "camera_fresh_obs_max_age_s", 0.12)),
             vision_loss_timeout_s=float(_cfg(config, "vision_loss_timeout_s", 0.50)),
             visible_max_age_s=float(_cfg(config, "visible_max_age_s", 0.35)),
             recover_step_deg=float(_cfg(config, "recover_step_deg", 15.0)),
@@ -343,6 +351,8 @@ class ApproachTarget(Primitive):
             self.last_seen_bearing = None
 
         self._parallel_skill = None
+        self._require_fresh_obs_after_settle = False
+        self._fresh_obs_wait_started = None
 
     def update(self, *, perception, motion_backend, **_):
         now = time.time()
@@ -365,6 +375,13 @@ class ApproachTarget(Primitive):
 
             if not self.final_commit:
                 self.cached_distance = None
+                self.cached_bearing = None
+                self._require_fresh_obs_after_settle = True
+                self._fresh_obs_wait_started = now
+                print(
+                    "[APPROACH][VISION] post-settle fresh observation required "
+                    f"(max_age={self.t.camera_fresh_obs_max_age_s:.2f}s)"
+                )
 
         # =================================================
         # SECTION 1 — ACTIVE PRIMITIVE (NO REASSESSMENT)
@@ -477,6 +494,74 @@ class ApproachTarget(Primitive):
         # =================================================
         target = None
 
+        # -------------------------------------------------
+        # POST-SETTLE FRESH-VISION GATE
+        # -------------------------------------------------
+        # After a rotate/drive + settle cycle, do not immediately continue
+        # from stale last_seen_* memory. Require a freshly visible target
+        # before replanning, unless we are already in the true final commit.
+        if self._require_fresh_obs_after_settle and not self.final_commit:
+            fresh_target = None
+
+            visible_fresh = get_visible_targets(
+                perception,
+                self.kind,
+                now=now,
+                max_age_s=self.t.camera_fresh_obs_max_age_s,
+            )
+
+            if self.target_id is not None:
+                for t in visible_fresh:
+                    if int(t.get("id", -1)) == int(self.target_id):
+                        fresh_target = t
+                        break
+            elif visible_fresh:
+                fresh_target = get_closest_target(
+                    perception,
+                    self.kind,
+                    now=now,
+                    max_age_s=self.t.camera_fresh_obs_max_age_s,
+                )
+
+            if fresh_target is None:
+                waited = now - (self._fresh_obs_wait_started or now)
+                print(
+                    "[APPROACH][VISION] waiting for fresh post-settle obs "
+                    f"t={waited:.2f}s max_age={self.t.camera_fresh_obs_max_age_s:.2f}s"
+                )
+
+                if waited >= self.t.vision_loss_timeout_s:
+                    print(
+                        "[APPROACH][VISION] no fresh post-settle obs "
+                        f"within {self.t.vision_loss_timeout_s:.2f}s -> REACQUIRE"
+                    )
+                    self._require_fresh_obs_after_settle = False
+                    self._fresh_obs_wait_started = None
+
+                    self.active_primitive = ReacquireTarget(
+                        kind=self.kind,
+                        step_deg=self.t.recover_step_deg,
+                        max_sweep_deg=self.t.recover_max_sweep_deg,
+                        max_age_s=self.t.vision_loss_timeout_s,
+                        target_id=self.target_id,
+                    )
+                    self.last_action = "reacquire"
+                    self.active_primitive.start(motion_backend=motion_backend)
+                    return PrimitiveStatus.RUNNING
+
+                return PrimitiveStatus.RUNNING
+
+            self._require_fresh_obs_after_settle = False
+            self._fresh_obs_wait_started = None
+            target = fresh_target
+
+            print(
+                "[APPROACH][VISION] fresh post-settle obs accepted "
+                f"id={int(target.get('id', -1)) if target.get('id', None) is not None else 'REL'} "
+                f"dist={float(target['distance']):.0f}mm "
+                f"bearing={float(target['bearing']):.1f}°"
+            )
+
         # Debug: dump vertical angles for ALL visible markers every reassessment tick
         _debug_dump_visible_vertical_angles(
             perception,
@@ -487,29 +572,31 @@ class ApproachTarget(Primitive):
             fov_y_deg=self.t.camera_fov_y_deg,
         )
 
-        # Prefer locked id if actually visible
-        if self.target_id is not None:
-            visible = get_visible_targets(
-                perception,
-                self.kind,
-                now=now,
-                max_age_s=self.t.visible_max_age_s,
-            )
-            for t in visible:
-                if int(t.get("id", -1)) == int(self.target_id):
-                    target = t
-                    break
+        # If the fresh-post-settle gate already supplied a target, keep it.
+        if target is None:
+            # Prefer locked id if actually visible
+            if self.target_id is not None:
+                visible = get_visible_targets(
+                    perception,
+                    self.kind,
+                    now=now,
+                    max_age_s=self.t.visible_max_age_s,
+                )
+                for t in visible:
+                    if int(t.get("id", -1)) == int(self.target_id):
+                        target = t
+                        break
 
-        # If locked to an id, do NOT substitute another
-        if target is None and self.target_id is not None:
-            pass
-        elif target is None:
-            target = get_closest_target(
-                perception,
-                self.kind,
-                now=now,
-                max_age_s=self.t.vision_loss_timeout_s,
-            )
+            # If locked to an id, do NOT substitute another
+            if target is None and self.target_id is not None:
+                pass
+            elif target is None:
+                target = get_closest_target(
+                    perception,
+                    self.kind,
+                    now=now,
+                    max_age_s=self.t.vision_loss_timeout_s,
+                )
 
         age = (now - self.last_seen_time) if self.last_seen_time is not None else 0.0
         print(
@@ -691,6 +778,8 @@ class ApproachTarget(Primitive):
         if (not self.final_commit) and (distance <= commit) and self.height_model.is_committed():
             self.final_commit = True
             self.target_is_high = self.height_model.is_high()
+            self._require_fresh_obs_after_settle = False
+            self._fresh_obs_wait_started = None
 
             final_drive_mm = distance + float(self.t.final_approach_marker_push_mm)
             print(
@@ -767,7 +856,19 @@ class ApproachTarget(Primitive):
         self.last_action = "rotate"
         self.bearing_consumed = True
 
-        print(f"[MOTION][ROTATE] angle={angle:.1f}° (bearing={bearing:.1f}°)")
+        print(
+            f"[MOTION][ROTATE] angle={angle:.1f}° "
+            f"(bearing={bearing:.1f}° target_id={self.target_id} mode={mode})"
+        )
+
+        if self.last_seen_bearing is not None:
+            print(
+                f"[APPROACH][ROTATE_CTX] "
+                f"last_seen_bearing={self.last_seen_bearing:.2f} "
+                f"current_bearing={bearing:.2f} "
+                f"distance={distance:.0f} "
+                f"commit={commit:.0f} direct={direct:.0f}"
+            )
 
         self.active_primitive = AlignToTarget(
             bearing_deg=angle,

@@ -102,11 +102,12 @@ class Controller:
 
             print("[BOOT] VACUUM ON test pulse")
             outs.set("VACUUM", True)
-            self.io.sleep(0.25)
+            self.io.sleep(0.50)
 
-            print("[BOOT] VACUUM OFF again")
+            print("[BOOT] Forcing VACUUM OFF at startup")
             outs.set("VACUUM", False)
             self.io.sleep(0.25)
+
         else:
             print("[BOOT] No io.outputs available")
 

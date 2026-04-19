@@ -89,6 +89,11 @@ class AcquireObject(Behavior):
         self._select_started_s = None
         self._select_stall_count = 0
 
+        # Vision Settle
+        self._vision_settle_until = None
+        self._require_fresh_obs_after_settle = False
+        self._max_fresh_age_s = None
+
     @property
     def acquired_id(self):
         """
@@ -169,6 +174,13 @@ class AcquireObject(Behavior):
         # --- SELECT stall watchdog reset (IMPORTANT: must be before return) ---
         self._select_started_s = time.time()
         self._select_stall_count = 0
+
+        # --- Vision settle / fresh observation gate reset ---
+        self._vision_settle_until = None
+        self._require_fresh_obs_after_settle = False
+        self._max_fresh_age_s = float(
+            getattr(self.config, "CAMERA_FRESH_OBS_MAX_AGE_S", 0.12)
+        )
 
         self.status = BehaviorStatus.RUNNING
         return self.status
@@ -434,6 +446,18 @@ class AcquireObject(Behavior):
             locked_target_id=self.locked_target_id,
         )
         self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
+
+        # NEW: force a post-rotate camera settle gate
+        self._vision_settle_until = time.time() + float(self.config.camera_settle_time)
+        self._require_fresh_obs_after_settle = True
+
+        # Optional but recommended: drop stale tracker state so we demand a fresh frame
+        if self._tracker is not None:
+            self._tracker.reset(locked_target_id=self.locked_target_id, kind=self.kind)
+        self.track = None
+
+        print(f"[VISION] settle start {self.config.camera_settle_time:.2f}s after ALIGN")
+
         return self.status
 
     def _safe_stop(self, thing, *, motion_backend=None):
@@ -494,6 +518,33 @@ class AcquireObject(Behavior):
                 locked_target_id=self.locked_target_id,
             )
             self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
+
+        # NEW: camera settle gate
+        now = time.time()
+        if self._require_fresh_obs_after_settle:
+            if self._vision_settle_until is not None and now < self._vision_settle_until:
+                remaining = self._vision_settle_until - now
+                print(f"[VISION] waiting settle {remaining:.2f}s")
+                return self.status
+
+            snap = self.track
+            fresh_enough = (
+                    snap is not None
+                    and snap.visible_now
+                    and snap.age_s is not None
+                    and snap.age_s <= self._max_fresh_age_s
+                    and snap.last_obs is not None
+            )
+
+            if not fresh_enough:
+                age = None if snap is None else snap.age_s
+                print(f"[VISION] waiting fresh obs age={age}")
+                return self.status
+
+            print(f"[VISION] fresh observation accepted age={snap.age_s:.3f}s")
+            self.target = snap.last_obs
+            self._require_fresh_obs_after_settle = False
+            self._vision_settle_until = None
 
         snap = self.track
 

@@ -69,6 +69,7 @@ class Config:
 
     # Vision / Seek & Collect
     camera_settle_time: float
+    camera_fresh_obs_max_age_s: float
     marker_height_max_distance_mm: float
     marker_pitch_high_deg: float
     marker_pitch_low_deg: float
@@ -194,6 +195,7 @@ RESOLVE_MAP = {
 
     # Vision / Seek & Collect
     "camera_settle_time": ("profile", "CAMERA_SETTLE_TIME"),
+    "camera_fresh_obs_max_age_s": ("profile", "CAMERA_FRESH_OBS_MAX_AGE_S"),
     "marker_height_max_distance_mm": ("profile", "MARKER_HEIGHT_MAX_DISTANCE_MM"),
     "marker_pitch_high_deg": ("profile", "MARKER_PITCH_HIGH_DEG"),
     "marker_pitch_low_deg": ("profile", "MARKER_PITCH_LOW_DEG"),

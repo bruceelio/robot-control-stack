@@ -39,8 +39,23 @@ def stop_motors(io_map) -> None:
     io_map.motors[1].power = 0.0
 
 
+def rearm_auto(io_map) -> None:
+    if hasattr(io_map, "ensure_auto_mode"):
+        try:
+            io_map.ensure_auto_mode(force=True)
+            return
+        except TypeError:
+            pass
+
+        # fallback for older bob_bot.py
+        if hasattr(io_map, "_auto_entered"):
+            io_map._auto_entered = False
+        io_map.ensure_auto_mode()
+
+
 def run_drive(io_map, left_power: float, right_power: float, duration_s: float) -> None:
     try:
+        rearm_auto(io_map)
         io_map.motors[0].power = left_power
         io_map.motors[1].power = right_power
         io_map.sleep(duration_s)
