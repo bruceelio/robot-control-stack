@@ -1,4 +1,4 @@
-# level2_canonical.py
+# level2/level2_canonical.py
 
 """
 level2_canonical.py
@@ -90,19 +90,6 @@ class Level2:
     # INDIVIDUAL MOTORS
     # -----------------------------
 
-    def MOTOR_LEFT(self, power: float):
-        power = self._clip(power)
-        print(f"[Level2] MOTOR_LEFT power={power}")
-
-        motors = getattr(self.io, "motors", None)
-        if motors is None:
-            raise RuntimeError("Level2.MOTOR_LEFT: io.motors is not available")
-
-        try:
-            motors[0].power = power
-        finally:
-            self._stop_motors()
-
     def MOTOR_RIGHT(self, power: float):
         power = self._clip(power)
         print(f"[Level2] MOTOR_RIGHT power={power}")
@@ -113,6 +100,19 @@ class Level2:
 
         try:
             motors[1].power = power
+        finally:
+            self._stop_motors()
+
+    def MOTOR_LEFT(self, power: float):
+        power = self._clip(power)
+        print(f"[Level2] MOTOR_LEFT power={power}")
+
+        motors = getattr(self.io, "motors", None)
+        if motors is None:
+            raise RuntimeError("Level2.MOTOR_LEFT: io.motors is not available")
+
+        try:
+            motors[0].power = power
         finally:
             self._stop_motors()
 
@@ -205,6 +205,19 @@ class Level2:
         except Exception as e:
             print("[Level2] LIFT_DOWN failed:", e)
 
+    def LIFT_MIDDLE(self):
+        print("[Level2] LIFT_MIDDLE")
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            print("[Level2] LIFT_MIDDLE: no servos available")
+            return
+
+        try:
+            servos[0].position = 0
+            self.SLEEP(1.0)
+        except Exception as e:
+            print("[Level2] LIFT_MIDDLE failed:", e)
+
     def LIFT_UP(self):
         print("[Level2] LIFT_UP")
         servos = getattr(self.io, "servos", None)
@@ -247,6 +260,30 @@ class Level2:
             print("[Level2] VACUUM_OFF: no outputs available")
             return
         outs.set("VACUUM", False)
+
+    def GRAB(self):
+        print("[Level2] GRAB")
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            print("[Level2] GRAB: no servos available")
+            return
+        try:
+            servos[1].position = -0.38  # or 0.0, depending on your open/closed convention
+            self.SLEEP(1.0)
+        except Exception as e:
+            print("[Level2] GRAB failed:", e)
+
+    def RELEASE(self):
+        print("[Level2] RELEASE")
+        servos = getattr(self.io, "servos", None)
+        if servos is None:
+            print("[Level2] RELEASE: no servos available")
+            return
+        try:
+            servos[1].position = 1.0  # opposite of GRAB
+            self.SLEEP(1.0)
+        except Exception as e:
+            print("[Level2] RELEASE failed:", e)
 
     # -----------------------------
     # CAMERA (optional convenience)

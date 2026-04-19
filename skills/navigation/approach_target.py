@@ -12,6 +12,7 @@ from navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Drive, Rotate
+from primitives.manipulation import Release, LiftDown
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.parallel_to_wall import ParallelToWall  # NEW
@@ -319,7 +320,7 @@ class ApproachTarget(Primitive):
             )
         return ("LOW", float(self.t.final_commit_distance_mm), float(self.t.final_approach_direct_range_mm))
 
-    def start(self, *, motion_backend, seed_target=None, **_):
+    def start(self, *, motion_backend, lvl2=None, seed_target=None, **_):
         now = time.time()
 
         self.active_primitive = None
@@ -353,6 +354,24 @@ class ApproachTarget(Primitive):
         self._parallel_skill = None
         self._require_fresh_obs_after_settle = False
         self._fresh_obs_wait_started = None
+
+        # prepare manipulator for pickup
+
+        # open gripper / vacuum off here
+        try:
+            prep_release = Release(settle_time=0.0)
+            prep_release.start(lvl2=lvl2)
+            print("[APPROACH][PREP] RELEASE (open gripper / vacuum off)")
+        except Exception as e:
+            print(f"[APPROACH][PREP] RELEASE failed: {e}")
+
+        # Lower lift here
+        try:
+            prep_liftdown = LiftDown(settle_time=0.0)
+            prep_liftdown.start(lvl2=lvl2)
+            print("[APPROACH][PREP] LIFT DOWN")
+        except Exception as e:
+            print(f"[APPROACH][PREP] LIFT DOWN failed: {e}")
 
     def update(self, *, perception, motion_backend, **_):
         now = time.time()

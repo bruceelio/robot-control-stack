@@ -1,7 +1,7 @@
 # skills/manipulation/grasp_object.py
 
 from primitives.base import PrimitiveStatus
-from primitives.manipulation import Grab, LiftUp, LiftDown
+from primitives.manipulation import Grab, LiftUp, LiftDown, Release
 
 
 class GraspObject:
@@ -34,7 +34,7 @@ class GraspObject:
         self.io = io
 
         # Keep historical sequence exactly:
-        self._actions = [LiftUp(), LiftDown(), Grab(), LiftUp()]
+        self._actions = [Release(), LiftUp(), LiftDown(), Grab(), LiftUp()]
         self._index = 0
         self._active = None
 

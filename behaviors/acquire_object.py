@@ -226,7 +226,7 @@ class AcquireObject(Behavior):
             return self._select(perception, motion_backend)
 
         if self.phase == "ALIGN":
-            return self._align(motion_backend)
+            return self._align(lvl2, motion_backend)
 
         if self.phase == "APPROACHING":
             return self._approach(perception, motion_backend)
@@ -411,7 +411,7 @@ class AcquireObject(Behavior):
     # Phase: ALIGN
     # -------------------------
 
-    def _align(self, motion_backend):
+    def _align(self, lvl2, motion_backend):
         bearing = float(self.target["bearing"])
 
         if self._align_skill is None:
@@ -445,7 +445,11 @@ class AcquireObject(Behavior):
             height_model=self.height_model,
             locked_target_id=self.locked_target_id,
         )
-        self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
+        self._approach_skill.start(
+            motion_backend=motion_backend,
+            lvl2=lvl2,
+            seed_target=self.target,
+        )
 
         # NEW: force a post-rotate camera settle gate
         self._vision_settle_until = time.time() + float(self.config.camera_settle_time)
@@ -517,7 +521,11 @@ class AcquireObject(Behavior):
                 height_model=self.height_model,
                 locked_target_id=self.locked_target_id,
             )
-            self._approach_skill.start(motion_backend=motion_backend, seed_target=self.target)
+            self._approach_skill.start(
+                motion_backend=motion_backend,
+                lvl2=lvl2,
+                seed_target=self.target,
+            )
 
         # NEW: camera settle gate
         now = time.time()
