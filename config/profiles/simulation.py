@@ -13,6 +13,26 @@ CAMERAS = {
 
 ENCODERS = {}
 
+CAMERA_MOUNTS = {
+    "front": {
+        "x_mm": 0.0,
+        "y_mm": 0.0,
+        "z_mm": 0.0,
+        "roll_deg": 0.0,
+        "pitch_deg": 0.0,
+        "yaw_deg": 0.0,
+    }
+}
+
+GRIPPER_MOUNT = {
+    "x_mm": 0.0,
+    "y_mm": 0.0,
+    "z_mm": 0.0,
+    "roll_deg": 0.0,
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+}
+
 # Drive hardware
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"

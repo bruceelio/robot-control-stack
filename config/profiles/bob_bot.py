@@ -22,6 +22,30 @@ ENCODERS = {
 #    "shooter": "gobilda_yellowjacket_312rpm",
 }
 
+# relative to base_link
+# base_link = midpoint between drive wheels
+# +x forward, +y left, +z up
+
+CAMERA_MOUNTS = {
+    "front": {
+        "x_mm": 30.0,
+        "y_mm": -75.0,
+        "z_mm": 170.0,
+        "roll_deg": 0.0,
+        "pitch_deg": -8.0,
+        "yaw_deg": 0.0,
+    }
+}
+
+GRIPPER_MOUNT = {
+    "x_mm": 145.0,
+    "y_mm": 0.0,
+    "z_mm": 75.0,
+    "roll_deg": 0.0,
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+}
+
 # Lower commanded power
 MAX_MOTOR_POWER = 0.5
 
@@ -33,16 +57,30 @@ BASE_DRIVE_FACTOR = 1.0
 INIT_ESCAPE_DRIVE_MM = 0
 INIT_ESCAPE_ROTATE_DEG = 0.0
 
+# PostPickupRealign
+POST_PICKUP_REVERSE_MM = 120
+POST_PICKUP_ROTATE_DEG = 135
+
 CAMERA_SETTLE_TIME = 0.8
 CAMERA_FRESH_OBS_MAX_AGE_S = 0.12
 
 # These are actual radians (so AI doesn't implode on itself)
-MARKER_PITCH_HIGH_DEG = -0.05               # 0.0523598776 is 3 degrees
-MARKER_PITCH_LOW_DEG = 0.05
-HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low are will never commit
+MARKER_PITCH_HIGH_DEG = 0.165              # 0.0523598776 is 3 degrees
+MARKER_PITCH_LOW_DEG = 0.155
+HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low or will never commit
 MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 
-FINAL_APPROACH_MARKER_PUSH = 220
+# FinalApproach
+FINAL_APPROACH_DIRECT_RANGE_MM = 500    # additional distance from commit for ranging
+FINAL_COMMIT_DISTANCE_MM = 750          # from here we go blind (lose around 680)
+FINAL_APPROACH_BACKUP_MM = 200
+
+FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 500      # additional distance from commit for ranging
+FINAL_COMMIT_DISTANCE_HIGH_MM = 1100            # from here we go blind
+FINAL_APPROACH_MAX_DEGREE_HIGH = 10
+VISIBLE_MAX_AGE_S = 0.35
+FINAL_APPROACH_MARKER_PUSH = 50
+
 
 """
 # All poses are relative to base_link:

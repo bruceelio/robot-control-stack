@@ -27,6 +27,9 @@ class Config:
     wheel_type: str
     cameras: dict
     encoders: dict
+    camera_mounts: dict
+    gripper_mount: dict
+    gripper_from_camera: dict
 
     # Arena
     arena_size: int
@@ -152,6 +155,10 @@ RESOLVE_MAP = {
     "wheel_type": ("profile", "WHEEL_TYPE"),
     "cameras": ("profile", "CAMERAS"),
     "encoders": ("computed", "encoders"),
+    "camera_mounts": ("profile", "CAMERA_MOUNTS"),
+    "gripper_mount": ("profile", "GRIPPER_MOUNT"),
+    "gripper_from_camera": ("computed", "gripper_from_camera"),
+
 
     # Arena
     "arena_size": ("arena", "ARENA_SIZE"),
@@ -283,10 +290,19 @@ def resolve(*, arena, profile, strategy) -> Config:
         * profile.SURFACE_MULTIPLIERS[profile.SURFACE]["drive"]
     )
 
+    camera_mounts = getattr(profile, "CAMERA_MOUNTS")
+    gripper_mount = getattr(profile, "GRIPPER_MOUNT")
+
+    front_cam = camera_mounts["front"]
+
     computed = {
         "rotate_factor": rotate_factor,
         "drive_factor": drive_factor,
         "encoders": getattr(profile, "ENCODERS", {}),
+        "gripper_from_camera": {
+            "x_mm": gripper_mount["x_mm"] - front_cam["x_mm"],
+            "y_mm": gripper_mount["y_mm"] - front_cam["y_mm"],
+        },
     }
 
     values = {}

@@ -8,6 +8,12 @@ from typing import Optional
 
 from localisation.providers.base import PoseProvider, PoseObservation
 
+MIN_EFFECTIVE_ROTATE_DEG = 7.5
+
+# Motion-frame calibration for synthetic pose propagation
+ROTATE_SIGN = -1.0          # set to -1.0 if commanded +rotate is physically opposite
+DRIVE_HEADING_OFFSET_RAD = 0.0   # use +/- math.pi/2 if heading zero-axis is off by 90°
+DRIVE_Y_SIGN = 1.0         # set to -1.0 if Y is inverted in the arena frame
 
 @dataclass
 class _Segment:
@@ -64,11 +70,14 @@ class CommandedMotionProvider(PoseProvider):
 
         self._active = None
 
+        print(
+            f"[CMD_MOTION][RESEED] pos_valid={pose.position_valid} "
+            f"x={pose.x:.1f} y={pose.y:.1f} "
+            f"hdg_valid={pose.heading_valid} heading={pose.heading}"
+        )
+
     def invalidate(self) -> None:
-        # Last-resort provider: keep coarse map position alive,
-        # but stop trusting heading.
         self._heading_valid = False
-        self._heading = None
         self._active = None
 
     # --------------------------------------------------
@@ -85,14 +94,33 @@ class CommandedMotionProvider(PoseProvider):
             total_drive_mm=distance_mm,
         )
 
+        print(
+            f"[CMD_MOTION][BEGIN_DRIVE] d={distance_mm:.1f} "
+            f"t={duration_s:.3f} now={now_s:.3f} pos_valid={self._position_valid} "
+            f"heading_valid={self._heading_valid} heading={self._heading}"
+        )
+
     def begin_rotate(self, *, angle_deg: float, duration_s: float, now_s: float):
         self._advance(now_s)
+
+        if abs(angle_deg) < MIN_EFFECTIVE_ROTATE_DEG:
+            print(
+                f"[CMD_MOTION][BEGIN_ROTATE] SUPPRESSED a={angle_deg:.1f} "
+                f"(threshold={MIN_EFFECTIVE_ROTATE_DEG:.1f})"
+            )
+            return
 
         self._active = _Segment(
             kind="rotate",
             start_s=now_s,
             duration_s=max(1e-6, duration_s),
             total_rotate_deg=angle_deg,
+        )
+
+        print(
+            f"[CMD_MOTION][BEGIN_ROTATE] a={angle_deg:.1f} "
+            f"t={duration_s:.3f} now={now_s:.3f} pos_valid={self._position_valid} "
+            f"heading_valid={self._heading_valid} heading={self._heading}"
         )
 
     # --------------------------------------------------
@@ -124,22 +152,27 @@ class CommandedMotionProvider(PoseProvider):
 
         # Apply segment-specific motion
         if seg.kind == "rotate":
-            if self._heading_valid and self._heading is not None and abs(delta_rotate) > 0.0:
-                self._heading = self._wrap(self._heading + math.radians(delta_rotate))
+            if self._heading is not None and abs(delta_rotate) > 0.0:
+                self._heading = self._wrap(
+                    self._heading + ROTATE_SIGN * math.radians(delta_rotate)
+                )
                 self._rotation_since_reseed_deg += abs(delta_rotate)
 
-
         elif seg.kind == "drive":
-
-            if self._heading_valid and self._heading is not None and abs(delta_drive) > 0.0:
-                self._x += delta_drive * math.sin(self._heading)
-
-                self._y += delta_drive * math.cos(self._heading)
-
+            if self._heading is not None and abs(delta_drive) > 0.0:
+                h = self._heading + DRIVE_HEADING_OFFSET_RAD
+                self._x += delta_drive * math.cos(h)
+                self._y += DRIVE_Y_SIGN * delta_drive * math.sin(h)
                 self._distance_since_reseed_mm += abs(delta_drive)
 
         if progress >= 1.0:
             self._active = None
+
+        print(
+            f"[CMD_MOTION][ADVANCE] kind={seg.kind} progress={progress:.2f} "
+            f"dx={delta_drive:.1f} drot={delta_rotate:.1f} "
+            f"x={self._x:.1f} y={self._y:.1f} hdg={self._heading}"
+        )
 
     # --------------------------------------------------
     # Output
@@ -167,6 +200,12 @@ class CommandedMotionProvider(PoseProvider):
             quality = "poor"
         else:
             quality = "good"
+
+        print(
+            f"[CMD_MOTION][OBS] pos_valid={self._position_valid} "
+            f"heading_valid={self._heading_valid} x={self._x:.1f} y={self._y:.1f} "
+            f"heading={self._heading} active={None if self._active is None else self._active.kind}"
+        )
 
         return PoseObservation(
             x=self._x,

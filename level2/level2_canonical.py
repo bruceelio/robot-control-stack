@@ -268,7 +268,7 @@ class Level2:
             print("[Level2] GRAB: no servos available")
             return
         try:
-            servos[1].position = -0.38  # or 0.0, depending on your open/closed convention
+            servos[1].position = -0.45  # or 0.0, depending on your open/closed convention
             self.SLEEP(1.0)
         except Exception as e:
             print("[Level2] GRAB failed:", e)

@@ -9,7 +9,7 @@ class GraspObject:
     Composite primitive which performs the *exact same* grab sequence that
     previously lived inside AcquireObject:
 
-        LiftUp -> LiftDown -> Grab -> LiftUp
+        Grab -> LiftUp
 
     This is intentionally non-vision: it assumes ApproachTarget has already
     positioned the robot at the commit point.
@@ -34,7 +34,7 @@ class GraspObject:
         self.io = io
 
         # Keep historical sequence exactly:
-        self._actions = [Release(), LiftUp(), LiftDown(), Grab(), LiftUp()]
+        self._actions = [Grab(), LiftUp()]
         self._index = 0
         self._active = None
 

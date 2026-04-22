@@ -118,7 +118,15 @@ class Cam1Markers2Provider(PoseProvider):
         x = sum(p[0] for p in positions) / len(positions)
         y = sum(p[1] for p in positions) / len(positions)
 
+        cam_mount = CONFIG.camera_mounts["front"]
+
+        # Approximate correction (assumes small heading error)
+        base_x = float(x) - float(cam_mount["x_mm"])
+        base_y = float(y) - float(cam_mount["y_mm"])
+
         heading = 0.0 if self.legacy_heading_zero else None
+
+
 
         if len(positions) >= 6:
             quality = "good"
@@ -139,9 +147,15 @@ class Cam1Markers2Provider(PoseProvider):
             "quality_reason": "multi_marker_triangulation",
         }
 
+        diagnostics["base_link_correction"] = {
+            "camera_key": "front",
+            "x_mm": float(cam_mount["x_mm"]),
+            "y_mm": float(cam_mount["y_mm"]),
+        }
+
         return PoseObservation(
-            x=float(x),
-            y=float(y),
+            x=base_x,
+            y=base_y,
             heading=heading,
             position_valid=True,
             heading_valid=heading is not None,

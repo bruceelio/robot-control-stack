@@ -96,14 +96,10 @@ class DeliverObject(Behavior):
         # SUCCEEDED -> advance
         self.active_primitive = None
         if self.step == "FORWARD":
-            self.step = "LIFT_DOWN"
-        elif self.step == "LIFT_DOWN":
             self.step = "RELEASE"
         elif self.step == "RELEASE":
             self.step = "REVERSE"
         elif self.step == "REVERSE":
-            self.step = "LIFT_UP"
-        elif self.step == "LIFT_UP":
             self.step = "DONE"
 
         return self.status

@@ -62,16 +62,13 @@ class Localisation:
         return (self.pose.x, self.pose.y), self.pose.heading
 
     def set_pose(
-        self,
-        position,
-        heading=None,
-        *,
-        source: str = "manual",
-        timestamp: float = 0.0,
+            self,
+            position,
+            heading=None,
+            *,
+            source: str = "manual",
+            timestamp: float = 0.0,
     ) -> None:
-        """
-        Legacy setter used by older code paths.
-        """
         x, y = position
         self.pose = Pose(
             x=float(x),
@@ -82,6 +79,9 @@ class Localisation:
             source=source,
             timestamp=float(timestamp),
         )
+
+        for provider in self.providers:
+            provider.reseed(self.pose)
 
     def estimate(
         self,

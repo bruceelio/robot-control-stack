@@ -31,16 +31,16 @@ DRIVE_B_LONG  = -0.030
 # Timed Rotation Calibration
 # =========================
 
-ROTATE_SWITCH_DEG = 25
+ROTATE_SWITCH_DEG = 10  # 30 deg is ideal?
 
 # Small-angle rotations (precision)
 ROTATE_POWER_SMALL = 0.10
 ROTATE_M_SMALL = 0.025
 ROTATE_B_SMALL = 0.0
 
-# Large-angle rotations (momentum)
+# Large-angle rotations (momentum) (if under roting need to increase)
 ROTATE_POWER_LARGE = 0.20
-ROTATE_M_LARGE = 0.0125
+ROTATE_M_LARGE = 0.015   # sec/deg (greater number is more time turning per deg)
 ROTATE_B_LARGE = -0.0413
 
 
