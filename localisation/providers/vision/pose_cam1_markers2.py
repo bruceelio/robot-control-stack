@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from config import CONFIG
@@ -124,16 +126,54 @@ class Cam1Markers2Provider(PoseProvider):
         base_x = float(x) - float(cam_mount["x_mm"])
         base_y = float(y) - float(cam_mount["y_mm"])
 
-        heading = 0.0 if self.legacy_heading_zero else None
+        heading = None
 
+        heading_estimates = []
 
+        for detection in detections:
+            marker_id = detection["id"]
+            if marker_id not in self._arena_markers:
+                continue
 
-        if len(positions) >= 6:
+            marker_x, marker_y = self._arena_markers[marker_id]
+
+            # world angle from robot camera to marker
+            cam_x = float(x)
+            cam_y = float(y)
+
+            world_angle = math.atan2(marker_y - cam_y, marker_x - cam_x)
+
+            # observed bearing is degrees in robot/camera frame
+            bearing_rad = math.radians(float(detection.get("bearing_deg", 0.0)))
+
+            # robot heading estimate
+            est = world_angle + bearing_rad
+
+            # wrap to [-pi, pi]
+            est = math.atan2(math.sin(est), math.cos(est))
+            heading_estimates.append(est)
+
+        if heading_estimates:
+            sin_sum = sum(math.sin(a) for a in heading_estimates)
+            cos_sum = sum(math.cos(a) for a in heading_estimates)
+            heading = math.atan2(sin_sum, cos_sum)
+        elif self.legacy_heading_zero:
+            heading = 0.0
+
+        candidate_count = len(positions)
+
+        if candidate_count >= 6:
             quality = "good"
-            confidence = min(1.0, 0.85 + min(0.1, 0.02 * len(positions)))
-        elif len(positions) >= 2:
+            confidence = min(1.0, 0.9 + min(0.08, 0.01 * candidate_count))
+        elif candidate_count >= 2:
             quality = "poor"
-            confidence = 0.5 + 0.05 * len(positions)
+            confidence = 0.7
+        elif candidate_count == 1:
+            # Common case for exactly 2 visible arena tags:
+            # one pair -> two mathematical intersections -> one inside arena.
+            # Treat as usable and stronger than timed motion.
+            quality = "poor"
+            confidence = 0.65
         else:
             quality = "bad"
             confidence = 0.0
@@ -142,7 +182,7 @@ class Cam1Markers2Provider(PoseProvider):
             "camera": detections[0].get("camera", "unknown"),
             "markers_seen": [d["id"] for d in detections],
             "pairs_used": pairs_used,
-            "candidate_count": len(positions),
+            "candidate_count": candidate_count,
             "arena_size_mm": self.arena_size_mm,
             "quality_reason": "multi_marker_triangulation",
         }
@@ -152,6 +192,11 @@ class Cam1Markers2Provider(PoseProvider):
             "x_mm": float(cam_mount["x_mm"]),
             "y_mm": float(cam_mount["y_mm"]),
         }
+
+        diagnostics["heading_estimate_count"] = len(heading_estimates)
+        diagnostics["heading_estimates_deg"] = [
+            math.degrees(a) for a in heading_estimates
+        ]
 
         return PoseObservation(
             x=base_x,

@@ -25,7 +25,23 @@ class Arbitrator:
         self.providers = list(providers)
 
     def _score(self, provider: PoseProvider, obs: PoseObservation, now_s: float) -> float:
-        return provider.base_weight * obs.confidence
+        score = provider.base_weight * obs.confidence
+
+        # Prefer absolute vision over timed/dead-reckoned motion.
+        # A 2-tag visual reseed is usually more globally correct than motion drift.
+        if obs.source == "cam1_markers2":
+            candidate_count = 0
+            if obs.diagnostics:
+                candidate_count = int(obs.diagnostics.get("candidate_count", 0))
+
+            # Strong bias for any usable vision pose
+            score += 1.0
+
+            # Extra reward for stronger visual geometry
+            if candidate_count >= 2:
+                score += 0.2
+
+        return score
 
     def estimate(self, *, now_s: float) -> PoseObservation | None:
         """
