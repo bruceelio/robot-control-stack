@@ -55,8 +55,10 @@ class TagObservation:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Standalone Pi AprilTag tester")
-    parser.add_argument("--width", type=int, default=640, help="Capture width")
-    parser.add_argument("--height", type=int, default=480, help="Capture height")
+    # parser.add_argument("--width", type=int, default=640, help="Capture width")
+    # parser.add_argument("--height", type=int, default=480, help="Capture height")
+    parser.add_argument("--width", type=int, default=2304, help="Capture width")
+    parser.add_argument("--height", type=int, default=1296, help="Capture height")
     parser.add_argument("--fps", type=int, default=30, help="Requested frame rate")
     parser.add_argument("--families", type=str, default="tag36h11", help="AprilTag families")
     parser.add_argument("--tag-size-m", type=float, default=0.05, help="Physical tag size in metres")

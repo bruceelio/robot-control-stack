@@ -7,8 +7,11 @@ HARDWARE_PROFILE = "bob_bot"
 ENVIRONMENT = "real"
 SURFACE = "tile"
 
+# Choose camera and its settings
+# "pi3_legacy_640_480"; "pi3_fullfov_640_360"
+
 CAMERAS = {
-    "front": "pi3",
+    "front": "pi3_fullfov_640_360",
 }
 
 SURFACE_MULTIPLIERS = {

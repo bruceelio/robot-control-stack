@@ -56,8 +56,28 @@ def resolve_camera(*, camera_name: str, robot):
             fps=cam_cfg.FPS,
             families=cam_cfg.FAMILIES,
             camera_params=camera_params,
+            quad_decimate=getattr(cam_cfg, "QUAD_DECIMATE", 1.5),
+            nthreads=getattr(cam_cfg, "NTHREADS", 2),
+            quad_sigma=getattr(cam_cfg, "QUAD_SIGMA", 0.0),
+            refine_edges=getattr(cam_cfg, "REFINE_EDGES", 1),
+            decode_sharpening=getattr(cam_cfg, "DECODE_SHARPENING", 0.25),
+            apriltag_debug=getattr(cam_cfg, "APRILTAG_DEBUG", 0),
             min_decision_margin=cam_cfg.MIN_DECISION_MARGIN,
             tag_size_for_id=resolve_tag_size_m,
+            sensor_width=getattr(cam_cfg, "SENSOR_WIDTH", None),
+            sensor_height=getattr(cam_cfg, "SENSOR_HEIGHT", None),
+            sensor_output_size=getattr(cam_cfg, "SENSOR_OUTPUT_SIZE", None),
+            sensor_bit_depth=getattr(cam_cfg, "SENSOR_BIT_DEPTH", None),
+            force_full_sensor_scaler_crop=getattr(
+                cam_cfg, "FORCE_FULL_SENSOR_SCALER_CROP", False
+            ),
+            af_mode=getattr(cam_cfg, "AF_MODE", None),
+            lens_position=getattr(cam_cfg, "LENS_POSITION", None),
+            ae_enable=getattr(cam_cfg, "AE_ENABLE", None),
+            exposure_time_us=getattr(cam_cfg, "EXPOSURE_TIME_US", None),
+            analogue_gain=getattr(cam_cfg, "ANALOGUE_GAIN", None),
+            awb_enable=getattr(cam_cfg, "AWB_ENABLE", None),
+            colour_gains=getattr(cam_cfg, "COLOUR_GAINS", None),
         )
 
     raise RuntimeError(

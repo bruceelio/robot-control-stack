@@ -12,6 +12,7 @@ from typing import Any, Callable
 import cv2
 import numpy as np
 from picamera2 import Picamera2
+from libcamera import controls
 from pupil_apriltags import Detector
 
 
@@ -97,27 +98,61 @@ class Marker:
 
 class PiLibcameraAprilCamera:
     def __init__(
-        self,
-        *,
-        width: int = 640,
-        height: int = 480,
-        fps: int = 30,
-        families: str = "tag36h11",
-        tag_size_m: float | None = None,
-        tag_size_for_id: Callable[[int], float] | None = None,
-        camera_params: tuple[float, float, float, float] | None = None,
-        quad_decimate: float = 1.5,
-        nthreads: int = 2,
-        min_decision_margin: float = 20.0,
+            self,
+            *,
+            width: int = 640,
+            height: int = 480,
+            fps: int = 30,
+            families: str = "tag36h11",
+            tag_size_m: float | None = None,
+            tag_size_for_id: Callable[[int], float] | None = None,
+            camera_params: tuple[float, float, float, float] | None = None,
+            quad_decimate: float = 1.5,
+            nthreads: int = 2,
+            quad_sigma: float = 0.0,
+            refine_edges: int = 1,
+            decode_sharpening: float = 0.25,
+            apriltag_debug: int = 0,
+            min_decision_margin: float = 20.0,
+            sensor_width: int | None = None,
+            sensor_height: int | None = None,
+            sensor_output_size: tuple[int, int] | None = None,
+            sensor_bit_depth: int | None = None,
+            force_full_sensor_scaler_crop: bool = False,
+            af_mode: str | None = None,
+            lens_position: float | None = None,
+            ae_enable: bool | None = None,
+            exposure_time_us: int | None = None,
+            analogue_gain: float | None = None,
+            awb_enable: bool | None = None,
+            colour_gains: tuple[float, float] | None = None,
     ) -> None:
         self.width = width
         self.height = height
         self.fps = fps
+        self.sensor_width = sensor_width
+        self.sensor_height = sensor_height
+        self.sensor_output_size = sensor_output_size
+        self.sensor_bit_depth = sensor_bit_depth
+        self.force_full_sensor_scaler_crop = force_full_sensor_scaler_crop
+        self.af_mode = af_mode
+        self.lens_position = lens_position
+        self.ae_enable = ae_enable
+        self.exposure_time_us = exposure_time_us
+        self.analogue_gain = analogue_gain
+        self.awb_enable = awb_enable
+        self.colour_gains = colour_gains
         self.families = families
         self.tag_size_m = tag_size_m
         self.tag_size_for_id = tag_size_for_id
         self.camera_params = camera_params
         self.pose_enabled = camera_params is not None
+        self.quad_decimate = quad_decimate
+        self.nthreads = nthreads
+        self.quad_sigma = quad_sigma
+        self.refine_edges = refine_edges
+        self.decode_sharpening = decode_sharpening
+        self.apriltag_debug = apriltag_debug
         self.min_decision_margin = min_decision_margin
 
         self._mixed_size_mode = tag_size_for_id is not None
@@ -127,22 +162,107 @@ class PiLibcameraAprilCamera:
             raise ValueError("Specify either tag_size_m or tag_size_for_id, not both")
 
         self._picam2 = Picamera2()
-        config = self._picam2.create_preview_configuration(
-            main={"size": (width, height), "format": "RGB888"},
-            controls={"FrameRate": fps},
-        )
+        try:
+            print(f"[PiCam] sensor_modes = {self._picam2.sensor_modes}")
+        except Exception as e:
+            print(f"[PiCam] Could not read sensor modes: {e}")
+
+        config_kwargs = {
+            "main": {"size": (width, height), "format": "RGB888"},
+            "controls": {"FrameRate": fps},
+        }
+
+        if self.sensor_output_size is not None and self.sensor_bit_depth is not None:
+            config_kwargs["sensor"] = {
+                "output_size": self.sensor_output_size,
+                "bit_depth": self.sensor_bit_depth,
+            }
+
+        config = self._picam2.create_preview_configuration(**config_kwargs)
         self._picam2.configure(config)
+        try:
+            print(f"[PiCam] Requested config kwargs = {config_kwargs}")
+        except Exception:
+            pass
         self._picam2.start()
+
+        control_updates = {}
+
+        if self.af_mode is not None:
+            af_mode_map = {
+                "manual": controls.AfModeEnum.Manual,
+                "auto": controls.AfModeEnum.Auto,
+                "continuous": controls.AfModeEnum.Continuous,
+            }
+            mapped = af_mode_map.get(str(self.af_mode).lower())
+            if mapped is not None:
+                control_updates["AfMode"] = mapped
+
+        if self.lens_position is not None:
+            control_updates["LensPosition"] = float(self.lens_position)
+
+        if self.ae_enable is not None:
+            control_updates["AeEnable"] = bool(self.ae_enable)
+
+        if self.exposure_time_us is not None:
+            control_updates["ExposureTime"] = int(self.exposure_time_us)
+
+        if self.analogue_gain is not None:
+            control_updates["AnalogueGain"] = float(self.analogue_gain)
+
+        if self.awb_enable is not None:
+            control_updates["AwbEnable"] = bool(self.awb_enable)
+
+        if self.colour_gains is not None:
+            control_updates["ColourGains"] = tuple(float(x) for x in self.colour_gains)
+
+        if control_updates:
+            try:
+                self._picam2.set_controls(control_updates)
+                print(f"[PiCam] Applied runtime controls = {control_updates}")
+            except Exception as e:
+                print(f"[PiCam] Could not apply runtime controls: {e}")
+
+        if (
+                self.force_full_sensor_scaler_crop
+                and self.sensor_width is not None
+                and self.sensor_height is not None
+        ):
+            try:
+                self._picam2.set_controls(
+                    {"ScalerCrop": (0, 0, self.sensor_width, self.sensor_height)}
+                )
+                print(
+                    f"[PiLibcameraAprilCamera] Requested ScalerCrop="
+                    f"(0, 0, {self.sensor_width}, {self.sensor_height})"
+                )
+            except Exception as e:
+                print(f"[PiLibcameraAprilCamera] Could not set ScalerCrop: {e}")
+
         time.sleep(1.0)
+
+        try:
+            md = self._picam2.capture_metadata()
+            print(f"[PiCam] Active ScalerCrop = {md.get('ScalerCrop')}")
+        except Exception as e:
+            print(f"[PiCam] Could not read metadata: {e}")
+
+        try:
+            applied = self._picam2.camera_configuration()
+            print(f"[PiCam] Applied sensor config = {applied.get('sensor')}")
+            print(f"[PiCam] Applied raw config = {applied.get('raw')}")
+            print(f"[PiCam] Applied main config = {applied.get('main')}")
+        except Exception as e:
+            print(f"[PiCam] Could not read applied configuration: {e}")
 
         self._detector = Detector(
             families=families,
-            nthreads=nthreads,
-            quad_decimate=quad_decimate,
-            quad_sigma=0.0,
-            refine_edges=1,
-            decode_sharpening=0.25,
-            debug=0,
+            nthreads=self.nthreads,
+            quad_decimate=self.quad_decimate,
+            quad_sigma=self.quad_sigma,
+            refine_edges=self.refine_edges,
+            decode_sharpening=self.decode_sharpening,
+            debug=self.apriltag_debug,
         )
 
     def __enter__(self) -> "PiLibcameraAprilCamera":
