@@ -21,7 +21,60 @@ class IOMap(ABC):
 
     Exposes robot sensors and actuators in semantic terms.
     No hardware assumptions, no pin numbers, no SR imports.
+
+    Preferred direct-access convention:
+      io.bumper["front_left"]
+      io.reflectance["centre"]
+      io.ultrasonic["front"]
+      io.current["gripper_right"].amps
+      io.voltage["battery"].volts
+      io.encoder["shooter"].A
+      io.encoder["shooter"].B
+      io.motor["shooter"].power
+      io.servo["lift"].position
+      io.camera["front"].see()
+
+    Compatibility methods such as bumpers(), reflectance(), ultrasonics(),
+    cameras(), motors, servos, and battery() remain for older code.
     """
+
+    # ---------- Direct IO collections ----------
+
+    @property
+    def bumper(self):
+        raise NotImplementedError
+
+    @property
+    def reflectance(self):
+        raise NotImplementedError
+
+    @property
+    def ultrasonic(self):
+        raise NotImplementedError
+
+    @property
+    def current(self):
+        raise NotImplementedError
+
+    @property
+    def voltage(self):
+        raise NotImplementedError
+
+    @property
+    def encoder(self):
+        raise NotImplementedError
+
+    @property
+    def camera(self):
+        raise NotImplementedError
+
+    @property
+    def motor(self):
+        raise NotImplementedError
+
+    @property
+    def servo(self):
+        raise NotImplementedError
 
     # ---------- Sensors ----------
 
@@ -35,7 +88,7 @@ class IOMap(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def reflectance(self) -> Dict[str, float]:
+    def reflectance_values(self) -> Dict[str, float]:
         raise NotImplementedError
 
     @abstractmethod

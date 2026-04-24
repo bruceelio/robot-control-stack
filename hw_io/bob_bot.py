@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 from config import CONFIG
 from hw_io.base import IOMap
@@ -59,11 +59,76 @@ class NamedIndexedCollection:
         return self._named.items()
 
 
+class ReadOnlyCollection:
+    """Named collection whose values are read directly from callables."""
+
+    def __init__(self, getters: Dict[str, Callable[[], Any]]):
+        self._getters = dict(getters)
+
+    def __getitem__(self, key):
+        return self._getters[key]()
+
+    def keys(self):
+        return self._getters.keys()
+
+    def items(self):
+        return {key: getter() for key, getter in self._getters.items()}.items()
+
+    def values(self):
+        return [getter() for getter in self._getters.values()]
+
+    def as_dict(self):
+        return {key: getter() for key, getter in self._getters.items()}
+
+
+class VoltageReading:
+    def __init__(self, getter: Callable[[], Optional[float]]):
+        self._getter = getter
+
+    @property
+    def volts(self) -> Optional[float]:
+        return self._getter()
+
+
+class CurrentReading:
+    def __init__(self, getter: Callable[[], Optional[float]]):
+        self._getter = getter
+
+    @property
+    def amps(self) -> Optional[float]:
+        return self._getter()
+
+
+class QuadratureSnapshot:
+    """Direct hardware-facing A/B snapshot. No count or velocity calculation."""
+
+    def __init__(self, getter: Callable[[], tuple[Optional[bool], Optional[bool]]]):
+        self._getter = getter
+
+    @property
+    def A(self) -> Optional[bool]:
+        a, _ = self._getter()
+        return a
+
+    @property
+    def B(self) -> Optional[bool]:
+        _, b = self._getter()
+        return b
+
+
 class MegaDriveMotor:
-    def __init__(self, owner: "BobBotIO", mega: MegaSerialClient, terminal: str, polarity: int = 1):
+    def __init__(
+        self,
+        owner: "BobBotIO",
+        mega: MegaSerialClient,
+        terminal: str,
+        write_fn: Callable[[str, float], Any],
+        polarity: int = 1,
+    ):
         self._owner = owner
         self._mega = mega
         self._terminal = terminal
+        self._write_fn = write_fn
         self._polarity = 1 if polarity >= 0 else -1
         self._power = 0.0
 
@@ -83,8 +148,58 @@ class MegaDriveMotor:
         self._power = value
         self._owner._heartbeat_if_due(force=True)
         print(f"[BOBBOT MOTOR] terminal={self._terminal} value={value}")
-        resp = self._mega.link_18_19(self._terminal, self._polarity * value)
+        resp = self._write_fn(self._terminal, self._polarity * value)
         print(f"[BOBBOT MOTOR] resp={resp}")
+
+
+class MegaHBridgeMotor:
+    def __init__(
+        self,
+        owner: "BobBotIO",
+        mega: MegaSerialClient,
+        *,
+        ina: int,
+        inb: int,
+        en_diag: int,
+        pwm: int,
+        polarity: int = 1,
+    ):
+        self._owner = owner
+        self._mega = mega
+        self._ina = ina
+        self._inb = inb
+        self._en_diag = en_diag
+        self._pwm = pwm
+        self._polarity = 1 if polarity >= 0 else -1
+        self._power = 0.0
+
+    @property
+    def power(self) -> float:
+        return self._power
+
+    @power.setter
+    def power(self, value: float) -> None:
+        value = max(-1.0, min(1.0, float(value)))
+
+        starting_motion = (abs(self._power) < 1e-6) and (abs(value) > 1e-6)
+        if starting_motion:
+            self._owner.ensure_auto_mode(force=True)
+
+        self._power = value
+        self._owner._heartbeat_if_due(force=True)
+        print(
+            "[BOBBOT HBRIDGE] "
+            f"pwm={self._pwm} ina={self._ina} inb={self._inb} "
+            f"en_diag={self._en_diag} value={value}"
+        )
+        resp = self._mega.hbridge_write(
+            ina=self._ina,
+            inb=self._inb,
+            en_diag=self._en_diag,
+            pwm=self._pwm,
+            value=self._polarity * value,
+        )
+        print(f"[BOBBOT HBRIDGE] resp={resp}")
 
 
 class MegaServoSigned:
@@ -119,7 +234,7 @@ class MegaServoSigned:
 class BobBotIO(IOMap):
     """
     BobBot bridge layer:
-      current code shape -> semantic convention -> hard API call
+      semantic io.* convention -> hard Mega/Uno API call
     """
 
     def __init__(self, robot, mega_client=None, uno_client=None):
@@ -130,8 +245,15 @@ class BobBotIO(IOMap):
         self.mega = mega_client if mega_client is not None else self._make_mega_client()
         self.uno = uno_client if uno_client is not None else self._make_uno_client()
 
-        self._motors = None
-        self._servos = None
+        self._motor = None
+        self._servo = None
+
+        self._bumper = None
+        self._reflectance = None
+        self._ultrasonic = None
+        self._voltage = None
+        self._current = None
+        self._encoder = None
 
         self._hb_seq = 1
         self._last_hb_t = 0.0
@@ -139,6 +261,7 @@ class BobBotIO(IOMap):
         self._auto_entered = False
 
         self._detect_cameras()
+        self._init_sensors()
         self._init_actuators()
 
     def ensure_auto_mode(self, force: bool = False) -> None:
@@ -206,27 +329,122 @@ class BobBotIO(IOMap):
                 robot=self.robot,
             )
 
+    def _init_sensors(self):
+        self._bumper = ReadOnlyCollection(
+            {
+                "front_left": lambda: bool(self.uno.digital_read(10)),
+                "front_right": lambda: bool(self.uno.digital_read(11)),
+                "rear_left": lambda: bool(self.uno.digital_read(12)),
+                "rear_right": lambda: bool(self.uno.digital_read(13)),
+            }
+        )
+
+        self._reflectance = ReadOnlyCollection(
+            {
+                "left": lambda: self._read_uno_analog_float("A0"),
+                "centre": lambda: self._read_uno_analog_float("A1"),
+                "right": lambda: self._read_uno_analog_float("A2"),
+            }
+        )
+
+        self._ultrasonic = ReadOnlyCollection(
+            {
+                "front": lambda: self._read_uno_range_float(2, 3),
+                "left": lambda: self._read_uno_range_float(4, 5),
+                "right": lambda: self._read_uno_range_float(6, 7),
+                "rear": lambda: self._read_uno_range_float(8, 9),
+            }
+        )
+
+        self._voltage = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "battery": VoltageReading(lambda: self._read_mega_analog_float("A0")),
+            },
+        )
+
+        self._current = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "gripper_right": CurrentReading(lambda: self._read_mega_analog_float("A1")),
+            },
+        )
+
+        self._encoder = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "drive_front_left": QuadratureSnapshot(lambda: self._read_mega_quad(22, 24)),
+                "deadwheel_parallel": QuadratureSnapshot(lambda: self._read_mega_quad(23, 25)),
+                "drive_front_right": QuadratureSnapshot(lambda: self._read_mega_quad(26, 28)),
+                "deadwheel_perpendicular": QuadratureSnapshot(lambda: self._read_mega_quad(27, 29)),
+                "shooter": QuadratureSnapshot(lambda: self._read_mega_quad(35, 37)),
+            },
+        )
+
     def _init_actuators(self):
         if self.mega is None:
             return
 
-        left = MegaDriveMotor(
+        front_left = MegaDriveMotor(
             self,
             self.mega,
             "M1",
+            write_fn=self.mega.link_18_19,
             polarity=CONFIG.motor_polarity[0],
         )
-        right = MegaDriveMotor(
+        front_right = MegaDriveMotor(
             self,
             self.mega,
             "M2",
+            write_fn=self.mega.link_18_19,
             polarity=CONFIG.motor_polarity[1],
         )
-        self._motors = NamedIndexedCollection(
-            ordered_items=[left, right],
+
+        # RoboClaw B on 14/15 is included in the IO map. If the Mega sketch/client
+        # does not yet implement link_14_15, these names should be disabled in CSV.
+        rear_left = MegaDriveMotor(
+            self,
+            self.mega,
+            "M1",
+            write_fn=self.mega.link_14_15,
+            polarity=getattr(CONFIG, "motor_rear_left_polarity", 1),
+        )
+        rear_right = MegaDriveMotor(
+            self,
+            self.mega,
+            "M2",
+            write_fn=self.mega.link_14_15,
+            polarity=getattr(CONFIG, "motor_rear_right_polarity", 1),
+        )
+
+        collector = MegaHBridgeMotor(
+            self,
+            self.mega,
+            pwm=5,
+            ina=45,
+            inb=47,
+            en_diag=49,
+            polarity=getattr(CONFIG, "collector_motor_polarity", 1),
+        )
+        shooter = MegaHBridgeMotor(
+            self,
+            self.mega,
+            pwm=4,
+            ina=39,
+            inb=41,
+            en_diag=43,
+            polarity=getattr(CONFIG, "shooter_motor_polarity", 1),
+        )
+
+        self._motor = NamedIndexedCollection(
+            ordered_items=[front_left, front_right],
             named_items={
-                "drive_front_left": left,
-                "drive_front_right": right,
+                "drive_front_left": front_left,
+                "drive_front_right": front_right,
+                "drive_rear_left": rear_left,
+                "drive_rear_right": rear_right,
+                "collector": collector,
+                "shooter": shooter,
             },
         )
 
@@ -238,11 +456,22 @@ class BobBotIO(IOMap):
             self,
             lambda value: self.mega.servo_write(11, value),
         )
-        self._servos = NamedIndexedCollection(
+        shooter_feed_left = MegaServoSigned(
+            self,
+            lambda value: self.mega.servo_write(9, value),
+        )
+        shooter_feed_right = MegaServoSigned(
+            self,
+            lambda value: self.mega.servo_write(10, value),
+        )
+
+        self._servo = NamedIndexedCollection(
             ordered_items=[lift, gripper],
             named_items={
                 "lift": lift,
                 "gripper": gripper,
+                "shooter_feed_left": shooter_feed_left,
+                "shooter_feed_right": shooter_feed_right,
             },
         )
 
@@ -278,62 +507,129 @@ class BobBotIO(IOMap):
         except ValueError:
             return None
 
+    @staticmethod
+    def _parse_quad(raw) -> tuple[Optional[bool], Optional[bool]]:
+        if raw is None:
+            return None, None
+
+        if isinstance(raw, dict):
+            a = raw.get("A", raw.get("a"))
+            b = raw.get("B", raw.get("b"))
+            return (None if a is None else bool(int(a))), (None if b is None else bool(int(b)))
+
+        if isinstance(raw, (tuple, list)) and len(raw) >= 2:
+            return bool(int(raw[0])), bool(int(raw[1]))
+
+        text = str(raw).strip()
+
+        # Accept common forms: "0 1", "A=0 B=1", "QUAD 22 24 0 1".
+        nums = re.findall(r"-?\d+", text)
+        if len(nums) >= 2:
+            return bool(int(nums[-2])), bool(int(nums[-1]))
+
+        # Accept compact two-bit response: "01".
+        bits = re.findall(r"[01]", text)
+        if len(bits) >= 2:
+            return bool(int(bits[-2])), bool(int(bits[-1]))
+
+        return None, None
+
+    def _read_uno_analog_float(self, pin: str) -> float:
+        raw = self.uno.analog_read(pin)
+        parsed = self._parse_last_number(raw)
+        return 0.0 if parsed is None else float(parsed)
+
+    def _read_uno_range_float(self, trig: int, echo: int) -> Optional[float]:
+        raw = self.uno.range_read(trig, echo)
+        return self._parse_last_number(raw)
+
+    def _read_mega_analog_float(self, pin: str) -> Optional[float]:
+        if self.mega is None:
+            return None
+        raw = self.mega.analog_read(pin)
+        return self._parse_last_number(raw)
+
+    def _read_mega_quad(self, pin_a: int, pin_b: int) -> tuple[Optional[bool], Optional[bool]]:
+        if self.mega is None:
+            return None, None
+        raw = self.mega.quad_read(pin_a, pin_b)
+        return self._parse_quad(raw)
+
     @property
     def outputs(self):
         return self._outputs
 
+    @property
+    def camera(self) -> Dict[str, Camera]:
+        return dict(self._cameras)
+
     def cameras(self) -> Dict[str, Camera]:
         return dict(self._cameras)
 
-    def bumpers(self) -> Dict[str, bool]:
-        return dict(
-            fl=bool(self.uno.digital_read(10)),
-            fr=False,
-            rl=False,
-            rr=False,
-        )
+    @property
+    def bumper(self):
+        return self._bumper
 
-    def reflectance(self) -> Dict[str, float]:
-        value = self.uno.analog_read("A1")
-        parsed = self._parse_last_number(value)
-        return dict(
-            left=0.0,
-            center=0.0 if parsed is None else float(parsed),
-            right=0.0,
-        )
+    def bumpers(self) -> Dict[str, bool]:
+        return self._bumper.as_dict()
+
+    @property
+    def reflectance(self):
+        return self._reflectance
+
+    def reflectance_values(self) -> Dict[str, float]:
+        return self._reflectance.as_dict()
+
+    @property
+    def ultrasonic(self):
+        return self._ultrasonic
 
     def ultrasonics(self) -> Dict[str, Optional[float]]:
-        value = self.uno.range_read(2, 3)
-        parsed = self._parse_last_number(value)
-        return dict(
-            front=parsed,
-            left=None,
-            right=None,
-            back=None,
-        )
+        return self._ultrasonic.as_dict()
 
-    def sense(self) -> Dict[str, Any]:
-        return {
-            "bumpers": self.bumpers(),
-            "reflectance": self.reflectance(),
-            "ultrasonics": self.ultrasonics(),
-            "battery": self.battery(),
-        }
+    @property
+    def voltage(self):
+        return self._voltage
 
-    def battery(self) -> Dict[str, Optional[float]]:
-        if self.mega is None:
-            return {"voltage": None}
-        raw = self.mega.analog_read("47")
-        parsed = self._parse_last_number(raw)
-        return {"voltage": parsed}
+    @property
+    def current(self):
+        return self._current
+
+    @property
+    def encoder(self):
+        return self._encoder
+
+    @property
+    def motor(self):
+        return self._motor
 
     @property
     def motors(self):
-        return self._motors
+        return self._motor
+
+    @property
+    def servo(self):
+        return self._servo
 
     @property
     def servos(self):
-        return self._servos
+        return self._servo
+
+    def sense(self) -> Dict[str, Any]:
+        return {
+            "bumper": self.bumpers(),
+            "reflectance": self.reflectance_values(),
+            "ultrasonic": self.ultrasonics(),
+            "voltage": {
+                "battery": self.voltage["battery"].volts,
+            },
+            "current": {
+                "gripper_right": self.current["gripper_right"].amps,
+            },
+        }
+
+    def battery(self) -> Dict[str, Optional[float]]:
+        return {"voltage": self.voltage["battery"].volts}
 
     @property
     def buzzer(self):

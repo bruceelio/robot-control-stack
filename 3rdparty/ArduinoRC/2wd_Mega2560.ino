@@ -82,25 +82,25 @@ static const uint8_t PIN_I2C_SDA = 20;
 static const uint8_t PIN_I2C_SCL = 21;
 
 // ------------------------- QUADRATURE / LIMITS -----------
-static const uint8_t PIN_DEADWHEEL_PARALLEL_A      = 22;
-static const uint8_t PIN_DEADWHEEL_PARALLEL_B      = 23;
-static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_A = 24;
-static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_B = 25;
+static const uint8_t PIN_DEADWHEEL_PARALLEL_A      = 23;
+static const uint8_t PIN_DEADWHEEL_PARALLEL_B      = 25;
+static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_A = 27;
+static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_B = 29;
 
-static const uint8_t PIN_LIFT_LIMIT_HIGH = 26;
-static const uint8_t PIN_LIFT_LIMIT_LOW  = 27;
+static const uint8_t PIN_LIFT_LIMIT_HIGH = 31;
+static const uint8_t PIN_LIFT_LIMIT_LOW  = 33;
 
-static const uint8_t PIN_SHOOTER_ENC_A = 28;
-static const uint8_t PIN_SHOOTER_ENC_B = 29;
+static const uint8_t PIN_SHOOTER_ENC_A = 35;
+static const uint8_t PIN_SHOOTER_ENC_B = 37;
 
 // ------------------------- CYTRON MDD20A ------------------
-static const uint8_t PIN_SHOOTER_INA     = 30;
-static const uint8_t PIN_SHOOTER_INB     = 31;
-static const uint8_t PIN_SHOOTER_EN_DIAG = 32;
+static const uint8_t PIN_SHOOTER_INA     = 39;
+static const uint8_t PIN_SHOOTER_INB     = 41;
+static const uint8_t PIN_SHOOTER_EN_DIAG = 43;
 
-static const uint8_t PIN_COLLECTOR_INA     = 33;
-static const uint8_t PIN_COLLECTOR_INB     = 34;
-static const uint8_t PIN_COLLECTOR_EN_DIAG = 35;
+static const uint8_t PIN_COLLECTOR_INA     = 45;
+static const uint8_t PIN_COLLECTOR_INB     = 47;
+static const uint8_t PIN_COLLECTOR_EN_DIAG = 49;
 
 // ------------------------- LOGICAL LINK MAPPING ----------
 #define ROBOCLAW_ADDR_A 0x80
@@ -132,7 +132,7 @@ static const int LIFT_DOWN_US           = 800;
 static const int LIFT_UP_US             = 2250;
 
 // ------------------------- BATTERY INPUT -----------------
-static const char BATTERY_VOLTAGE_PIN[] = "47"; // update if/when battery source changes
+static const char BATTERY_VOLTAGE_PIN[] = "A0"; // update if/when battery source changes
 
 // ------------------------- SYSTEM ------------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";
