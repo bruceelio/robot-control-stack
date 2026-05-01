@@ -39,6 +39,8 @@ WHEEL_TYPE = "standard"
 MOTOR_POLARITY = [1, 1]
 MOTION_BACKEND = "timed"
 
+ROTATION_SIGN = 1
+
 # Base calibration
 BASE_ROTATE_FACTOR = 1.0
 BASE_DRIVE_FACTOR = 1.0
@@ -51,8 +53,8 @@ SURFACE_MULTIPLIERS = {
 GRAB_DISTANCE_MM = 0.0   # not currently in code?
 
 # InitEscape
-INIT_ESCAPE_DRIVE_MM = 280
-INIT_ESCAPE_ROTATE_DEG = 27.0
+INIT_ESCAPE_DRIVE_MM = 250
+INIT_ESCAPE_ROTATE_DEG = 36.0
 
 # PostPickupRealign
 POST_PICKUP_REVERSE_MM = 120
@@ -90,11 +92,14 @@ VISION_LOSS_TIMEOUT_S = 0.5
 VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 
 # FinalApproach
-FINAL_APPROACH_DIRECT_RANGE_MM = 500    # additional distance from commit for ranging
-FINAL_COMMIT_DISTANCE_MM = 650          # from here we go blind
+
+BAND_B_MIN_DISTANCE_MM = 200            # minimum drive distance on Band B approach
+
+FINAL_APPROACH_DIRECT_RANGE_MM = 700    # added distance from commit for ranging (> final)
+FINAL_COMMIT_DISTANCE_MM = 700          # from here we go blind (650 or so)
 FINAL_APPROACH_BACKUP_MM = 200
 
-FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 500      # additional distance from commit for ranging
+FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit for ranging
 FINAL_COMMIT_DISTANCE_HIGH_MM = 1100            # from here we go blind
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35

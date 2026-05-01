@@ -21,8 +21,8 @@ DRIVE_POWER_SHORT = 0.60
 DRIVE_POWER_LONG  = 0.85
 
 # Distance → time calibration
-DRIVE_M_SHORT = 0.00133
-DRIVE_B_SHORT = 0.06
+DRIVE_M_SHORT = 0.00205
+DRIVE_B_SHORT = 0.15
 
 DRIVE_M_LONG  = 0.00103
 DRIVE_B_LONG  = 0.05
@@ -34,7 +34,7 @@ DRIVE_B_LONG  = 0.05
 ROTATE_SWITCH_DEG = 60
 
 # Small-angle rotations (precision)
-ROTATE_POWER_SMALL = 0.50
+ROTATE_POWER_SMALL = 0.30       # was 0.5 but not working well
 ROTATE_M_SMALL = 0.0048
 ROTATE_B_SMALL = 0.12
 
@@ -69,7 +69,7 @@ CAMERAS = {
         # Optical / perception correction
         # ------------------------------------------
         "optical": {
-            "distance_scale": 1.0,     # sim camera overestimates distance
+            "distance_scale": 0.50,     # sim camera overestimates distance
             "bearing_sign": 1.0,        # image X axis inverted vs robot yaw
             "bearing_offset_deg": 0.0,   # no constant bias
         },

@@ -5,7 +5,7 @@ from .pi3_640_480 import *  # noqa
 # Override only what must change immediately
 
 # Adjust principal point for 640x360
-CAMERA_PARAMS = (460.0, 460.0, 320.0, 240.0)    #default values
+CAMERA_PARAMS = (477.0, 477.0, 320.0, 240.0)    #default values
 
 NOTES = (
     "Temporary calibration derived from pi3_640_480. "

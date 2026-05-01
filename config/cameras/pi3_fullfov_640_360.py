@@ -207,3 +207,10 @@ AWB_ENABLE = None           # False
 # Only matters slightly for grayscale contrast
 # Leave stable once chosen
 COLOUR_GAINS = None         # (1.8, 1.5)
+
+# Need to be tested (and not in code yet)
+VISION_SETTLE_AFTER_ROTATE_S = 0.35
+VISION_SETTLE_AFTER_DRIVE_S = 0.80
+VISION_SETTLE_AFTER_ALIGN_S = 0.50
+VISION_SETTLE_AFTER_LIFT_S = 0.80
+VISION_FRESH_OBS_MAX_AGE_S = 0.12

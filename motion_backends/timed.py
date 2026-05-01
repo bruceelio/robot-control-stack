@@ -124,6 +124,7 @@ class TimedMotionBackend:
         self._run(left, right, duration)
 
     def rotate(self, angle_deg: float):
+        # angle_deg stays logical for estimate/localisation
         a, duration = self.estimate_rotate_duration(angle_deg=angle_deg)
         if duration <= 0.0:
             return
@@ -136,11 +137,14 @@ class TimedMotionBackend:
         else:
             power = self.cal.rotate_power_large
 
-        left = direction * power
-        right = -direction * power
+        motor_direction = self.cfg.rotation_sign * direction
+
+        left = motor_direction * power
+        right = -motor_direction * power
 
         print(
-            f"[TIMED] ROTATE a={a:.1f}deg "
+            f"[TIMED] ROTATE logical={a:.1f}deg "
+            f"motor_sign={self.cfg.rotation_sign:+d} "
             f"p={power:.2f} t={duration:.3f}s"
         )
 

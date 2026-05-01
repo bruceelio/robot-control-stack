@@ -26,23 +26,16 @@ class InitEscape(Behavior):
 
     def update(self, *, motion_backend, lvl2=None, **_):
         if self.step == "LIFT_UP":
-            if self.primitive is None:
-                print("[INIT_ESCAPE] LIFT_UP start")
-                self.primitive = LiftUp()
-                self.primitive.start(lvl2=lvl2)
+            print("[INIT_ESCAPE] LIFT_UP fire-and-forget")
+            try:
+                lift = LiftUp()
+                lift.start(lvl2=lvl2)
+                lift.update(lvl2=lvl2)
+            except Exception as e:
+                print(f"[INIT_ESCAPE] LIFT_UP ignored failure: {e}")
 
-            prim_status = self.primitive.update(lvl2=lvl2)
-
-            if prim_status == PrimitiveStatus.SUCCEEDED:
-                print("[INIT_ESCAPE] LIFT_UP complete")
-                self.primitive = None
-                self.step = "DRIVE_THEN_ROTATE"
-                return self.status
-
-            if prim_status == PrimitiveStatus.FAILED:
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
+            self.primitive = None
+            self.step = "DRIVE_THEN_ROTATE"
             return self.status
 
         if self.step == "DRIVE_THEN_ROTATE":

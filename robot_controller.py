@@ -93,23 +93,25 @@ class Controller:
             max_power=CONFIG.max_motor_power,
         )
 
-        # --- Vacuum / solenoid startup test ---
-        outs = getattr(self.io, "outputs", None)
-        if outs is not None:
-            print("[BOOT] Forcing VACUUM OFF at startup")
-            outs.set("VACUUM", False)
-            self.io.sleep(0.25)
+        # --- Simulator-only vacuum / solenoid startup test ---
+        if CONFIG.environment == "simulation":
+            outs = getattr(self.io, "outputs", None)
+            if outs is not None:
+                print("[BOOT][SIM] Forcing VACUUM OFF at startup")
+                outs.set("VACUUM", False)
+                self.io.sleep(0.25)
 
-            print("[BOOT] VACUUM ON test pulse")
-            outs.set("VACUUM", True)
-            self.io.sleep(0.50)
+                print("[BOOT][SIM] VACUUM ON test pulse")
+                outs.set("VACUUM", True)
+                self.io.sleep(0.50)
 
-            print("[BOOT] Forcing VACUUM OFF at startup")
-            outs.set("VACUUM", False)
-            self.io.sleep(0.25)
-
+                print("[BOOT][SIM] Forcing VACUUM OFF at startup")
+                outs.set("VACUUM", False)
+                self.io.sleep(0.25)
+            else:
+                print("[BOOT][SIM] No io.outputs available")
         else:
-            print("[BOOT] No io.outputs available")
+            print("[BOOT] Skipping vacuum startup test outside simulation")
 
         # Perception now consumes IO, not robot
         self.perception = Perception(self.io)

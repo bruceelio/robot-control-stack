@@ -41,6 +41,7 @@ class Config:
     motion_backend: str
     grab_distance_mm: float
     motor_polarity: list[int]
+    rotation_sign: int
 
     # Calibration
     rotate_factor: float
@@ -80,6 +81,7 @@ class Config:
     vision_loss_timeout_s: float
     vision_grace_period_s: float
 
+    band_b_min_distance_mm: float
     final_commit_distance_mm: float
     final_approach_direct_range_mm: float
     final_approach_backup_mm: float
@@ -170,6 +172,7 @@ RESOLVE_MAP = {
     "motion_backend": ("profile", "MOTION_BACKEND"),
     "grab_distance_mm": ("profile", "GRAB_DISTANCE_MM"),
     "motor_polarity": ("profile", "MOTOR_POLARITY"),
+    "rotation_sign": ("profile", "ROTATION_SIGN"),
 
     # Calibration (computed)
     "rotate_factor": ("computed", "rotate_factor"),
@@ -211,6 +214,7 @@ RESOLVE_MAP = {
     "vision_loss_timeout_s": ("profile", "VISION_LOSS_TIMEOUT_S"),
     "vision_grace_period_s": ("profile", "VISION_GRACE_PERIOD_S"),
 
+    "band_b_min_distance_mm": ("profile", "BAND_B_MIN_DISTANCE_MM"),
     "final_commit_distance_mm": ("profile", "FINAL_COMMIT_DISTANCE_MM"),
     "final_approach_direct_range_mm": ("profile", "FINAL_APPROACH_DIRECT_RANGE_MM"),
     "final_approach_backup_mm": ("profile", "FINAL_APPROACH_BACKUP_MM"),

@@ -229,7 +229,7 @@ class AcquireObject(Behavior):
             return self._align(lvl2, motion_backend)
 
         if self.phase == "APPROACHING":
-            return self._approach(perception, motion_backend)
+            return self._approach(lvl2, perception, motion_backend)
 
         if self.phase == "RECOVER_LOST_TARGET":
             return self._recover_lost_target(perception, localisation, motion_backend)
@@ -511,7 +511,7 @@ class AcquireObject(Behavior):
     # Phase: APPROACHING (delegated)
     # -------------------------
 
-    def _approach(self, perception, motion_backend):
+    def _approach(self, lvl2, perception, motion_backend):
 
 
         if self._approach_skill is None:
@@ -556,7 +556,11 @@ class AcquireObject(Behavior):
 
         snap = self.track
 
-        st = self._approach_skill.update(perception=perception, motion_backend=motion_backend)
+        st = self._approach_skill.update(
+            perception=perception,
+            motion_backend=motion_backend,
+            lvl2=lvl2,
+        )
 
         if st == PrimitiveStatus.RUNNING:
             if not snap.visible_now:

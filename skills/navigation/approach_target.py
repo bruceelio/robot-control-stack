@@ -12,10 +12,11 @@ from navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Drive, Rotate
-from primitives.manipulation import Release, LiftDown
+from primitives.manipulation import Release, LiftDown, LiftMiddle
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.parallel_to_wall import ParallelToWall  # NEW
+from skills.navigation.target_geometry import target_from_gripper
 from skills.perception.reacquire_target import ReacquireTarget
 from skills.perception.select_target_utils import get_closest_target
 
@@ -215,6 +216,7 @@ class ApproachTunables:
     recover_max_sweep_deg: float
 
     # LOW geometry
+    band_b_min_distance_mm: float
     final_commit_distance_mm: float
     final_approach_direct_range_mm: float
     final_approach_marker_push_mm: float
@@ -289,6 +291,7 @@ class ApproachTarget(Primitive):
             visible_max_age_s=float(_cfg(config, "visible_max_age_s", 0.35)),
             recover_step_deg=float(_cfg(config, "recover_step_deg", 15.0)),
             recover_max_sweep_deg=float(_cfg(config, "recover_max_sweep_deg", 180.0)),
+            band_b_min_distance_mm=float(_cfg(config, "band_b_min_distance_mm", 200.0)),
             final_commit_distance_mm=float(_cfg(config, "final_commit_distance_mm", 650.0)),
             final_approach_direct_range_mm=float(_cfg(config, "final_approach_direct_range_mm", 500.0)),
             final_approach_marker_push_mm=float(_cfg(config, "final_approach_marker_push", 50.0)),
@@ -373,7 +376,10 @@ class ApproachTarget(Primitive):
         except Exception as e:
             print(f"[APPROACH][PREP] LIFT DOWN failed: {e}")
 
-    def update(self, *, perception, motion_backend, **_):
+    def update(self, *, perception, motion_backend, lvl2=None, **_):
+        if lvl2 is None:
+            raise RuntimeError("ApproachTarget.update called without lvl2")
+
         now = time.time()
 
         if self.last_seen_time is None:
@@ -627,8 +633,14 @@ class ApproachTarget(Primitive):
         mode, commit, direct = self._geometry_params()
 
         if target is not None:
-            distance = float(target["distance"])
-            bearing = float(target["bearing"])
+            camera_distance = float(target["distance"])
+            camera_bearing = float(target["bearing"])
+
+            distance, bearing = target_from_gripper(
+                distance_mm=camera_distance,
+                bearing_deg=camera_bearing,
+                config=self.config,
+            )
 
             self.last_seen_time = now
             self.last_seen_distance = distance
@@ -692,13 +704,24 @@ class ApproachTarget(Primitive):
 
         print(
             f"[APPROACH][TARGET] kind={self.kind} id={tid if tid >= 0 else 'REL'} "
-            f"dist={float(target['distance']):.0f}mm bearing={float(target['bearing']):.1f}°"
+            f"dist={distance:.0f}mm bearing={bearing:.1f}°"
         )
 
-        distance = float(target["distance"])
-        bearing = float(target["bearing"])
+        camera_distance = float(target["distance"])
+        camera_bearing = float(target["bearing"])
+
+        distance = self.last_seen_distance
+        bearing = self.last_seen_bearing
+
+        print(
+            "[APPROACH][GRIPPER_TARGET] "
+            f"cam_dist={camera_distance:.0f}mm cam_bearing={camera_bearing:.1f}° "
+            f"grip_dist={distance:.0f}mm grip_bearing={bearing:.1f}°"
+        )
+
         self.last_seen_time = now
         self.last_seen_distance = distance
+        self.last_seen_bearing = bearing
 
         # =================================================
         # HEIGHT MODEL UPDATE/COMMIT (POSE-FREE)
@@ -730,7 +753,7 @@ class ApproachTarget(Primitive):
                 print(
                     f"[HEIGHT] committed {'HIGH' if self.height_model.is_high() else 'LOW'} "
                     f"reason={decision.reason} score={self.height_model.score:.2f} "
-                    f"max_pitch={self.height_model.max_pitch:.3f} samples={self.height_model.samples}"
+                    f"max_pitch={self.height_model.min_pitch:.3f} samples={self.height_model.samples}"
                 )
 
         # Refresh geometry after potential height commit
@@ -800,6 +823,17 @@ class ApproachTarget(Primitive):
             self._require_fresh_obs_after_settle = False
             self._fresh_obs_wait_started = None
 
+            if self.target_is_high:
+                try:
+                    if lvl2 is None:
+                        raise RuntimeError("LiftMiddle requires lvl2 but got None")
+
+                    prep_lift = LiftMiddle(settle_time=0.0)
+                    prep_lift.start(lvl2=lvl2)
+                    print("[APPROACH][FINAL] LIFT MIDDLE (HIGH target before blind commit)")
+                except Exception as e:
+                    print(f"[APPROACH][FINAL] LIFT MIDDLE failed: {e}")
+
             final_drive_mm = distance + float(self.t.final_approach_marker_push_mm)
             print(
                 f"[APPROACH][FINAL] mode={mode} "
@@ -832,8 +866,14 @@ class ApproachTarget(Primitive):
                 remaining_to_commit = distance - commit
                 step = max(self.t.min_drive_mm, min((remaining_to_commit / 2.0), self.t.max_drive_mm))
                 self.cached_distance = step
+
             elif distance > commit:
-                self.cached_distance = distance - commit
+                remaining = distance - commit
+
+                if remaining <= self.t.band_b_min_distance_mm:
+                    self.cached_distance = remaining
+                else:
+                    self.cached_distance = max(remaining / 2.0, self.t.band_b_min_distance_mm)
             else:
                 self.cached_distance = self.t.min_drive_mm
 
@@ -858,18 +898,29 @@ class ApproachTarget(Primitive):
             step = remaining_to_commit / 2.0
             step = max(self.t.min_drive_mm, min(step, self.t.max_drive_mm))
             self.cached_distance = step
+
             print(
                 "[APPROACH][PLAN] band=C vision=VISIBLE "
                 f"mode={mode} dist={distance:.0f}mm intent=HALF_TO_COMMIT drive_target={step:.0f}mm"
             )
+
         elif distance > commit:
-            self.cached_distance = distance - commit
+            remaining = distance - commit
+
+            if remaining <= self.t.band_b_min_distance_mm:
+                step = remaining
+            else:
+                step = max(remaining / 2.0, self.t.band_b_min_distance_mm)
+
+            self.cached_distance = step
+
             print(
                 "[APPROACH][PLAN] band=B vision=VISIBLE "
-                f"mode={mode} dist={distance:.0f}mm intent=DIRECT_TO_COMMIT drive_target={self.cached_distance:.0f}mm"
+                f"mode={mode} dist={distance:.0f}mm "
+                f"remaining={remaining:.0f}mm "
+                f"drive_target={step:.0f}mm (min={self.t.band_b_min_distance_mm:.0f})"
             )
         else:
-            # inside commit band but height model not committed -> wait for another frame
             return PrimitiveStatus.RUNNING
 
         self.last_action = "rotate"

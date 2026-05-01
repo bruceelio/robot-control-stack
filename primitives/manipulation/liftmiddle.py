@@ -15,6 +15,11 @@ class LiftMiddle(Primitive):
 
     def start(self, *, lvl2, **_):
         print("[LiftMiddle] start")
+        print(f"[LiftMiddle][DEBUG] lvl2={lvl2}")
+        print(f"[LiftMiddle][DEBUG] type={type(lvl2)} module={type(lvl2).__module__}")
+        print(f"[LiftMiddle][DEBUG] has LIFT_DOWN={hasattr(lvl2, 'LIFT_DOWN')}")
+        print(f"[LiftMiddle][DEBUG] has LIFT_MIDDLE={hasattr(lvl2, 'LIFT_MIDDLE')}")
+        print(f"[LiftMiddle][DEBUG] has LIFT_UP={hasattr(lvl2, 'LIFT_UP')}")
 
         try:
             if hasattr(lvl2, "LIFT_MIDDLE"):

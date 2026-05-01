@@ -273,6 +273,9 @@ class SR1IO(IOMap):
             "right": _val(pins[A2].analog_read()),
         }
 
+    def reflectance_values(self) -> Dict[str, float]:
+        return self.reflectance()
+
     def ultrasonics(self) -> Dict[str, Optional[float]]:
         if not self.arduino:
             return dict(front=None, left=None, right=None, back=None)

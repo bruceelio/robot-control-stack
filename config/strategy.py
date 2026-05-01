@@ -22,7 +22,7 @@ class StartupScript(Enum):
 
 
 ROBOT_PROFILE = RobotProfile.BOB_BOT
-# ROBOT_PROFILE = RobotProfile.SIMULATION
+# ROBOT_PROFILE = RobotProfile.SIMULATION         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 

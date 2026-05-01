@@ -35,7 +35,7 @@ class HeightModel:
         self._committed = False
         self._is_high: bool | None = None
         self.score = 0.0
-        self.max_pitch = float("-inf")
+        self.min_pitch = float("inf")
         self.samples = 0
 
     def is_committed(self) -> bool:
@@ -62,7 +62,7 @@ class HeightModel:
     def update(
             self,
             *,
-            pitch_rad: float,  # radians
+            pitch_rad: float,
             distance_mm: float,
             high_thresh: float,
             low_thresh: float,
@@ -74,20 +74,19 @@ class HeightModel:
         d = float(distance_mm)
 
         self.samples += 1
-        self.max_pitch = max(self.max_pitch, pitch)
+        self.min_pitch = min(self.min_pitch, pitch)  # CHANGED
 
-        # --- HARD HIGH LATCH (config-driven, radians) ---
-        # If we ever see pitch >= high_thresh at any distance: commit HIGH forever.
-        if pitch >= float(high_thresh):
+        # --- HARD HIGH LATCH (more negative = higher) ---
+        if pitch <= float(high_thresh):  # CHANGED
             self._commit(True)
             return
 
-        # (optional) keep the rest of your scoring system for LOW evidence, if you want:
-        margin = 0.02
+        margin = 0.01
         ev = 0.0
-        if pitch >= (high_thresh + margin):
+
+        if pitch <= (high_thresh - margin):  # CHANGED
             ev = +1.0
-        elif pitch <= (low_thresh - margin):
+        elif pitch >= (low_thresh + margin):  # CHANGED
             ev = -1.0
 
         if ev == 0.0:
@@ -98,13 +97,13 @@ class HeightModel:
         self.score += ev * self.step * w
 
     def try_commit(
-        self,
-        *,
-        distance_mm: float,
-        high_thresh: float,
-        low_thresh: float,
-        decision_deadline_mm: float,
-        low_confirm_max_mm: float = 1600.0,
+            self,
+            *,
+            distance_mm: float,
+            high_thresh: float,
+            low_thresh: float,
+            decision_deadline_mm: float,
+            low_confirm_max_mm: float = 1600.0,
     ) -> HeightDecision:
 
         if self._committed:
@@ -112,7 +111,8 @@ class HeightModel:
 
         d = float(distance_mm)
 
-        if self.max_pitch >= float(high_thresh):
+        # --- HIGH latch from most negative pitch ---
+        if self.min_pitch <= float(high_thresh):  # CHANGED
             self._commit(True)
             return HeightDecision(True, True, "peak_high_latch")
 
@@ -125,13 +125,11 @@ class HeightModel:
             return HeightDecision(True, False, "score_demote_close")
 
         if d <= decision_deadline_mm:
-            # If we've ever seen a strong "high" pitch, latch high.
-            if self.max_pitch >= float(high_thresh):
+            if self.min_pitch <= float(high_thresh):  # CHANGED
                 self._commit(True)
                 return HeightDecision(True, True, "deadline_peak_high")
 
-            # Otherwise decide from score (negative -> LOW, non-negative -> HIGH).
-            is_high = (self.score >= 0.0)
+            is_high = (self.score > 0.0)
             self._commit(is_high)
             return HeightDecision(True, is_high, "deadline_score_sign")
 

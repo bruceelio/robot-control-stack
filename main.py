@@ -29,6 +29,36 @@ import time
 # AUTOSTART_WHEN_HEADLESS=True is the simplest practical option.
 # Set it to False once a real start button exists.
 #
+
+import sys
+import time
+
+# Logging
+
+START_TIME = time.perf_counter()
+
+class Tee:
+    def __init__(self, *files):
+        self.files = files
+
+    def write(self, data):
+        for f in self.files:
+            f.write(data)
+            f.flush()
+
+    def flush(self):
+        for f in self.files:
+            f.flush()
+
+log_file = open("log.txt", "w")
+sys.stdout = Tee(sys.stdout, log_file)
+sys.stderr = Tee(sys.stderr, log_file)
+
+
+def log(msg: str):
+    elapsed = time.perf_counter() - START_TIME
+    print(f"[{elapsed:8.3f}] {msg}")
+
 AUTOSTART_WHEN_HEADLESS = True
 HEADLESS_AUTOSTART_DELAY_S = 3.0
 READY_POLL_INTERVAL_S = 1.0

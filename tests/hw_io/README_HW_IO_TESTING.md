@@ -26,6 +26,10 @@ python -m tests
 
 ```python 
 python tests/hw_io/test_io_checkout.py
+
+Or
+
+python3 -m tests.hw_io.test_io_checkout
 ```
 
 This bypasses the test framework and just runs the checkout.

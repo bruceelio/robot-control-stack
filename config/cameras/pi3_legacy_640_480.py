@@ -58,3 +58,10 @@ ANALOGUE_GAIN = None       # 1.1228;  replace with your measured value
 # White balance
 AWB_ENABLE = None  # False
 COLOUR_GAINS = None   # (2.0241, 1.9154); replace with your measured values
+
+# Need to be tested (and not in code yet)
+VISION_SETTLE_AFTER_ROTATE_S = 0.35
+VISION_SETTLE_AFTER_DRIVE_S = 0.80
+VISION_SETTLE_AFTER_ALIGN_S = 0.50
+VISION_SETTLE_AFTER_LIFT_S = 0.80
+VISION_FRESH_OBS_MAX_AGE_S = 0.12
