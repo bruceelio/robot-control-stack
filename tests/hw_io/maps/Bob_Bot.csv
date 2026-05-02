@@ -21,7 +21,7 @@ io.imu.roll,True,False,covered by imu.orientation
 "io.motor[""drive_front_left""].power",True,False,short forward/reverse pulse
 "io.motor[""drive_front_right""].power",True,False,short forward/reverse pulse
 "io.motor[""collector""].power",False,False,short forward/reverse pulse
-"io.motor[""shooter""].power",True,False,short forward/reverse pulse
+"io.motor[""shooter""].power",True,True,short forward/reverse pulse
 io.otos.pose,True,False,primary OTOS test
 io.otos.x,True,False,covered by io.otos.pose
 io.otos.y,True,False,covered by io.otos.pose

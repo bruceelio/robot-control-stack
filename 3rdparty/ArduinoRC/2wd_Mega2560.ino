@@ -141,6 +141,13 @@ static const uint8_t CH_DRIVE_ROTATE = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
 static const uint8_t CH_GRIP = 5; // currently assigned gripper control
 static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
+static const float TELEOP_SHOOTER_SCALE = 0.8f; // CH_LIFT also controls shooter power
+
+static const uint8_t CH_SHOOTER_FEED = 7; // SWA, pulse shooter feed servos
+static const unsigned long SHOOTER_FEED_PULSE_MS = 350;
+static const int SHOOTER_FEED_STOP_US = 1500;
+static const int SHOOTER_FEED_LEFT_RUN_US = 1700;
+static const int SHOOTER_FEED_RIGHT_RUN_US = 1300;
 
 // ------------------------- SERVO CALIBRATION -------------
 static const int GRIP_LEFT_OPEN_US      = 900;
@@ -190,6 +197,13 @@ unsigned long ibus_last_frame_ms = 0;
 Servo gripLeftServo;
 Servo gripRightServo;
 Servo liftServo;
+Servo shooterFeedLeftServo;
+Servo shooterFeedRightServo;
+
+bool shooterFeedLastSwitchHigh = false;
+bool shooterFeedInitialized = false;
+bool shooterFeedPulseActive = false;
+unsigned long shooterFeedPulseStartMs = 0;
 
 // =========================================================
 // IBUS
@@ -399,13 +413,56 @@ void updateLiftFromIbus() {
   const uint16_t liftUs = ibusMicros(idx);
 
   // Map knob range directly to normalized lift command:
-  // 1000us -> -1.0 (down)
-  // 1500us ->  0.0 (mid)
-  // 2000us -> +1.0 (up)
+  // 1000us -> -1.0
+  // 1500us ->  0.0
+  // 2000us -> +1.0
   float pos = (float)map(liftUs, 1000, 2000, -1000, 1000) / 1000.0f;
 
   setLiftNormalized(pos);
+
+  // Same CH6 knob also controls shooter power in teleop.
+  // Uses absolute value so both halves of knob travel spin shooter forward.
+  float shooterPower = fabs(pos) * TELEOP_SHOOTER_SCALE;
+  writeShooterMotor(shooterPower);
 }
+
+void stopShooterFeedServos() {
+  shooterFeedLeftServo.writeMicroseconds(SHOOTER_FEED_STOP_US);
+  shooterFeedRightServo.writeMicroseconds(SHOOTER_FEED_STOP_US);
+}
+
+void startShooterFeedPulse() {
+  shooterFeedLeftServo.writeMicroseconds(SHOOTER_FEED_LEFT_RUN_US);
+  shooterFeedRightServo.writeMicroseconds(SHOOTER_FEED_RIGHT_RUN_US);
+  shooterFeedPulseStartMs = millis();
+  shooterFeedPulseActive = true;
+}
+
+void updateShooterFeedFromIbus() {
+  const uint8_t idx = CH_SHOOTER_FEED - 1;
+  const uint16_t swUs = ibusMicros(idx);
+
+  bool switchHigh = swUs > 1500;
+
+  if (!shooterFeedInitialized) {
+    shooterFeedLastSwitchHigh = switchHigh;
+    shooterFeedInitialized = true;
+    stopShooterFeedServos();
+    return;
+  }
+
+  if (switchHigh != shooterFeedLastSwitchHigh) {
+    shooterFeedLastSwitchHigh = switchHigh;
+    startShooterFeedPulse();
+  }
+
+  if (shooterFeedPulseActive &&
+      millis() - shooterFeedPulseStartMs >= SHOOTER_FEED_PULSE_MS) {
+    shooterFeedPulseActive = false;
+    stopShooterFeedServos();
+  }
+}
+
 
 // =========================================================
 // READ HELPERS
@@ -978,9 +1035,12 @@ void setup() {
   gripLeftServo.attach(PIN_SERVO_GRIPPER_LEFT);
   gripRightServo.attach(PIN_SERVO_GRIPPER_RIGHT);
   liftServo.attach(PIN_SERVO_LIFT);
+  shooterFeedLeftServo.attach(PIN_SERVO_SHOOTER_FEED_LEFT);
+  shooterFeedRightServo.attach(PIN_SERVO_SHOOTER_FEED_RIGHT);
 
   setGripNormalized(-1.0f); // open
   setLiftNormalized(0.0f);  // neutral / midpoint
+  stopShooterFeedServos();
 
   stopDrive();
   writeShooterMotor(0.0f);
@@ -1020,9 +1080,13 @@ void loop() {
     writeCollectorMotor(0.0f);
   }
 
-  // Safety: if FlySky signal is lost, stop drive.
+    // Safety: if FlySky signal is lost, stop all teleop-controlled motion.
   if (millis() - ibus_last_frame_ms > 200) {
     stopDrive();
+    writeShooterMotor(0.0f);
+    writeCollectorMotor(0.0f);
+    stopShooterFeedServos();
+    shooterFeedPulseActive = false;
     return;
   }
 
@@ -1052,6 +1116,7 @@ void loop() {
   writeDriveFrontRight(right);
   updateGripFromIbus();
   updateLiftFromIbus();
+  updateShooterFeedFromIbus();
 
   delay(20);
 }
