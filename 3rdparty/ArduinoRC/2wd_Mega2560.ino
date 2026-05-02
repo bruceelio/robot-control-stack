@@ -49,6 +49,7 @@
 #define PI_SERIAL Serial
 #define ROBOCLAW_B_SERIAL Serial3   // pins 14/15
 #define ROBOCLAW_A_SERIAL Serial1   // pins 18/19
+#define IBUS_SERIAL Serial2         // FlySky iBus on Mega RX2 pin 17
 
 static const uint8_t PIN_USB_RX0 = 0;
 static const uint8_t PIN_USB_TX0 = 1;
@@ -337,37 +338,28 @@ void stopDrive() {
 // DIRECT MOTOR DRIVER (CYTRON MDD20A)
 // =========================================================
 
-void writeHBridge(uint8_t ina, uint8_t inb, uint8_t enDiag, uint8_t pwmPin, float value) {
+void writePwmDirMotor(uint8_t pwmPin, uint8_t dirPin, float value) {
   value = constrain(value, -1.0f, 1.0f);
+
   int pwm = (int)(fabs(value) * 255.0f);
 
-  // Simple direction convention:
-  //   +value => INA high, INB low
-  //   -value => INA low,  INB high
-  //   0      => coast
   if (value > 0.001f) {
-    digitalWrite(ina, HIGH);
-    digitalWrite(inb, LOW);
+    digitalWrite(dirPin, HIGH);
   } else if (value < -0.001f) {
-    digitalWrite(ina, LOW);
-    digitalWrite(inb, HIGH);
+    digitalWrite(dirPin, LOW);
   } else {
-    digitalWrite(ina, LOW);
-    digitalWrite(inb, LOW);
     pwm = 0;
   }
 
-  // EN/DIAG is treated as an enable line here.
-  digitalWrite(enDiag, HIGH);
   analogWrite(pwmPin, pwm);
 }
 
 void writeShooterMotor(float value) {
-  writeHBridge(PIN_SHOOTER_INA, PIN_SHOOTER_INB, PIN_SHOOTER_EN_DIAG, PIN_SHOOTER_PWM, value);
+  writePwmDirMotor(PIN_SHOOTER_PWM, PIN_SHOOTER_DIR, value);
 }
 
 void writeCollectorMotor(float value) {
-  writeHBridge(PIN_COLLECTOR_INA, PIN_COLLECTOR_INB, PIN_COLLECTOR_EN_DIAG, PIN_COLLECTOR_PWM, value);
+  writePwmDirMotor(PIN_COLLECTOR_PWM, PIN_COLLECTOR_DIR, value);
 }
 
 // =========================================================
@@ -736,42 +728,29 @@ void handlePiCommand(char *line) {
     }
   }
 
-  if (strncmp(line, "HBRIDGE_WRITE ", 14) == 0) {
+  if (strncmp(line, "PWM_DIR_WRITE ", 14) == 0) {
     char *p = line + 14;
-    char *tokIna = strtok(p, " ");
-    char *tokInb = strtok(nullptr, " ");
-    char *tokEn  = strtok(nullptr, " ");
-    char *tokPwm = strtok(nullptr, " ");
+    char *tokPwm = strtok(p, " ");
+    char *tokDir = strtok(nullptr, " ");
     char *tokVal = strtok(nullptr, " ");
 
-    if (tokIna && tokInb && tokEn && tokPwm && tokVal) {
-      int ina = atoi(tokIna);
-      int inb = atoi(tokInb);
-      int enDiag = atoi(tokEn);
-      int pwm = atoi(tokPwm);
+    if (tokPwm && tokDir && tokVal) {
+      int pwmPin = atoi(tokPwm);
+      int dirPin = atoi(tokDir);
       float value = constrain(atof(tokVal), -1.0f, 1.0f);
 
-      bool ok = true;
-
-      if (ina == PIN_SHOOTER_INA && inb == PIN_SHOOTER_INB &&
-          enDiag == PIN_SHOOTER_EN_DIAG && pwm == PIN_SHOOTER_PWM) {
+      if (pwmPin == PIN_SHOOTER_PWM && dirPin == PIN_SHOOTER_DIR) {
         motorShooterPower = value;
-      } else if (ina == PIN_COLLECTOR_INA && inb == PIN_COLLECTOR_INB &&
-                 enDiag == PIN_COLLECTOR_EN_DIAG && pwm == PIN_COLLECTOR_PWM) {
+      } else if (pwmPin == PIN_COLLECTOR_PWM && dirPin == PIN_COLLECTOR_DIR) {
         motorCollectorPower = value;
       } else {
-        // Fall back to direct hardware write for unknown combinations.
-        writeHBridge((uint8_t)ina, (uint8_t)inb, (uint8_t)enDiag, (uint8_t)pwm, value);
+        writePwmDirMotor((uint8_t)pwmPin, (uint8_t)dirPin, value);
       }
 
-      PI_SERIAL.print("OK HBRIDGE_WRITE ");
-      PI_SERIAL.print(ina);
+      PI_SERIAL.print("OK PWM_DIR_WRITE ");
+      PI_SERIAL.print(pwmPin);
       PI_SERIAL.print(" ");
-      PI_SERIAL.print(inb);
-      PI_SERIAL.print(" ");
-      PI_SERIAL.print(enDiag);
-      PI_SERIAL.print(" ");
-      PI_SERIAL.println(pwm);
+      PI_SERIAL.println(dirPin);
       return;
     }
   }
@@ -965,17 +944,12 @@ void setup() {
   ROBOCLAW_A_SERIAL.begin(38400);
   ROBOCLAW_B_SERIAL.begin(38400);
 
-  // Direct outputs
+  // Direct PWM/DIR motor outputs
   pinMode(PIN_SHOOTER_PWM, OUTPUT);
+  pinMode(PIN_SHOOTER_DIR, OUTPUT);
+
   pinMode(PIN_COLLECTOR_PWM, OUTPUT);
-
-  pinMode(PIN_SHOOTER_INA, OUTPUT);
-  pinMode(PIN_SHOOTER_INB, OUTPUT);
-  pinMode(PIN_SHOOTER_EN_DIAG, OUTPUT);
-
-  pinMode(PIN_COLLECTOR_INA, OUTPUT);
-  pinMode(PIN_COLLECTOR_INB, OUTPUT);
-  pinMode(PIN_COLLECTOR_EN_DIAG, OUTPUT);
+  pinMode(PIN_COLLECTOR_DIR, OUTPUT);
 
   // Ultrasonic pins
   pinMode(PIN_ULTRASONIC_FRONT_LEFT_TRIG, OUTPUT);
