@@ -146,13 +146,16 @@ static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (5
 bool piAutoRequested = false;
 unsigned long piLastHeartbeatMs = 0;
 
-// Named outputs controlled by Pi AUTO mode
-float piDriveFrontLeftCmd  = 0.0f;
-float piDriveFrontRightCmd = 0.0f;
-float piShooterCmd         = 0.0f;
-float piCollectorCmd       = 0.0f;
-float piGripCmd            = -1.0f;   // -1=open, +1=closed
-float piLiftCmd            = 0.0f;    // -1=down, +1=up
+// Semantic output state controlled by AUTO mode
+float motorDriveFrontLeftPower  = 0.0f;
+float motorDriveFrontRightPower = 0.0f;
+float motorDriveRearLeftPower   = 0.0f;
+float motorDriveRearRightPower  = 0.0f;
+float motorShooterPower         = 0.0f;
+float motorCollectorPower       = 0.0f;
+
+float piGripCmd                 = -1.0f;   // -1=open, +1=closed
+float piLiftCmd                 = 0.0f;    // -1=down, +1=up
 
 char piLineBuf[128];
 uint8_t piLineIdx = 0;
@@ -452,32 +455,32 @@ bool setMotorByName(const char *name, float value) {
   value = constrain(value, -1.0f, 1.0f);
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_LEFT) == 0) {
-    writeDriveFrontLeft(value);
+    motorDriveFrontLeftPower = value;
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_RIGHT) == 0) {
-    writeDriveFrontRight(value);
+    motorDriveFrontRightPower = value;
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_DRIVE_REAR_LEFT) == 0) {
-    writeDriveRearLeft(value);
+    motorDriveRearLeftPower = value;
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_DRIVE_REAR_RIGHT) == 0) {
-    writeDriveRearRight(value);
+    motorDriveRearRightPower = value;
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_SHOOTER) == 0) {
-    writeShooterMotor(value);
+    motorShooterPower = value;
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_COLLECTOR) == 0) {
-    writeCollectorMotor(value);
+    motorCollectorPower = value;
     return true;
   }
 
@@ -531,13 +534,17 @@ void handlePiCommand(char *line) {
   }
 
   if (strcmp(line, "STOP") == 0) {
-    piDriveFrontLeftCmd = 0.0f;
-    piDriveFrontRightCmd = 0.0f;
-    piShooterCmd = 0.0f;
-    piCollectorCmd = 0.0f;
+    motorDriveFrontLeftPower = 0.0f;
+    motorDriveFrontRightPower = 0.0f;
+    motorDriveRearLeftPower = 0.0f;
+    motorDriveRearRightPower = 0.0f;
+    motorShooterPower = 0.0f;
+    motorCollectorPower = 0.0f;
+
     stopDrive();
     writeShooterMotor(0.0f);
     writeCollectorMotor(0.0f);
+
     PI_SERIAL.println("OK STOP");
     return;
   }
@@ -571,10 +578,10 @@ void handlePiCommand(char *line) {
       // Active drive link: RoboClaw A on 18/19
       if (txPin == PIN_ROBOCLAW_A_TX && rxPin == PIN_ROBOCLAW_A_RX) {
         if (strcmp(tokCh, "M1") == 0) {
-          piDriveFrontLeftCmd = value;
+          motorDriveFrontLeftPower = value;
           ok = true;
         } else if (strcmp(tokCh, "M2") == 0) {
-          piDriveFrontRightCmd = value;
+          motorDriveFrontRightPower = value;
           ok = true;
         }
       }
@@ -730,10 +737,10 @@ void handlePiCommand(char *line) {
 
       if (ina == PIN_SHOOTER_INA && inb == PIN_SHOOTER_INB &&
           enDiag == PIN_SHOOTER_EN_DIAG && pwm == PIN_SHOOTER_PWM) {
-        piShooterCmd = value;
+        motorShooterPower = value;
       } else if (ina == PIN_COLLECTOR_INA && inb == PIN_COLLECTOR_INB &&
                  enDiag == PIN_COLLECTOR_EN_DIAG && pwm == PIN_COLLECTOR_PWM) {
-        piCollectorCmd = value;
+        motorCollectorPower = value;
       } else {
         // Fall back to direct hardware write for unknown combinations.
         writeHBridge((uint8_t)ina, (uint8_t)inb, (uint8_t)enDiag, (uint8_t)pwm, value);
@@ -860,8 +867,8 @@ void handlePiCommand(char *line) {
     char *tok2 = strtok(nullptr, " ");
 
     if (tok1 && tok2) {
-      piDriveFrontLeftCmd = constrain(atof(tok1), -1.0f, 1.0f);
-      piDriveFrontRightCmd = constrain(atof(tok2), -1.0f, 1.0f);
+      motorDriveFrontLeftPower = constrain(atof(tok1), -1.0f, 1.0f);
+      motorDriveFrontRightPower = constrain(atof(tok2), -1.0f, 1.0f);
       PI_SERIAL.println("OK DRV");
       return;
     }
@@ -966,12 +973,14 @@ void loop() {
   servicePiSerial();
   readIbusFrame();
 
-  // Pi AUTO owns outputs while heartbeat is fresh.
+  // AUTO owns outputs while heartbeat is fresh.
   if (piHasControl()) {
-    writeDriveFrontLeft(piDriveFrontLeftCmd);
-    writeDriveFrontRight(piDriveFrontRightCmd);
-    writeShooterMotor(piShooterCmd);
-    writeCollectorMotor(piCollectorCmd);
+    writeDriveFrontLeft(motorDriveFrontLeftPower);
+    writeDriveFrontRight(motorDriveFrontRightPower);
+    writeDriveRearLeft(motorDriveRearLeftPower);
+    writeDriveRearRight(motorDriveRearRightPower);
+    writeShooterMotor(motorShooterPower);
+    writeCollectorMotor(motorCollectorPower);
     setGripNormalized(piGripCmd);
     setLiftNormalized(piLiftCmd);
     delay(20);

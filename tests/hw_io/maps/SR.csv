@@ -1,0 +1,45 @@
+pi_io_path,exists,enabled,notes
+"io.current[""gripper_right""].amps",True,True,show max current while gripper is exercised manually
+"io.encoder[""drive_front_left""].A",True,True,manual wheel/shaft movement only; A channel snapshot
+"io.encoder[""drive_front_left""].B",True,True,manual wheel/shaft movement only; B channel snapshot
+"io.encoder[""deadwheel_parallel""].A",True,True,manual robot movement only; A channel snapshot
+"io.encoder[""deadwheel_parallel""].B",True,True,manual robot movement only; B channel snapshot
+"io.encoder[""drive_front_right""].A",True,True,manual wheel/shaft movement only; A channel snapshot
+"io.encoder[""drive_front_right""].B",True,True,manual wheel/shaft movement only; B channel snapshot
+"io.encoder[""deadwheel_perpendicular""].A",True,True,manual robot movement only; A channel snapshot
+"io.encoder[""deadwheel_perpendicular""].B",True,True,manual robot movement only; B channel snapshot
+"io.encoder[""shooter""].A",True,True,manual shaft movement only; A channel snapshot
+"io.encoder[""shooter""].B",True,True,manual shaft movement only; B channel snapshot
+io.imu.orientation,True,True,display heading pitch roll
+io.imu.heading,True,False,covered by imu.orientation
+io.imu.pitch,True,False,covered by imu.orientation
+io.imu.roll,True,False,covered by imu.orientation
+"io.limit[""lift_high""]",True,True,
+"io.limit[""lift_low""]",True,True,
+"io.motor[""drive_rear_left""].power",True,True,short forward/reverse pulse
+"io.motor[""drive_rear_right""].power",True,True,short forward/reverse pulse
+"io.motor[""drive_front_left""].power",True,True,short forward/reverse pulse
+"io.motor[""drive_front_right""].power",True,True,short forward/reverse pulse
+"io.motor[""collector""].power",True,True,short forward/reverse pulse
+"io.motor[""shooter""].power",True,True,short forward/reverse pulse
+io.otos.pose,True,True,primary OTOS test
+io.otos.x,True,False,covered by io.otos.pose
+io.otos.y,True,False,covered by io.otos.pose
+io.otos.heading,True,False,covered by io.otos.pose
+"io.servo[""shooter_feed_left""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
+"io.servo[""shooter_feed_right""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
+"io.servo[""gripper""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
+"io.servo[""lift""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
+"io.voltage[""battery""].volts",True,True,expected range configured in io_rules.py
+"io.camera[""front""].see()",True,False,tested separately by camera protocol
+"io.bumper[""front_left""]",True,True,
+"io.bumper[""front_right""]",True,True,
+"io.bumper[""rear_left""]",True,True,
+"io.bumper[""rear_right""]",True,True,
+"io.reflectance[""left""]",True,True,
+"io.reflectance[""centre""]",True,True,
+"io.reflectance[""right""]",True,True,
+"io.ultrasonic[""front""]",True,True,
+"io.ultrasonic[""left""]",True,True,
+"io.ultrasonic[""right""]",True,True,
+"io.ultrasonic[""rear""]",True,True,
