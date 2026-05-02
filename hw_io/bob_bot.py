@@ -390,11 +390,11 @@ class BobBotIO(IOMap):
 
         lift = MegaServoSigned(
             self,
-            lambda value: self.mega.servo_write(12, value),
+            lambda value: self.mega.servo_write("lift", position=value),
         )
         gripper = MegaServoSigned(
             self,
-            lambda value: self.mega.servo_write(11, value),
+            lambda value: self.mega.servo_write("gripper", position=value),
         )
         shooter_feed_left = MegaServoSigned(
             self,

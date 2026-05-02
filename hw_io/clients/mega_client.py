@@ -92,9 +92,16 @@ class MegaSerialClient:
     def link_14_15(self, channel: str, value: float) -> str:
         return self.link_write(14, 15, channel, value)
 
-    def servo_write(self, pin: int, value: float) -> str:
+    def servo_write(self, target: str | int, value: float | None = None, *, position: float | None = None) -> str:
+        if position is not None:
+            position = max(-1.0, min(1.0, float(position)))
+            return self.send(f"SERVO {target} WRITE position={position:.4f}")
+
+        if value is None:
+            raise ValueError("servo_write requires either value or position")
+
         value = max(-1.0, min(1.0, float(value)))
-        return self.send(f"SERVO_WRITE {pin} {value:.3f}")
+        return self.send(f"SERVO_WRITE {target} {value:.3f}")
 
     def group_write(self, pin1: int, value1: float, pin2: int, value2: float) -> str:
         value1 = max(-1.0, min(1.0, float(value1)))

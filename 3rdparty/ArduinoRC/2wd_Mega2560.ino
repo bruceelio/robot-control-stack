@@ -786,6 +786,31 @@ void handlePiCommand(char *line) {
     return;
   }
 
+  // New semantic servo protocol:
+  //   SERVO gripper WRITE position=0.5
+  //   SERVO lift WRITE position=0.5
+  //   SERVO gripper WRITE 0.5
+  char servoName[32];
+  char servoValueText[32];
+
+  if (sscanf(line, "SERVO %31s WRITE position=%31s", servoName, servoValueText) == 2 ||
+      sscanf(line, "SERVO %31s WRITE %31s", servoName, servoValueText) == 2) {
+
+    float servoPosition = atof(servoValueText);
+
+    if (setServoByName(servoName, servoPosition)) {
+      PI_SERIAL.print("OK SERVO ");
+      PI_SERIAL.print(servoName);
+      PI_SERIAL.print(" position=");
+      PI_SERIAL.println(servoPosition, 4);
+    } else {
+      PI_SERIAL.print("ERR SERVO ");
+      PI_SERIAL.println(servoName);
+    }
+    return;
+  }
+
+
   if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
     if (strcmp(kind, "MOTOR") == 0) {
       if (setMotorByName(name, value)) {
