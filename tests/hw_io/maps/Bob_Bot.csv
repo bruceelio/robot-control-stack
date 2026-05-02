@@ -18,10 +18,10 @@ io.imu.roll,True,False,covered by imu.orientation
 "io.limit[""lift_low""]",True,False,
 "io.motor[""drive_rear_left""].power",False,False,short forward/reverse pulse
 "io.motor[""drive_rear_right""].power",False,False,short forward/reverse pulse
-"io.motor[""drive_front_left""].power",True,True,short forward/reverse pulse
-"io.motor[""drive_front_right""].power",True,True,short forward/reverse pulse
+"io.motor[""drive_front_left""].power",True,False,short forward/reverse pulse
+"io.motor[""drive_front_right""].power",True,False,short forward/reverse pulse
 "io.motor[""collector""].power",False,False,short forward/reverse pulse
-"io.motor[""shooter""].power",True,True,short forward/reverse pulse
+"io.motor[""shooter""].power",True,False,short forward/reverse pulse
 io.otos.pose,True,False,primary OTOS test
 io.otos.x,True,False,covered by io.otos.pose
 io.otos.y,True,False,covered by io.otos.pose

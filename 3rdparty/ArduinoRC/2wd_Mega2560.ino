@@ -154,8 +154,8 @@ float motorDriveRearRightPower  = 0.0f;
 float motorShooterPower         = 0.0f;
 float motorCollectorPower       = 0.0f;
 
-float piGripCmd                 = -1.0f;   // -1=open, +1=closed
-float piLiftCmd                 = 0.0f;    // -1=down, +1=up
+float servoGripperPosition      = -1.0f;   // -1=open, +1=closed
+float servoLiftPosition         = 0.0f;    // -1=down, +1=up
 
 char piLineBuf[128];
 uint8_t piLineIdx = 0;
@@ -491,12 +491,12 @@ bool setServoByName(const char *name, float value) {
   value = constrain(value, -1.0f, 1.0f);
 
   if (strcmp(name, SERVO_NAME_GRIPPER) == 0) {
-    piGripCmd = value;
+    servoGripperPosition = value;
     return true;
   }
 
   if (strcmp(name, SERVO_NAME_LIFT) == 0) {
-    piLiftCmd = value;
+    servoLiftPosition = value;
     return true;
   }
 
@@ -617,10 +617,10 @@ void handlePiCommand(char *line) {
       bool ok = true;
 
       if (pin == PIN_LIFT) {
-        piLiftCmd = value;
+        servoLiftPosition = value;
       } else if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
         // One logical gripper command; Mega mirrors internally.
-        piGripCmd = value;
+        servoGripperPosition = value;
       } else {
         ok = false;
       }
@@ -655,7 +655,7 @@ void handlePiCommand(char *line) {
           (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
         // Prefer one logical gripper command. Use the first value.
         (void)val2;
-        piGripCmd = val1;
+        servoGripperPosition = val1;
       } else {
         ok = false;
       }
@@ -900,13 +900,13 @@ void handlePiCommand(char *line) {
   }
 
   if (strncmp(line, "GRIP ", 5) == 0) {
-    piGripCmd = constrain(atof(line + 5), -1.0f, 1.0f);
+    servoGripperPosition = constrain(atof(line + 5), -1.0f, 1.0f);
     PI_SERIAL.println("OK GRIP");
     return;
   }
 
   if (strncmp(line, "LIFT ", 5) == 0) {
-    piLiftCmd = constrain(atof(line + 5), -1.0f, 1.0f);
+    servoLiftPosition = constrain(atof(line + 5), -1.0f, 1.0f);
     PI_SERIAL.println("OK LIFT");
     return;
   }
@@ -1006,8 +1006,8 @@ void loop() {
     writeDriveRearRight(motorDriveRearRightPower);
     writeShooterMotor(motorShooterPower);
     writeCollectorMotor(motorCollectorPower);
-    setGripNormalized(piGripCmd);
-    setLiftNormalized(piLiftCmd);
+    setGripNormalized(servoGripperPosition);
+    setLiftNormalized(servoLiftPosition);
     delay(20);
     return;
   }
