@@ -45,17 +45,13 @@
 // Edit this block first when reusing the sketch.
 // =========================================================
 
-// ------------------------- USB / SERIAL -------------------
-#define PI_SERIAL Serial          // USB serial to Raspberry Pi
-#define ROBOCLAW_B_SERIAL Serial3 // pins 14/15
-#define IBUS_SERIAL Serial2       // pins 16/17
-#define ROBOCLAW_A_SERIAL Serial1 // pins 18/19
+// ------------------------- SERIAL / BUS ------------------
+#define PI_SERIAL Serial
+#define ROBOCLAW_B_SERIAL Serial3   // pins 14/15
+#define ROBOCLAW_A_SERIAL Serial1   // pins 18/19
 
-static const uint8_t PIN_USB_RX0 = 0;   // reserved internal USB serial
-static const uint8_t PIN_USB_TX0 = 1;   // reserved internal USB serial
-
-static const uint8_t PIN_RC_IBUS_TX = 16; // reserved (FlySky iBus TX)
-static const uint8_t PIN_RC_IBUS_RX = 17; // active iBus input
+static const uint8_t PIN_USB_RX0 = 0;
+static const uint8_t PIN_USB_TX0 = 1;
 
 static const uint8_t PIN_ROBOCLAW_B_TX = 14;
 static const uint8_t PIN_ROBOCLAW_B_RX = 15;
@@ -63,44 +59,66 @@ static const uint8_t PIN_ROBOCLAW_B_RX = 15;
 static const uint8_t PIN_ROBOCLAW_A_TX = 18;
 static const uint8_t PIN_ROBOCLAW_A_RX = 19;
 
-// ------------------------- DIRECT PWM / SERVO ------------
-static const uint8_t PIN_SHOOTER_PWM       = 4;
-static const uint8_t PIN_COLLECTOR_PWM     = 5;
-static const uint8_t PIN_SPARE_PWM_6       = 6;
-static const uint8_t PIN_SPARE_PWM_7       = 7;
-static const uint8_t PIN_SPARE_PWM_8       = 8;
-
-static const uint8_t PIN_SHOOTER_FEED_LEFT  = 9;
-static const uint8_t PIN_SHOOTER_FEED_RIGHT = 10;
-
-static const uint8_t PIN_GRIP_LEFT  = 11;
-static const uint8_t PIN_LIFT       = 12;
-static const uint8_t PIN_GRIP_RIGHT = 13;
-
-// ------------------------- I2C ----------------------------
 static const uint8_t PIN_I2C_SDA = 20;
 static const uint8_t PIN_I2C_SCL = 21;
 
-// ------------------------- QUADRATURE / LIMITS -----------
-static const uint8_t PIN_DEADWHEEL_PARALLEL_A      = 23;
-static const uint8_t PIN_DEADWHEEL_PARALLEL_B      = 25;
-static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_A = 27;
-static const uint8_t PIN_DEADWHEEL_PERPENDICULAR_B = 29;
+// ------------------------- ANALOG / ADC ------------------
+static const uint8_t PIN_VOLTAGE_BATTERY       = A0;
+static const uint8_t PIN_CURRENT_GRIPPER_RIGHT = A1;
 
-static const uint8_t PIN_LIFT_LIMIT_HIGH = 31;
-static const uint8_t PIN_LIFT_LIMIT_LOW  = 33;
+static const uint8_t PIN_REFLECTANCE_LEFT      = A5;
+static const uint8_t PIN_REFLECTANCE_CENTRE    = A6;
+static const uint8_t PIN_REFLECTANCE_RIGHT     = A7;
 
-static const uint8_t PIN_SHOOTER_ENC_A = 35;
-static const uint8_t PIN_SHOOTER_ENC_B = 37;
+// ------------------------- DIRECT PWM / SERVO ------------
+static const uint8_t PIN_COLLECTOR_PWM         = 4;
+static const uint8_t PIN_SHOOTER_PWM           = 5;
 
-// ------------------------- CYTRON MDD20A ------------------
-static const uint8_t PIN_SHOOTER_INA     = 39;
-static const uint8_t PIN_SHOOTER_INB     = 41;
-static const uint8_t PIN_SHOOTER_EN_DIAG = 43;
+static const uint8_t PIN_DFPLAYER_SELECT_PWM   = 7;
 
-static const uint8_t PIN_COLLECTOR_INA     = 45;
-static const uint8_t PIN_COLLECTOR_INB     = 47;
-static const uint8_t PIN_COLLECTOR_EN_DIAG = 49;
+static const uint8_t PIN_SERVO_SHOOTER_FEED_LEFT  = 9;
+static const uint8_t PIN_SERVO_SHOOTER_FEED_RIGHT = 10;
+
+static const uint8_t PIN_SERVO_GRIPPER_LEFT    = 11;
+static const uint8_t PIN_SERVO_LIFT            = 12;
+static const uint8_t PIN_SERVO_GRIPPER_RIGHT   = 13;
+
+// ------------------------- ENCODERS / LIMITS -------------
+static const uint8_t PIN_ENC_DRIVE_FRONT_LEFT_A  = 22;
+static const uint8_t PIN_ENC_DRIVE_FRONT_LEFT_B  = 24;
+
+static const uint8_t PIN_ENC_DEADWHEEL_PARALLEL_A = 23;
+static const uint8_t PIN_ENC_DEADWHEEL_PARALLEL_B = 25;
+
+static const uint8_t PIN_ENC_DRIVE_FRONT_RIGHT_A = 26;
+static const uint8_t PIN_ENC_DRIVE_FRONT_RIGHT_B = 28;
+
+static const uint8_t PIN_ENC_DEADWHEEL_PERPENDICULAR_A = 27;
+static const uint8_t PIN_ENC_DEADWHEEL_PERPENDICULAR_B = 29;
+
+static const uint8_t PIN_LIMIT_LIFT_HIGH        = 31;
+static const uint8_t PIN_LIMIT_LIFT_LOW         = 33;
+
+static const uint8_t PIN_ENC_SHOOTER_A          = 35;
+static const uint8_t PIN_ENC_SHOOTER_B          = 37;
+
+// ------------------------- DIGITAL INPUTS ----------------
+static const uint8_t PIN_SELECTOR_PI_ARDUINO    = 32;
+
+static const uint8_t PIN_BUMPER_FRONT_LEFT      = 47;
+static const uint8_t PIN_BUMPER_FRONT_RIGHT     = 49;
+
+// ------------------------- ULTRASONIC --------------------
+static const uint8_t PIN_ULTRASONIC_FRONT_LEFT_TRIG  = 36;
+static const uint8_t PIN_ULTRASONIC_FRONT_LEFT_ECHO  = 38;
+
+static const uint8_t PIN_ULTRASONIC_FRONT_RIGHT_TRIG = 40;
+static const uint8_t PIN_ULTRASONIC_FRONT_RIGHT_ECHO = 42;
+
+// ------------------------- MOTOR DIR ---------------------
+static const uint8_t PIN_SHOOTER_DIR            = 39;
+static const uint8_t PIN_COLLECTOR_DIR          = 41;
+
 
 // ------------------------- LOGICAL LINK MAPPING ----------
 #define ROBOCLAW_ADDR_A 0x80
@@ -616,9 +634,9 @@ void handlePiCommand(char *line) {
 
       bool ok = true;
 
-      if (pin == PIN_LIFT) {
+      if (pin == PIN_SERVO_LIFT) {
         servoLiftPosition = value;
-      } else if (pin == PIN_GRIP_LEFT || pin == PIN_GRIP_RIGHT) {
+      } else if (pin == PIN_SERVO_GRIPPER_LEFT || pin == PIN_SERVO_GRIPPER_RIGHT) {
         // One logical gripper command; Mega mirrors internally.
         servoGripperPosition = value;
       } else {
@@ -651,8 +669,8 @@ void handlePiCommand(char *line) {
 
       bool ok = true;
 
-      if ((pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) ||
-          (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
+      if ((pin1 == PIN_SERVO_GRIPPER_LEFT && pin2 == PIN_SERVO_GRIPPER_RIGHT) ||
+          (pin1 == PIN_SERVO_GRIPPER_RIGHT && pin2 == PIN_SERVO_GRIPPER_LEFT)) {
         // Prefer one logical gripper command. Use the first value.
         (void)val2;
         servoGripperPosition = val1;
@@ -690,13 +708,13 @@ void handlePiCommand(char *line) {
 
       bool ok = true;
 
-      if ((pin1 == PIN_GRIP_LEFT && pin2 == PIN_GRIP_RIGHT) ||
-          (pin1 == PIN_GRIP_RIGHT && pin2 == PIN_GRIP_LEFT)) {
+      if ((pin1 == PIN_SERVO_GRIPPER_LEFT && pin2 == PIN_SERVO_GRIPPER_RIGHT) ||
+          (pin1 == PIN_SERVO_GRIPPER_RIGHT && pin2 == PIN_SERVO_GRIPPER_LEFT)) {
         us1 = constrain(us1, 500, 2500);
         us2 = constrain(us2, 500, 2500);
         gripLeftServo.writeMicroseconds(us1);
         gripRightServo.writeMicroseconds(us2);
-      } else if (pin1 == PIN_LIFT && pin2 == PIN_LIFT) {
+      } else if (pin1 == PIN_SERVO_LIFT && pin2 == PIN_SERVO_LIFT) {
         us1 = constrain(us1, 500, 2500);
         liftServo.writeMicroseconds(us1);
       } else {
@@ -865,11 +883,11 @@ void handlePiCommand(char *line) {
 
     if (strcmp(rkind, "LIMIT") == 0) {
       if (strcmp(a1, "lift_high") == 0) {
-        replyValue("LIMIT", readDigitalPin(PIN_LIFT_LIMIT_HIGH));
+        replyValue("LIMIT", readDigitalPin(PIN_LIMIT_LIFT_HIGH));
         return;
       }
       if (strcmp(a1, "lift_low") == 0) {
-        replyValue("LIMIT", readDigitalPin(PIN_LIFT_LIMIT_LOW));
+        replyValue("LIMIT", readDigitalPin(PIN_LIMIT_LIFT_LOW));
         return;
       }
     }
@@ -959,25 +977,33 @@ void setup() {
   pinMode(PIN_COLLECTOR_INB, OUTPUT);
   pinMode(PIN_COLLECTOR_EN_DIAG, OUTPUT);
 
-  // Ultrasonic pins are only examples/future use; configure on demand or here.
-  pinMode(2, OUTPUT);
-  pinMode(3, INPUT);
+  // Ultrasonic pins
+  pinMode(PIN_ULTRASONIC_FRONT_LEFT_TRIG, OUTPUT);
+  pinMode(PIN_ULTRASONIC_FRONT_LEFT_ECHO, INPUT);
+  pinMode(PIN_ULTRASONIC_FRONT_RIGHT_TRIG, OUTPUT);
+  pinMode(PIN_ULTRASONIC_FRONT_RIGHT_ECHO, INPUT);
 
   // Limits / quadrature inputs
-  pinMode(PIN_LIFT_LIMIT_HIGH, INPUT_PULLUP);
-  pinMode(PIN_LIFT_LIMIT_LOW, INPUT_PULLUP);
+  pinMode(PIN_LIMIT_LIFT_HIGH, INPUT_PULLUP);
+  pinMode(PIN_LIMIT_LIFT_LOW, INPUT_PULLUP);
 
-  pinMode(PIN_DEADWHEEL_PARALLEL_A, INPUT_PULLUP);
-  pinMode(PIN_DEADWHEEL_PARALLEL_B, INPUT_PULLUP);
-  pinMode(PIN_DEADWHEEL_PERPENDICULAR_A, INPUT_PULLUP);
-  pinMode(PIN_DEADWHEEL_PERPENDICULAR_B, INPUT_PULLUP);
-  pinMode(PIN_SHOOTER_ENC_A, INPUT_PULLUP);
-  pinMode(PIN_SHOOTER_ENC_B, INPUT_PULLUP);
+  pinMode(PIN_ENC_DRIVE_FRONT_LEFT_A, INPUT_PULLUP);
+  pinMode(PIN_ENC_DRIVE_FRONT_LEFT_B, INPUT_PULLUP);
+  pinMode(PIN_ENC_DRIVE_FRONT_RIGHT_A, INPUT_PULLUP);
+  pinMode(PIN_ENC_DRIVE_FRONT_RIGHT_B, INPUT_PULLUP);
+
+  pinMode(PIN_ENC_DEADWHEEL_PARALLEL_A, INPUT_PULLUP);
+  pinMode(PIN_ENC_DEADWHEEL_PARALLEL_B, INPUT_PULLUP);
+  pinMode(PIN_ENC_DEADWHEEL_PERPENDICULAR_A, INPUT_PULLUP);
+  pinMode(PIN_ENC_DEADWHEEL_PERPENDICULAR_B, INPUT_PULLUP);
+
+  pinMode(PIN_ENC_SHOOTER_A, INPUT_PULLUP);
+  pinMode(PIN_ENC_SHOOTER_B, INPUT_PULLUP);
 
   // Servos
-  gripLeftServo.attach(PIN_GRIP_LEFT);
-  gripRightServo.attach(PIN_GRIP_RIGHT);
-  liftServo.attach(PIN_LIFT);
+  gripLeftServo.attach(PIN_SERVO_GRIPPER_LEFT);
+  gripRightServo.attach(PIN_SERVO_GRIPPER_RIGHT);
+  liftServo.attach(PIN_SERVO_LIFT);
 
   setGripNormalized(-1.0f); // open
   setLiftNormalized(0.0f);  // neutral / midpoint
