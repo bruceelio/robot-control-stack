@@ -116,19 +116,17 @@ class QuadratureSnapshot:
         return b
 
 
-class MegaDriveMotor:
+class MegaSemanticMotor:
     def __init__(
         self,
         owner: "BobBotIO",
         mega: MegaSerialClient,
-        terminal: str,
-        write_fn: Callable[[str, float], Any],
+        name: str,
         polarity: int = 1,
     ):
         self._owner = owner
         self._mega = mega
-        self._terminal = terminal
-        self._write_fn = write_fn
+        self._name = name
         self._polarity = 1 if polarity >= 0 else -1
         self._power = 0.0
 
@@ -140,66 +138,17 @@ class MegaDriveMotor:
     def power(self, value: float) -> None:
         value = max(-1.0, min(1.0, float(value)))
 
-        # If starting a new motion burst, re-arm every time.
         starting_motion = (abs(self._power) < 1e-6) and (abs(value) > 1e-6)
         if starting_motion:
             self._owner.ensure_auto_mode(force=True)
 
         self._power = value
         self._owner._heartbeat_if_due(force=True)
-        print(f"[BOBBOT MOTOR] terminal={self._terminal} value={value}")
-        resp = self._write_fn(self._terminal, self._polarity * value)
+
+        command_value = self._polarity * value
+        print(f"[BOBBOT MOTOR] name={self._name} power={command_value}")
+        resp = self._mega.motor_write(self._name, power=command_value)
         print(f"[BOBBOT MOTOR] resp={resp}")
-
-
-class MegaHBridgeMotor:
-    def __init__(
-        self,
-        owner: "BobBotIO",
-        mega: MegaSerialClient,
-        *,
-        ina: int,
-        inb: int,
-        en_diag: int,
-        pwm: int,
-        polarity: int = 1,
-    ):
-        self._owner = owner
-        self._mega = mega
-        self._ina = ina
-        self._inb = inb
-        self._en_diag = en_diag
-        self._pwm = pwm
-        self._polarity = 1 if polarity >= 0 else -1
-        self._power = 0.0
-
-    @property
-    def power(self) -> float:
-        return self._power
-
-    @power.setter
-    def power(self, value: float) -> None:
-        value = max(-1.0, min(1.0, float(value)))
-
-        starting_motion = (abs(self._power) < 1e-6) and (abs(value) > 1e-6)
-        if starting_motion:
-            self._owner.ensure_auto_mode(force=True)
-
-        self._power = value
-        self._owner._heartbeat_if_due(force=True)
-        print(
-            "[BOBBOT HBRIDGE] "
-            f"pwm={self._pwm} ina={self._ina} inb={self._inb} "
-            f"en_diag={self._en_diag} value={value}"
-        )
-        resp = self._mega.hbridge_write(
-            ina=self._ina,
-            inb=self._inb,
-            en_diag=self._en_diag,
-            pwm=self._pwm,
-            value=self._polarity * value,
-        )
-        print(f"[BOBBOT HBRIDGE] resp={resp}")
 
 
 class MegaServoSigned:
@@ -385,54 +334,45 @@ class BobBotIO(IOMap):
         if self.mega is None:
             return
 
-        front_left = MegaDriveMotor(
+        front_left = MegaSemanticMotor(
             self,
             self.mega,
-            "M1",
-            write_fn=self.mega.link_18_19,
+            "drive_front_left",
             polarity=CONFIG.motor_polarity[0],
         )
-        front_right = MegaDriveMotor(
+
+        front_right = MegaSemanticMotor(
             self,
             self.mega,
-            "M2",
-            write_fn=self.mega.link_18_19,
+            "drive_front_right",
             polarity=CONFIG.motor_polarity[1],
         )
 
-        # RoboClaw B on 14/15 is included in the IO map. If the Mega sketch/client
-        # does not yet implement link_14_15, these names should be disabled in CSV.
-        rear_left = MegaDriveMotor(
+        rear_left = MegaSemanticMotor(
             self,
             self.mega,
-            "M1",
-            write_fn=self.mega.link_14_15,
+            "drive_rear_left",
             polarity=getattr(CONFIG, "motor_rear_left_polarity", 1),
         )
-        rear_right = MegaDriveMotor(
+
+        rear_right = MegaSemanticMotor(
             self,
             self.mega,
-            "M2",
-            write_fn=self.mega.link_14_15,
+            "drive_rear_right",
             polarity=getattr(CONFIG, "motor_rear_right_polarity", 1),
         )
 
-        collector = MegaHBridgeMotor(
+        collector = MegaSemanticMotor(
             self,
             self.mega,
-            pwm=5,
-            ina=45,
-            inb=47,
-            en_diag=49,
+            "collector",
             polarity=getattr(CONFIG, "collector_motor_polarity", 1),
         )
-        shooter = MegaHBridgeMotor(
+
+        shooter = MegaSemanticMotor(
             self,
             self.mega,
-            pwm=4,
-            ina=39,
-            inb=41,
-            en_diag=43,
+            "shooter",
             polarity=getattr(CONFIG, "shooter_motor_polarity", 1),
         )
 

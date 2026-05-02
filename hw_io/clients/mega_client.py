@@ -105,6 +105,10 @@ class MegaSerialClient:
         value = max(-1.0, min(1.0, float(value)))
         return self.send(f"HBRIDGE_WRITE {ina} {inb} {en_diag} {pwm} {value:.3f}")
 
+    def motor_write(self, name: str, *, power: float) -> str:
+        power = max(-1.0, min(1.0, float(power)))
+        return self.send(f"MOTOR {name} WRITE power={power:.4f}")
+
     # -------------------------
     # read API
     # -------------------------

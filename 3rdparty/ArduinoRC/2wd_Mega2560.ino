@@ -104,12 +104,13 @@ static const uint8_t PIN_COLLECTOR_EN_DIAG = 49;
 
 // ------------------------- LOGICAL LINK MAPPING ----------
 #define ROBOCLAW_ADDR_A 0x80
-// Optional future second RoboClaw address, if needed:
-// #define ROBOCLAW_ADDR_B 0x81
+#define ROBOCLAW_ADDR_B 0x80
 
 // Current logical mapping:
 static const char MOTOR_NAME_DRIVE_FRONT_LEFT[]  = "drive_front_left";
 static const char MOTOR_NAME_DRIVE_FRONT_RIGHT[] = "drive_front_right";
+static const char MOTOR_NAME_DRIVE_REAR_LEFT[]   = "drive_rear_left";
+static const char MOTOR_NAME_DRIVE_REAR_RIGHT[]  = "drive_rear_right";
 static const char MOTOR_NAME_SHOOTER[]           = "shooter";
 static const char MOTOR_NAME_COLLECTOR[]         = "collector";
 
@@ -270,26 +271,45 @@ int toRoboSpeed(float pwr) {
   return (int)(pwr * 127.0f);
 }
 
-// Current drive mapping:
-//   drive_front_left  -> RoboClaw A M1
-//   drive_front_right -> RoboClaw A M2
-void writeDriveFrontLeft(float pwr) {
-  int speed = constrain(toRoboSpeed(pwr), -127, 127);
+// Drive mapping:
+//   drive_front_left  -> RoboClaw A M1, Serial1 pins 18/19
+//   drive_front_right -> RoboClaw A M2, Serial1 pins 18/19
+//   drive_rear_left   -> RoboClaw B M1, Serial3 pins 14/15
+//   drive_rear_right  -> RoboClaw B M2, Serial3 pins 14/15
 
-  if (speed >= 0) sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x00, (uint8_t)speed);
-  else sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x01, (uint8_t)(-speed));
+void writeRoboClawM1(HardwareSerial &port, uint8_t addr, float pwr) {
+  int speed = constrain(toRoboSpeed(pwr), -127, 127);
+  if (speed >= 0) sendRoboClaw(port, addr, 0x00, (uint8_t)speed);
+  else sendRoboClaw(port, addr, 0x01, (uint8_t)(-speed));
+}
+
+void writeRoboClawM2(HardwareSerial &port, uint8_t addr, float pwr) {
+  int speed = constrain(toRoboSpeed(pwr), -127, 127);
+  if (speed >= 0) sendRoboClaw(port, addr, 0x04, (uint8_t)speed);
+  else sendRoboClaw(port, addr, 0x05, (uint8_t)(-speed));
+}
+
+void writeDriveFrontLeft(float pwr) {
+  writeRoboClawM1(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, pwr);
 }
 
 void writeDriveFrontRight(float pwr) {
-  int speed = constrain(toRoboSpeed(pwr), -127, 127);
+  writeRoboClawM2(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, pwr);
+}
 
-  if (speed >= 0) sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x04, (uint8_t)speed);
-  else sendRoboClaw(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, 0x05, (uint8_t)(-speed));
+void writeDriveRearLeft(float pwr) {
+  writeRoboClawM1(ROBOCLAW_B_SERIAL, ROBOCLAW_ADDR_B, pwr);
+}
+
+void writeDriveRearRight(float pwr) {
+  writeRoboClawM2(ROBOCLAW_B_SERIAL, ROBOCLAW_ADDR_B, pwr);
 }
 
 void stopDrive() {
   writeDriveFrontLeft(0.0f);
   writeDriveFrontRight(0.0f);
+  writeDriveRearLeft(0.0f);
+  writeDriveRearRight(0.0f);
 }
 
 // =========================================================
@@ -432,22 +452,32 @@ bool setMotorByName(const char *name, float value) {
   value = constrain(value, -1.0f, 1.0f);
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_LEFT) == 0) {
-    piDriveFrontLeftCmd = value;
+    writeDriveFrontLeft(value);
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_RIGHT) == 0) {
-    piDriveFrontRightCmd = value;
+    writeDriveFrontRight(value);
+    return true;
+  }
+
+  if (strcmp(name, MOTOR_NAME_DRIVE_REAR_LEFT) == 0) {
+    writeDriveRearLeft(value);
+    return true;
+  }
+
+  if (strcmp(name, MOTOR_NAME_DRIVE_REAR_RIGHT) == 0) {
+    writeDriveRearRight(value);
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_SHOOTER) == 0) {
-    piShooterCmd = value;
+    writeShooterMotor(value);
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_COLLECTOR) == 0) {
-    piCollectorCmd = value;
+    writeCollectorMotor(value);
     return true;
   }
 
@@ -728,6 +758,24 @@ void handlePiCommand(char *line) {
   char kind[16];
   char name[32];
   float value = 0.0f;
+
+  char motorName[32];
+  float motorPower = 0.0f;
+
+    if (sscanf(line, "MOTOR %31s WRITE power=%f", motorName, &motorPower) == 2 ||
+        sscanf(line, "MOTOR %31s WRITE %f", motorName, &motorPower) == 2) {
+    if (setMotorByName(motorName, motorPower)) {
+        PI_SERIAL.print("OK MOTOR ");
+        PI_SERIAL.print(motorName);
+        PI_SERIAL.print(" power=");
+        PI_SERIAL.println(motorPower, 4);
+    } else {
+        PI_SERIAL.print("ERR MOTOR ");
+        PI_SERIAL.println(motorName);
+    }
+    return;
+  }
+
 
   if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
     if (strcmp(kind, "MOTOR") == 0) {
