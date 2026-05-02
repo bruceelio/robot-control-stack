@@ -760,22 +760,24 @@ void handlePiCommand(char *line) {
   float value = 0.0f;
 
   char motorName[32];
-  float motorPower = 0.0f;
+  char motorValueText[32];
 
-    if (sscanf(line, "MOTOR %31s WRITE power=%f", motorName, &motorPower) == 2 ||
-        sscanf(line, "MOTOR %31s WRITE %f", motorName, &motorPower) == 2) {
+  if (sscanf(line, "MOTOR %31s WRITE power=%31s", motorName, motorValueText) == 2 ||
+      sscanf(line, "MOTOR %31s WRITE %31s", motorName, motorValueText) == 2) {
+
+    float motorPower = atof(motorValueText);
+
     if (setMotorByName(motorName, motorPower)) {
-        PI_SERIAL.print("OK MOTOR ");
-        PI_SERIAL.print(motorName);
-        PI_SERIAL.print(" power=");
-        PI_SERIAL.println(motorPower, 4);
+      PI_SERIAL.print("OK MOTOR ");
+      PI_SERIAL.print(motorName);
+      PI_SERIAL.print(" power=");
+      PI_SERIAL.println(motorPower, 4);
     } else {
-        PI_SERIAL.print("ERR MOTOR ");
-        PI_SERIAL.println(motorName);
+      PI_SERIAL.print("ERR MOTOR ");
+      PI_SERIAL.println(motorName);
     }
     return;
   }
-
 
   if (sscanf(line, "SET %15s %31s %f", kind, name, &value) == 3) {
     if (strcmp(kind, "MOTOR") == 0) {
