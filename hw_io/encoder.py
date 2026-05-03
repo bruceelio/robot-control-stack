@@ -41,7 +41,7 @@ class Encoder:
         self.model = str(config["model"])
         self.encoder_type = str(config["encoder_type"])
 
-        self.counts_per_rev = int(config["counts_per_rev"])
+        self.counts_per_rev = float(config["counts_per_rev"])
         self.units = str(config["units"])
         self.units_per_rev = float(config["units_per_rev"])
 
@@ -136,8 +136,8 @@ class Encoder:
             velocity = delta / dt
 
         # 🔑 IMPORTANT DESIGN CHOICE:
-        # only advance state if source_valid
-        if source_valid:
+        # only advance state if valid
+        if valid:
             self._prev_count = count
             self._prev_timestamp = timestamp
 

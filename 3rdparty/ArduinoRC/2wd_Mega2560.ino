@@ -144,7 +144,7 @@ static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
 static const float TELEOP_SHOOTER_SCALE = 0.8f; // CH_LIFT also controls shooter power
 
 static const uint8_t CH_SHOOTER_FEED = 7; // SWA, pulse shooter feed servos
-static const unsigned long SHOOTER_FEED_PULSE_MS = 350;
+static const unsigned long SHOOTER_FEED_PULSE_MS = 700;
 static const int SHOOTER_FEED_STOP_US = 1500;
 static const int SHOOTER_FEED_LEFT_RUN_US = 1700;
 static const int SHOOTER_FEED_RIGHT_RUN_US = 1300;
@@ -422,7 +422,7 @@ void updateLiftFromIbus() {
 
   // Same CH6 knob also controls shooter power in teleop.
   // Uses absolute value so both halves of knob travel spin shooter forward.
-  float shooterPower = fabs(pos) * TELEOP_SHOOTER_SCALE;
+  float shooterPower = -fabs(pos) * TELEOP_SHOOTER_SCALE;
   writeShooterMotor(shooterPower);
 }
 

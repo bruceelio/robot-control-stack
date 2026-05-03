@@ -29,6 +29,7 @@ from calibration.resolve import resolve
 
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
+from hw_io.encoder_manager import EncoderManager, make_signals
 
 from log_trace import next_tick
 from hw_io.buzzer_patterns import BuzzerCue
@@ -59,6 +60,8 @@ class Controller:
 
     def __init__(self, robot):
         self.robot = robot
+        self.signals = make_signals()
+        self.encoder_manager = EncoderManager(CONFIG.encoders)
 
         # -------------------------
         # Core subsystems
@@ -237,6 +240,7 @@ class Controller:
         next_tick()
 
         now_s = time.time()
+        self.encoder_manager.update(io=self.io, signals=self.signals)
 
         # Bind runtime context to backend
         self.motion_backend.localisation = self.localisation

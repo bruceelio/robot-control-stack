@@ -27,7 +27,7 @@ SURFACE_MULTIPLIERS = {
 ENCODERS = {
     "deadwheel_parallel": "gobilda_4bar_odometry_pod_32mm",
     "deadwheel_perpendicular": "gobilda_swingarm_odometry_pod_48mm",
-#    "shooter": "gobilda_yellowjacket_312rpm",
+    "shooter": "gobilda_yellowjacket_6000rpm",
 }
 
 # relative to base_link
