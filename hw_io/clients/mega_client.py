@@ -143,6 +143,9 @@ class MegaSerialClient:
         except (TypeError, ValueError):
             return None
 
+    def voltage_read(self, name: str) -> str:
+        return self.send(f"VOLTAGE {name} READ")
+
     def range_read(self, trig: int, echo: int) -> float | None:
         resp = self.send(f"READ RANGE {trig} {echo}")
         return self._parse_optional_float(resp)

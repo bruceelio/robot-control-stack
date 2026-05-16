@@ -130,6 +130,9 @@ class MegaSerialClient:
     # reads
     # -------------------------
 
+    def voltage_read(self, name: str) -> str:
+        return self.send(f"VOLTAGE {name} READ")
+
     def digital_read(self, pin: int) -> str:
         return self.send(f"READ DI {pin}")
 

@@ -272,11 +272,22 @@ class BobBotIO(IOMap):
         return client
 
     def _detect_cameras(self):
+        enabled = bool(getattr(CONFIG, "cameras_enabled", True))
+
+        if not enabled:
+            print("[CAMERA] camera detection disabled")
+            return
+
         for key, camera_name in CONFIG.cameras.items():
-            self._cameras[key] = resolve_camera(
-                camera_name=camera_name,
-                robot=self.robot,
-            )
+            try:
+                self._cameras[key] = resolve_camera(
+                    camera_name=camera_name,
+                    robot=self.robot,
+                )
+                print(f"[CAMERA] connected: {key}")
+
+            except Exception as e:
+                print(f"[CAMERA WARN] {key} unavailable: {e}")
 
     def _init_sensors(self):
         self._bumper = ReadOnlyCollection(
@@ -290,9 +301,9 @@ class BobBotIO(IOMap):
 
         self._reflectance = ReadOnlyCollection(
             {
-                "left": lambda: self._read_uno_analog_float("A0"),
-                "centre": lambda: self._read_uno_analog_float("A1"),
-                "right": lambda: self._read_uno_analog_float("A2"),
+                "left": lambda: self._read_uno_analog_float("A5"),
+                "centre": lambda: self._read_uno_analog_float("A6"),
+                "right": lambda: self._read_uno_analog_float("A7"),
             }
         )
 
@@ -308,7 +319,7 @@ class BobBotIO(IOMap):
         self._voltage = NamedIndexedCollection(
             ordered_items=[],
             named_items={
-                "battery": VoltageReading(lambda: self._read_mega_analog_float("A0")),
+                "battery": VoltageReading(lambda: self._read_voltage("battery"))
             },
         )
 
@@ -483,17 +494,34 @@ class BobBotIO(IOMap):
         raw = self.uno.range_read(trig, echo)
         return self._parse_last_number(raw)
 
-    def _read_mega_analog_float(self, pin: str) -> Optional[float]:
+    def _read_mega_analog_float(self, pin) -> Optional[float]:
         if self.mega is None:
+            print(f"[MEGA ANALOG] {pin}: mega is None")
             return None
+
         raw = self.mega.analog_read(pin)
-        return self._parse_last_number(raw)
+        parsed = self._parse_last_number(raw)
+
+        print(f"[MEGA ANALOG] {pin}: raw={raw!r} parsed={parsed!r}")
+
+        return parsed
 
     def _read_mega_quad(self, pin_a: int, pin_b: int) -> tuple[Optional[bool], Optional[bool]]:
         if self.mega is None:
             return None, None
         raw = self.mega.quad_read(pin_a, pin_b)
         return self._parse_quad(raw)
+
+    def _read_voltage(self, name: str) -> Optional[float]:
+        if self.mega is None:
+            return None
+
+        raw = self.mega.voltage_read(name)
+        parsed = self._parse_last_number(raw)
+
+        print(f"[MEGA VOLTAGE] name={name} raw={raw!r} parsed={parsed!r}")
+
+        return parsed
 
     @property
     def outputs(self):

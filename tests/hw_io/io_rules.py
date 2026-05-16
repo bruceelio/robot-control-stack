@@ -30,7 +30,7 @@ THRESHOLDS = {
 }
 
 RANGES = {
-    "io.voltage[\"battery\"].volts": (10.5, 13.5),
+    "io.voltage[\"battery\"].volts": (0, 20),
 }
 
 DEFAULT_SERVO_RANGE = (-0.5, 0.0, 0.5)  # min, neutral, max

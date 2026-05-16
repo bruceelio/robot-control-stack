@@ -30,7 +30,7 @@ io.otos.heading,True,False,covered by io.otos.pose
 "io.servo[""shooter_feed_right""].position",False,False,default range -0.5 0.0 +0.5 unless overridden
 "io.servo[""gripper""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
 "io.servo[""lift""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
-"io.voltage[""battery""].volts",True,False,expected range configured in io_rules.py
+"io.voltage[""battery""].volts",True,True,expected range configured in io_rules.py
 "io.camera[""front""].see()",True,False,tested separately by camera protocol
 "io.bumper[""front_left""]",True,False,
 "io.bumper[""front_right""]",True,False,

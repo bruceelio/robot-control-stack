@@ -25,20 +25,27 @@ SURFACE_MULTIPLIERS = {
 }
 
 ENCODERS = {
-    "deadwheel_parallel": "gobilda_4bar_odometry_pod_32mm",
-    "deadwheel_perpendicular": "gobilda_swingarm_odometry_pod_48mm",
-    "shooter": "gobilda_yellowjacket_6000rpm",
+#    "deadwheel_parallel": "gobilda_4bar_odometry_pod_32mm",
+#    "deadwheel_perpendicular": "gobilda_swingarm_odometry_pod_48mm",
+#    "shooter": "gobilda_yellowjacket_6000rpm",
+ }
+
+VOLTAGE_SENSORS = {
+    "battery": "stemedu_voltage_sensor_0_25v",
 }
+
+# CAMERA/GRIPPER MOUNTS
 
 # relative to base_link
 # base_link = midpoint between drive wheels
 # +x forward, +y left, +z up
 # y_mm closer towards 0 moves left
+# box settings (30, -55, 170, -8.0)
 
 CAMERA_MOUNTS = {
     "front": {
-        "x_mm": 30.0,
-        "y_mm": -55.0,
+        "x_mm": 40.0,
+        "y_mm": -70.0,
         "z_mm": 170.0,
         "roll_deg": 0.0,
         "pitch_deg": -8.0,

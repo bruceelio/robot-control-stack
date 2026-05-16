@@ -292,10 +292,22 @@ def test_analog_delta(io, path: str) -> Result:
 
 
 def test_range_check(io, path: str) -> Result:
-    value = float(read_io_path(io, path))
+    raw_value = read_io_path(io, path)
+
+    if raw_value is None:
+        print("value: None")
+        return Result("FAIL", path, "no reading")
+
+    try:
+        value = float(raw_value)
+    except Exception:
+        print(f"value: {raw_value!r}")
+        return Result("FAIL", path, f"non-numeric reading: {raw_value!r}")
+
     low, high = RANGES.get(path, (float("-inf"), float("inf")))
     print(f"value: {value}")
     print(f"expected range: {low} to {high}")
+
     if low <= value <= high:
         return Result("PASS", path, f"value={value:.3g}")
     return Result("FAIL", path, f"value={value:.3g} outside range")

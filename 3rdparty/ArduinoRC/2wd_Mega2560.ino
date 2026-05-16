@@ -894,6 +894,35 @@ void handlePiCommand(char *line) {
   // READ LIMIT lift_high
   // READ QUAD 22 23
   // READ RANGE 2 3
+
+  // VOLTAGE battery READ
+  char voltageName[32];
+  char voltageCmd[32];
+
+  if (sscanf(line, "VOLTAGE %31s %31s", voltageName, voltageCmd) == 2) {
+
+    PI_SERIAL.println("DEBUG VOLTAGE HANDLER");
+
+    if (strcmp(voltageName, "battery") == 0 &&
+        strcmp(voltageCmd, "READ") == 0) {
+
+      int raw = readAnalogSource(BATTERY_VOLTAGE_PIN);
+
+      float sensorVolts = raw * (5.0f / 1023.0f);
+      float batteryVolts = sensorVolts * 5.0f;
+
+      PI_SERIAL.print("OK VOLTAGE battery volts=");
+      PI_SERIAL.println(batteryVolts, 2);
+      return;
+    }
+
+    PI_SERIAL.print("ERR VOLTAGE ");
+    PI_SERIAL.print(voltageName);
+    PI_SERIAL.print(" ");
+    PI_SERIAL.println(voltageCmd);
+    return;
+  }
+
   char rkind[16];
   char a1[32];
   char a2[32];
