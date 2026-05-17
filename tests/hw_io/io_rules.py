@@ -11,12 +11,14 @@ TEST_RULES = {
 
     "io.motor": "motor_output",
     "io.servo": "servo_output",
+    "io.led": "led_output",
 
     "io.encoder": "encoder",
     "io.imu": "imu",
     "io.otos": "otos",
 
     "io.camera": "external_protocol",
+    "io.audio": "external_protocol",
 }
 
 THRESHOLDS = {

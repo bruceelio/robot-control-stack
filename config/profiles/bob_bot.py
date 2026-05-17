@@ -34,6 +34,8 @@ VOLTAGE_SENSORS = {
     "battery": "stemedu_voltage_sensor_0_25v",
 }
 
+BATTERY_VOLTAGE_NOMINAL = 13.7
+
 # CAMERA/GRIPPER MOUNTS
 
 # relative to base_link

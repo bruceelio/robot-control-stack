@@ -223,6 +223,8 @@ def run_rule(rule: str, io, path: str, notes: str = "") -> Result:
             result = test_encoder(io, path)
         elif rule == "imu":
             result = test_imu(io, path)
+        elif rule == "led_output":
+            result = test_led_output(io, path)
         elif rule == "otos":
             result = test_otos(io, path)
         else:
@@ -289,6 +291,35 @@ def test_analog_delta(io, path: str) -> Result:
     if result.status == "PASS" and values:
         result.note = f"min={min(values):.3g}, max={max(values):.3g}, delta={max(values)-min(values):.3g}"
     return result
+
+
+def test_led_output(io, path: str) -> Result:
+    input("Ensure LED area is visible. Press Enter to test LED brightness...")
+    try:
+        for brightness in (0.0, 0.5, 1.0, 0.0):
+            print(f"Set brightness: {brightness}")
+            write_io_path(io, path, brightness)
+            sleep_io(io, 0.5)
+    finally:
+        try:
+            write_io_path(io, path, 0.0)
+        except Exception:
+            pass
+
+    choice = operator_choice(
+        "[c] correct/pass  [n] no light/change  [r] retest  [f] fail  [s] skip  [q] quit: ",
+        allowed=("c", "n", "r", "f", "s", "q"),
+    )
+
+    if choice == "c":
+        return Result("PASS", path)
+    if choice == "r":
+        return test_led_output(io, path)
+    if choice == "s":
+        return Result("SKIP", path, "operator skipped")
+    if choice == "q":
+        return Result("ABORT", path, "operator quit")
+    return Result("FAIL", path, {"n": "no light/change", "f": "operator failed"}.get(choice, "operator failed"))
 
 
 def test_range_check(io, path: str) -> Result:
@@ -382,16 +413,72 @@ def test_servo_output(io, path: str) -> Result:
 
 def test_encoder(io, path: str) -> Result:
     parsed = parse_io_path(path)
+
     if parsed.name is None:
         return Result("FAIL", path, "encoder path must include a named encoder")
 
     base = f'io.encoder["{parsed.name}"]'
+
+    # -------------------------------------------------
+    # First try semantic count encoder
+    # -------------------------------------------------
+
+    count_path = base + ".count"
+
+    try:
+        first = read_io_path(io, count_path)
+
+        if first is not None:
+            print("Detected semantic/count encoder.")
+            print("Move the wheel/shaft manually.")
+            print("Watching encoder count changes.")
+
+            values = []
+            last = None
+
+            while True:
+                try:
+                    value = int(read_io_path(io, count_path))
+                except Exception as exc:
+                    return Result("FAIL", path, f"encoder count read error: {exc}")
+
+                values.append(value)
+
+                if value != last:
+                    print(f"count={value}")
+                    last = value
+
+                if len(values) >= 2 and max(values) != min(values):
+                    delta = max(values) - min(values)
+                    return Result("PASS", path, f"count changed by {delta}")
+
+                if key_pressed():
+                    choice = sys.stdin.read(1).lower()
+
+                    if choice == "f":
+                        return Result("FAIL", path, "operator failed")
+
+                    if choice == "s":
+                        return Result("SKIP", path, "operator skipped")
+
+                    if choice == "q":
+                        return Result("ABORT", path, "operator quit")
+
+                sleep_io(io, 0.1)
+
+    except Exception:
+        pass
+
+    # -------------------------------------------------
+    # Fallback to raw quadrature encoder
+    # -------------------------------------------------
+
     a_path = base + ".A"
     b_path = base + ".B"
 
-    print("Move the wheel/shaft manually. No motors will be commanded.")
-    print("Live A/B quadrature snapshots will be shown on change.")
-    print("Options while monitoring: [f] fail and continue  [s] skip  [q] quit checkout")
+    print("Detected raw quadrature encoder.")
+    print("Move the wheel/shaft manually.")
+    print("Watching A/B transitions.")
 
     seen_a = set()
     seen_b = set()
@@ -407,6 +494,7 @@ def test_encoder(io, path: str) -> Result:
             return Result("FAIL", path, f"encoder read error: {exc}")
 
         pair = (a, b)
+
         seen_a.add(a)
         seen_b.add(b)
         seen_pairs.add(pair)
@@ -417,8 +505,10 @@ def test_encoder(io, path: str) -> Result:
             last_pair = pair
 
         required_changes = int(THRESHOLDS.get("encoder_state_changes", 3))
+
         if len(seen_a) == 2 and len(seen_b) == 2 and transitions >= required_changes:
             states = sorted((int(x), int(y)) for x, y in seen_pairs)
+
             return Result(
                 "PASS",
                 path,
@@ -427,13 +517,18 @@ def test_encoder(io, path: str) -> Result:
 
         if key_pressed():
             choice = sys.stdin.read(1).lower()
+
             if choice == "f":
                 return Result("FAIL", path, "operator failed")
+
             if choice == "s":
                 return Result("SKIP", path, "operator skipped")
+
             if choice == "q":
                 return Result("ABORT", path, "operator quit")
+
         sleep_io(io, 0.1)
+
 
 def test_imu(io, path: str) -> Result:
     values = {"heading": [], "pitch": [], "roll": []}

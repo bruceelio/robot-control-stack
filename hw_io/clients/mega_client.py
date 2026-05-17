@@ -82,16 +82,6 @@ class MegaSerialClient:
     # link / direct write API
     # -------------------------
 
-    def link_write(self, tx_pin: int, rx_pin: int, channel: str, value: float) -> str:
-        value = max(-1.0, min(1.0, float(value)))
-        return self.send(f"LINK {tx_pin} {rx_pin} {channel} {value:.3f}")
-
-    def link_18_19(self, channel: str, value: float) -> str:
-        return self.link_write(18, 19, channel, value)
-
-    def link_14_15(self, channel: str, value: float) -> str:
-        return self.link_write(14, 15, channel, value)
-
     def servo_write(self, target: str | int, value: float | None = None, *, position: float | None = None) -> str:
         if position is not None:
             position = max(-1.0, min(1.0, float(position)))
@@ -103,52 +93,58 @@ class MegaSerialClient:
         value = max(-1.0, min(1.0, float(value)))
         return self.send(f"SERVO_WRITE {target} {value:.3f}")
 
-    def group_write(self, pin1: int, value1: float, pin2: int, value2: float) -> str:
-        value1 = max(-1.0, min(1.0, float(value1)))
-        value2 = max(-1.0, min(1.0, float(value2)))
-        return self.send(f"GROUP_WRITE {pin1} {value1:.3f} {pin2} {value2:.3f}")
-
-    def hbridge_write(self, *, ina: int, inb: int, en_diag: int, pwm: int, value: float) -> str:
-        value = max(-1.0, min(1.0, float(value)))
-        return self.send(f"HBRIDGE_WRITE {ina} {inb} {en_diag} {pwm} {value:.3f}")
-
     def motor_write(self, name: str, *, power: float) -> str:
         power = max(-1.0, min(1.0, float(power)))
         return self.send(f"MOTOR {name} WRITE power={power:.4f}")
+
+    def led_write(self, name: str, *, brightness: float) -> str:
+        brightness = max(0.0, min(1.0, float(brightness)))
+        return self.send(f"LED {name} WRITE brightness={brightness:.4f}")
+
+    def audio_play(self, name: str, **kwargs) -> str:
+        if name == "df_player":
+            track = int(kwargs["track"])
+            return self.send(f"AUDIO df_player PLAY track={track}")
+
+        if name == "piezo":
+            tone = int(kwargs["tone"])
+            duration_ms = int(kwargs["duration_ms"])
+            return self.send(
+                f"AUDIO piezo PLAY tone={tone} duration_ms={duration_ms}"
+            )
+
+        raise ValueError(f"unsupported audio device: {name}")
 
     # -------------------------
     # read API
     # -------------------------
 
-    def digital_read(self, pin: int) -> bool:
-        resp = self.send(f"READ DI {pin}")
-        return resp.strip().upper() in {"1", "HIGH", "TRUE", "ON"}
+    def bumper_read(self, name: str) -> str:
+        return self.send(f"BUMPER {name} READ")
 
-    def analog_read(self, pin_or_name: str | int) -> float | None:
-        resp = self.send(f"READ AI {pin_or_name}")
-        return self._parse_optional_float(resp)
+    def current_read(self, name: str) -> str:
+        return self.send(f"CURRENT {name} READ")
 
-    def battery_read(self, channel: str = "voltage") -> float | None:
-        resp = self.send(f"READ BATTERY {channel}")
-        return self._parse_optional_float(resp)
+    def encoder_read(self, name: str) -> str:
+        return self.send(f"ENCODER {name} READ")
 
-    def limit_read(self, name: str) -> bool:
-        resp = self.send(f"READ LIMIT {name}")
-        return resp.strip().upper() in {"1", "HIGH", "TRUE", "ON"}
+    def imu_read(self, name: str) -> str:
+        return self.send(f"IMU {name} READ")
 
-    def quad_read(self, pin_a: int, pin_b: int) -> int | None:
-        resp = self.send(f"READ QUAD {pin_a} {pin_b}")
-        try:
-            return int(resp.strip())
-        except (TypeError, ValueError):
-            return None
+    def otos_read(self, name: str) -> str:
+        return self.send(f"OTOS {name} READ")
+
+    def reflectance_read(self, name: str) -> str:
+        return self.send(f"REFLECTANCE {name} READ")
+
+    def ultrasonic_read(self, name: str) -> str:
+        return self.send(f"ULTRASONIC {name} READ")
+
+    def limit_read(self, name: str) -> str:
+        return self.send(f"LIMIT {name} READ")
 
     def voltage_read(self, name: str) -> str:
         return self.send(f"VOLTAGE {name} READ")
-
-    def range_read(self, trig: int, echo: int) -> float | None:
-        resp = self.send(f"READ RANGE {trig} {echo}")
-        return self._parse_optional_float(resp)
 
     @staticmethod
     def _parse_optional_float(resp: str) -> float | None:

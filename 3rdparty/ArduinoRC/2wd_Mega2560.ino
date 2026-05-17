@@ -901,8 +901,6 @@ void handlePiCommand(char *line) {
 
   if (sscanf(line, "VOLTAGE %31s %31s", voltageName, voltageCmd) == 2) {
 
-    PI_SERIAL.println("DEBUG VOLTAGE HANDLER");
-
     if (strcmp(voltageName, "battery") == 0 &&
         strcmp(voltageCmd, "READ") == 0) {
 

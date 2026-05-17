@@ -99,8 +99,36 @@ class CurrentReading:
         return self._getter()
 
 
+class EncoderReading:
+    def __init__(self, getter: Callable[[], Dict[str, Any]]):
+        self._getter = getter
+
+    @property
+    def count(self) -> Optional[int]:
+        return self._getter().get("count")
+
+    @property
+    def timestamp_ms(self) -> Optional[int]:
+        return self._getter().get("timestamp_ms")
+
+    @property
+    def valid(self) -> Optional[bool]:
+        return self._getter().get("valid")
+
+    @property
+    def valid_flags(self) -> Optional[str]:
+        return self._getter().get("valid_flags")
+
+
 class QuadratureSnapshot:
-    """Direct hardware-facing A/B snapshot. No count or velocity calculation."""
+    """
+    Raw A/B encoder phase snapshot abstraction.
+
+    Not used on BobBot.
+
+    Retained for future robots that expose direct quadrature
+    phase lines to the Pi or to a low-level MCU bridge.
+    """
 
     def __init__(self, getter: Callable[[], tuple[Optional[bool], Optional[bool]]]):
         self._getter = getter
@@ -151,6 +179,44 @@ class MegaSemanticMotor:
         print(f"[BOBBOT MOTOR] resp={resp}")
 
 
+class LedOutput:
+    def __init__(self, write_fn):
+        self._write_fn = write_fn
+        self._brightness = 0.0
+
+    @property
+    def brightness(self) -> float:
+        return self._brightness
+
+    @brightness.setter
+    def brightness(self, value: float) -> None:
+        value = max(0.0, min(1.0, float(value)))
+        self._brightness = value
+        self._write_fn(value)
+
+
+class DfPlayerAudio:
+    def __init__(self, play_fn):
+        self._play_fn = play_fn
+        self._track = None
+
+    @property
+    def track(self):
+        return self._track
+
+    @track.setter
+    def track(self, value: int) -> None:
+        self._track = int(value)
+        self._play_fn(self._track)
+
+
+class PiezoAudio:
+    def __init__(self, play_tone_fn):
+        self._play_tone_fn = play_tone_fn
+
+    def play_tone(self, tone: int, duration_ms: int = 250) -> None:
+        self._play_tone_fn(int(tone), int(duration_ms))
+
 class MegaServoSigned:
     """
     Sends signed -1..1 values through directly.
@@ -200,9 +266,12 @@ class BobBotIO(IOMap):
         self._bumper = None
         self._reflectance = None
         self._ultrasonic = None
+        self._limit = None
         self._voltage = None
         self._current = None
         self._encoder = None
+        self._led = None
+        self._audio = None
 
         self._hb_seq = 1
         self._last_hb_t = 0.0
@@ -292,27 +361,30 @@ class BobBotIO(IOMap):
     def _init_sensors(self):
         self._bumper = ReadOnlyCollection(
             {
-                "front_left": lambda: bool(self.uno.digital_read(10)),
-                "front_right": lambda: bool(self.uno.digital_read(11)),
-                "rear_left": lambda: bool(self.uno.digital_read(12)),
-                "rear_right": lambda: bool(self.uno.digital_read(13)),
+                "front_left": lambda: self._read_bool(self.mega.bumper_read("front_left")),
+                "front_right": lambda: self._read_bool(self.mega.bumper_read("front_right")),
             }
         )
 
         self._reflectance = ReadOnlyCollection(
             {
-                "left": lambda: self._read_uno_analog_float("A5"),
-                "centre": lambda: self._read_uno_analog_float("A6"),
-                "right": lambda: self._read_uno_analog_float("A7"),
+                "left": lambda: self._read_number(self.mega.reflectance_read("left")),
+                "centre": lambda: self._read_number(self.mega.reflectance_read("centre")),
+                "right": lambda: self._read_number(self.mega.reflectance_read("right")),
             }
         )
 
         self._ultrasonic = ReadOnlyCollection(
             {
-                "front": lambda: self._read_uno_range_float(2, 3),
-                "left": lambda: self._read_uno_range_float(4, 5),
-                "right": lambda: self._read_uno_range_float(6, 7),
-                "rear": lambda: self._read_uno_range_float(8, 9),
+                "front_left": lambda: self._read_number(self.mega.ultrasonic_read("front_left")),
+                "front_right": lambda: self._read_number(self.mega.ultrasonic_read("front_right")),
+            }
+        )
+
+        self._limit = ReadOnlyCollection(
+            {
+                "lift_high": lambda: self._read_bool(self.mega.limit_read("lift_high")),
+                "lift_low": lambda: self._read_bool(self.mega.limit_read("lift_low")),
             }
         )
 
@@ -326,18 +398,18 @@ class BobBotIO(IOMap):
         self._current = NamedIndexedCollection(
             ordered_items=[],
             named_items={
-                "gripper_right": CurrentReading(lambda: self._read_mega_analog_float("A1")),
+                "gripper_right": CurrentReading(lambda: self._read_current("gripper_right")),
             },
         )
 
         self._encoder = NamedIndexedCollection(
             ordered_items=[],
             named_items={
-                "drive_front_left": QuadratureSnapshot(lambda: self._read_mega_quad(22, 24)),
-                "deadwheel_parallel": QuadratureSnapshot(lambda: self._read_mega_quad(23, 25)),
-                "drive_front_right": QuadratureSnapshot(lambda: self._read_mega_quad(26, 28)),
-                "deadwheel_perpendicular": QuadratureSnapshot(lambda: self._read_mega_quad(27, 29)),
-                "shooter": QuadratureSnapshot(lambda: self._read_mega_quad(35, 37)),
+                "drive_front_left": EncoderReading(lambda: self._read_encoder("drive_front_left")),
+                "drive_front_right": EncoderReading(lambda: self._read_encoder("drive_front_right")),
+                "deadwheel_parallel": EncoderReading(lambda: self._read_encoder("deadwheel_parallel")),
+                "deadwheel_perpendicular": EncoderReading(lambda: self._read_encoder("deadwheel_perpendicular")),
+                "shooter": EncoderReading(lambda: self._read_encoder("shooter")),
             },
         )
 
@@ -407,13 +479,9 @@ class BobBotIO(IOMap):
             self,
             lambda value: self.mega.servo_write("gripper", position=value),
         )
-        shooter_feed_left = MegaServoSigned(
+        shooter_feed = MegaServoSigned(
             self,
-            lambda value: self.mega.servo_write(9, value),
-        )
-        shooter_feed_right = MegaServoSigned(
-            self,
-            lambda value: self.mega.servo_write(10, value),
+            lambda value: self.mega.servo_write("shooter_feed", position=value),
         )
 
         self._servo = NamedIndexedCollection(
@@ -421,8 +489,32 @@ class BobBotIO(IOMap):
             named_items={
                 "lift": lift,
                 "gripper": gripper,
-                "shooter_feed_left": shooter_feed_left,
-                "shooter_feed_right": shooter_feed_right,
+                "shooter_feed": shooter_feed,
+            },
+        )
+
+        self._led = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "lisiparoi": LedOutput(
+                    lambda brightness: self.mega.led_write("lisiparoi", brightness=brightness)
+                ),
+            },
+        )
+
+        self._audio = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "df_player": DfPlayerAudio(
+                    lambda track: self.mega.audio_play("df_player", track=track)
+                ),
+                "piezo": PiezoAudio(
+                    lambda tone, duration_ms: self.mega.audio_play(
+                        "piezo",
+                        tone=tone,
+                        duration_ms=duration_ms,
+                    )
+                ),
             },
         )
 
@@ -485,33 +577,6 @@ class BobBotIO(IOMap):
 
         return None, None
 
-    def _read_uno_analog_float(self, pin: str) -> float:
-        raw = self.uno.analog_read(pin)
-        parsed = self._parse_last_number(raw)
-        return 0.0 if parsed is None else float(parsed)
-
-    def _read_uno_range_float(self, trig: int, echo: int) -> Optional[float]:
-        raw = self.uno.range_read(trig, echo)
-        return self._parse_last_number(raw)
-
-    def _read_mega_analog_float(self, pin) -> Optional[float]:
-        if self.mega is None:
-            print(f"[MEGA ANALOG] {pin}: mega is None")
-            return None
-
-        raw = self.mega.analog_read(pin)
-        parsed = self._parse_last_number(raw)
-
-        print(f"[MEGA ANALOG] {pin}: raw={raw!r} parsed={parsed!r}")
-
-        return parsed
-
-    def _read_mega_quad(self, pin_a: int, pin_b: int) -> tuple[Optional[bool], Optional[bool]]:
-        if self.mega is None:
-            return None, None
-        raw = self.mega.quad_read(pin_a, pin_b)
-        return self._parse_quad(raw)
-
     def _read_voltage(self, name: str) -> Optional[float]:
         if self.mega is None:
             return None
@@ -522,6 +587,61 @@ class BobBotIO(IOMap):
         print(f"[MEGA VOLTAGE] name={name} raw={raw!r} parsed={parsed!r}")
 
         return parsed
+
+    def _read_number(self, raw) -> Optional[float]:
+        return self._parse_last_number(raw)
+
+    def _read_bool(self, raw) -> bool:
+        text = str(raw or "").strip().lower()
+        if text.endswith("1") or "value=1" in text:
+            return True
+        if text.endswith("0") or "value=0" in text:
+            return False
+        return text in {"true", "high", "on"}
+
+    def _read_current(self, name: str) -> Optional[float]:
+        if self.mega is None:
+            return None
+        raw = self.mega.current_read(name)
+        parsed = self._parse_last_number(raw)
+        print(f"[MEGA CURRENT] name={name} raw={raw!r} parsed={parsed!r}")
+        return parsed
+
+    def _parse_key_values(self, raw) -> Dict[str, str]:
+        text = str(raw or "")
+        out = {}
+        for part in text.split():
+            if "=" in part:
+                key, value = part.split("=", 1)
+                out[key] = value
+        return out
+
+    def _read_encoder(self, name: str) -> Dict[str, Any]:
+        if self.mega is None:
+            return {
+                "count": None,
+                "timestamp_ms": None,
+                "valid": None,
+                "valid_flags": None,
+            }
+
+        raw = self.mega.encoder_read(name)
+        fields = self._parse_key_values(raw)
+
+        print(f"[MEGA ENCODER] name={name} raw={raw!r} fields={fields!r}")
+
+        def as_int(key):
+            try:
+                return int(fields[key])
+            except Exception:
+                return None
+
+        return {
+            "count": as_int("count"),
+            "timestamp_ms": as_int("timestamp_ms"),
+            "valid": None if "valid" not in fields else bool(int(fields["valid"])),
+            "valid_flags": fields.get("valid_flags"),
+        }
 
     @property
     def outputs(self):
@@ -551,6 +671,10 @@ class BobBotIO(IOMap):
     @property
     def ultrasonic(self):
         return self._ultrasonic
+
+    @property
+    def limit(self):
+        return self._limit
 
     def ultrasonics(self) -> Dict[str, Optional[float]]:
         return self._ultrasonic.as_dict()
@@ -588,6 +712,10 @@ class BobBotIO(IOMap):
             "bumper": self.bumpers(),
             "reflectance": self.reflectance_values(),
             "ultrasonic": self.ultrasonics(),
+            "limit": {
+                "lift_high": self.limit["lift_high"],
+                "lift_low": self.limit["lift_low"],
+            },
             "voltage": {
                 "battery": self.voltage["battery"].volts,
             },
@@ -600,8 +728,16 @@ class BobBotIO(IOMap):
         return {"voltage": self.voltage["battery"].volts}
 
     @property
+    def led(self):
+        return self._led
+
+    @property
+    def audio(self):
+        return self._audio
+
+    @property
     def buzzer(self):
-        return None
+        return self._audio["piezo"]
 
     @property
     def kch(self):

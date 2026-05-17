@@ -1,45 +1,64 @@
 pi_io_path,exists,enabled,notes
-"io.current[""gripper_right""].amps",True,False,show max current while gripper is exercised manually
-"io.encoder[""drive_front_left""].A",True,False,manual wheel/shaft movement only; A channel snapshot
-"io.encoder[""drive_front_left""].B",True,False,manual wheel/shaft movement only; B channel snapshot
-"io.encoder[""deadwheel_parallel""].A",True,False,manual robot movement only; A channel snapshot
-"io.encoder[""deadwheel_parallel""].B",True,False,manual robot movement only; B channel snapshot
-"io.encoder[""drive_front_right""].A",True,False,manual wheel/shaft movement only; A channel snapshot
-"io.encoder[""drive_front_right""].B",True,False,manual wheel/shaft movement only; B channel snapshot
-"io.encoder[""deadwheel_perpendicular""].A",True,False,manual robot movement only; A channel snapshot
-"io.encoder[""deadwheel_perpendicular""].B",True,False,manual robot movement only; B channel snapshot
-"io.encoder[""shooter""].A",True,False,manual shaft movement only; A channel snapshot
-"io.encoder[""shooter""].B",True,False,manual shaft movement only; B channel snapshot
-io.imu.orientation,True,False,display heading pitch roll
-io.imu.heading,True,False,covered by imu.orientation
-io.imu.pitch,True,False,covered by imu.orientation
-io.imu.roll,True,False,covered by imu.orientation
-"io.limit[""lift_high""]",True,False,
-"io.limit[""lift_low""]",True,False,
-"io.motor[""drive_rear_left""].power",False,False,short forward/reverse pulse
-"io.motor[""drive_rear_right""].power",False,False,short forward/reverse pulse
-"io.motor[""drive_front_left""].power",True,False,short forward/reverse pulse
-"io.motor[""drive_front_right""].power",True,False,short forward/reverse pulse
-"io.motor[""collector""].power",False,False,short forward/reverse pulse
-"io.motor[""shooter""].power",True,True,short forward/reverse pulse
-io.otos.pose,True,False,primary OTOS test
-io.otos.x,True,False,covered by io.otos.pose
-io.otos.y,True,False,covered by io.otos.pose
-io.otos.heading,True,False,covered by io.otos.pose
-"io.servo[""shooter_feed_left""].position",False,False,default range -0.5 0.0 +0.5 unless overridden
-"io.servo[""shooter_feed_right""].position",False,False,default range -0.5 0.0 +0.5 unless overridden
-"io.servo[""gripper""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
-"io.servo[""lift""].position",True,True,default range -0.5 0.0 +0.5 unless overridden
-"io.voltage[""battery""].volts",True,True,expected range configured in io_rules.py
+"io.current[""gripper_right""].amps",True,False,semantic CURRENT gripper_right READ; show amps while gripper is exercised manually
+"io.encoder[""deadwheel_parallel""].count",True,False,semantic encoder count from Mega; manual wheel/shaft movement only
+"io.encoder[""deadwheel_parallel""].timestamp_ms",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_parallel""].valid",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_parallel""].valid_flags",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_parallel""].A",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""deadwheel_parallel""].B",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""deadwheel_perpendicular""].count",True,False,semantic encoder count from Mega; manual wheel/shaft movement only
+"io.encoder[""deadwheel_perpendicular""].timestamp_ms",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_perpendicular""].valid",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_perpendicular""].valid_flags",True,False,covered by encoder semantic read
+"io.encoder[""deadwheel_perpendicular""].A",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""deadwheel_perpendicular""].B",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""drive_front_left""].count",True,False,semantic encoder count from Mega; manual wheel/shaft movement only
+"io.encoder[""drive_front_left""].timestamp_ms",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_left""].valid",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_left""].valid_flags",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_left""].A",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""drive_front_left""].B",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""drive_front_right""].count",True,False,semantic encoder count from Mega; manual wheel/shaft movement only
+"io.encoder[""drive_front_right""].timestamp_ms",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_right""].valid",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_right""].valid_flags",True,False,covered by encoder semantic read
+"io.encoder[""drive_front_right""].A",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""drive_front_right""].B",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""shooter""].count",True,False,semantic encoder count from Mega; manual wheel/shaft movement only
+"io.encoder[""shooter""].timestamp_ms",True,False,covered by encoder semantic read
+"io.encoder[""shooter""].valid",True,False,covered by encoder semantic read
+"io.encoder[""shooter""].valid_flags",True,False,covered by encoder semantic read
+"io.encoder[""shooter""].A",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.encoder[""shooter""].B",False,False,raw A/B not exposed for BobBot; Mega processes quadrature
+"io.imu[""main""].orientation",True,False,semantic IMU main READ
+"io.imu[""main""].heading",True,False,covered by imu main read
+"io.imu[""main""].pitch",True,False,covered by imu main read
+"io.imu[""main""].roll",True,False,covered by imu main read
+"io.limit[""lift_high""]",True,False,semantic LIMIT lift_high READ
+"io.limit[""lift_low""]",True,False,semantic LIMIT lift_low READ
+"io.motor[""drive_front_left""].power",True,True,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""drive_front_right""].power",True,True,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""drive_rear_left""].power",False,False,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""drive_rear_right""].power",False,False,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""collector""].power",False,False,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""shooter""].power",False,False,semantic MOTOR write; short forward/reverse pulse
+"io.otos[""main""].pose",True,False,primary OTOS semantic test
+"io.otos[""main""].x",True,False,covered by otos main read
+"io.otos[""main""].y",True,False,covered by otos main read
+"io.otos[""main""].heading",True,False,covered by otos main read
+"io.reflectance[""left""]",True,False,semantic REFLECTANCE left READ
+"io.reflectance[""centre""]",True,False,semantic REFLECTANCE centre READ
+"io.reflectance[""right""]",True,False,semantic REFLECTANCE right READ
+"io.servo[""gripper""].position",True,True,"semantic SERVO gripper WRITE; default range -0.5, 0.0, +0.5 unless overridden"
+"io.servo[""lift""].position",True,True,"semantic SERVO lift WRITE; default range -0.5, 0.0, +0.5 unless overridden"
+"io.servo[""shooter_feed""].position",False,False,semantic SERVO shooter_feed WRITE; dual hardware handled by Mega
+"io.ultrasonic[""front_left""]",True,False,semantic ULTRASONIC front_left READ
+"io.ultrasonic[""front_right""]",True,False,semantic ULTRASONIC front_right READ
+"io.voltage[""battery""].volts",True,True,semantic VOLTAGE battery READ; expected range configured in io_rules.py
 "io.camera[""front""].see()",True,False,tested separately by camera protocol
-"io.bumper[""front_left""]",True,False,
-"io.bumper[""front_right""]",True,False,
-"io.bumper[""rear_left""]",True,False,
-"io.bumper[""rear_right""]",True,False,
-"io.reflectance[""left""]",True,False,
-"io.reflectance[""centre""]",True,False,
-"io.reflectance[""right""]",True,False,
-"io.ultrasonic[""front""]",True,False,
-"io.ultrasonic[""left""]",True,False,
-"io.ultrasonic[""right""]",True,False,
-"io.ultrasonic[""rear""]",True,False,
+"io.bumper[""front_left""]",True,False,semantic BUMPER front_left READ
+"io.bumper[""front_right""]",True,False,semantic BUMPER front_right READ
+"io.selector[""pi_arduino""]",True,False,semantic selector input; checkout rule not enabled yet
+"io.led[""lisiparoi""].brightness",True,False,semantic LED lisiparoi WRITE brightness
+"io.audio[""df_player""].track",True,False,semantic AUDIO df_player PLAY track; checkout rule not enabled yet
+"io.audio[""piezo""].play_tone()",True,False,semantic AUDIO piezo PLAY tone; checkout rule not enabled yet
