@@ -21,8 +21,18 @@
 // - named servo endpoints:
 //     gripper
 //     lift
-// - read helpers:
-//     DI / AI / LIMIT / QUAD / BATTERY
+// - semantic Pi protocol:
+//     MOTOR <name> WRITE power=<value>
+//     SERVO <name> WRITE position=<value>
+//     VOLTAGE battery READ
+//     CURRENT gripper_right READ
+//     REFLECTANCE <name> READ
+//     ULTRASONIC <name> READ
+//     BUMPER <name> READ
+//     LIMIT <name> READ
+//     ENCODER <name> READ
+//     LED lisiparoi WRITE brightness=<value>
+//     AUDIO <name> PLAY ...
 //
 // Notes:
 // - RoboClaw A (pins 18/19) is currently the active drive link
@@ -76,6 +86,8 @@ static const uint8_t PIN_COLLECTOR_PWM         = 4;
 static const uint8_t PIN_SHOOTER_PWM           = 5;
 
 static const uint8_t PIN_DFPLAYER_SELECT_PWM   = 7;
+static const uint8_t PIN_PIEZO_BUZZER          = 44;
+static const uint8_t PIN_LED_LISIPAROI_PWM     = 46;
 
 static const uint8_t PIN_SERVO_SHOOTER_FEED_LEFT  = 9;
 static const uint8_t PIN_SERVO_SHOOTER_FEED_RIGHT = 10;
@@ -889,6 +901,27 @@ void handlePiCommand(char *line) {
     }
   }
 
+  // LED lisiparoi WRITE brightness=<value>
+  char ledName[32];
+  char ledBrightnessText[32];
+
+  if (sscanf(line, "LED %31s WRITE brightness=%31s", ledName, ledBrightnessText) == 2) {
+    if (strcmp(ledName, "lisiparoi") == 0) {
+      float brightness = constrain(atof(ledBrightnessText), 0.0f, 1.0f);
+      int pwmValue = (int)(brightness * 255.0f);
+
+      analogWrite(PIN_LED_LISIPAROI_PWM, pwmValue);
+
+      PI_SERIAL.print("OK LED lisiparoi brightness=");
+      PI_SERIAL.println(brightness, 4);
+      return;
+    }
+
+    PI_SERIAL.print("ERR LED ");
+    PI_SERIAL.println(ledName);
+    return;
+  }
+
   // READ DI 26
   // READ AI A1
   // READ LIMIT lift_high
@@ -1057,6 +1090,9 @@ void setup() {
 
   pinMode(PIN_ENC_SHOOTER_A, INPUT_PULLUP);
   pinMode(PIN_ENC_SHOOTER_B, INPUT_PULLUP);
+
+  pinMode(PIN_LED_LISIPAROI_PWM, OUTPUT);
+  analogWrite(PIN_LED_LISIPAROI_PWM, 0);
 
   // Servos
   gripLeftServo.attach(PIN_SERVO_GRIPPER_LEFT);
