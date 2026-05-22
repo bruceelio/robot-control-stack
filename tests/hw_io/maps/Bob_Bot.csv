@@ -36,8 +36,8 @@ pi_io_path,exists,enabled,notes
 "io.imu[""main""].roll",True,False,covered by imu main read
 "io.limit[""lift_high""]",True,False,semantic LIMIT lift_high READ
 "io.limit[""lift_low""]",True,False,semantic LIMIT lift_low READ
-"io.motor[""drive_front_left""].power",True,True,semantic MOTOR write; short forward/reverse pulse
-"io.motor[""drive_front_right""].power",True,True,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""drive_front_left""].power",True,False,semantic MOTOR write; short forward/reverse pulse
+"io.motor[""drive_front_right""].power",True,False,semantic MOTOR write; short forward/reverse pulse
 "io.motor[""drive_rear_left""].power",False,False,semantic MOTOR write; short forward/reverse pulse
 "io.motor[""drive_rear_right""].power",False,False,semantic MOTOR write; short forward/reverse pulse
 "io.motor[""collector""].power",False,False,semantic MOTOR write; short forward/reverse pulse
@@ -49,13 +49,13 @@ pi_io_path,exists,enabled,notes
 "io.reflectance[""left""]",True,False,semantic REFLECTANCE left READ
 "io.reflectance[""centre""]",True,False,semantic REFLECTANCE centre READ
 "io.reflectance[""right""]",True,False,semantic REFLECTANCE right READ
-"io.servo[""gripper""].position",True,True,"semantic SERVO gripper WRITE; default range -0.5, 0.0, +0.5 unless overridden"
-"io.servo[""lift""].position",True,True,"semantic SERVO lift WRITE; default range -0.5, 0.0, +0.5 unless overridden"
+"io.servo[""gripper""].position",True,False,"semantic SERVO gripper WRITE; default range -0.5, 0.0, +0.5 unless overridden"
+"io.servo[""lift""].position",True,False,"semantic SERVO lift WRITE; default range -0.5, 0.0, +0.5 unless overridden"
 "io.servo[""shooter_feed""].position",False,False,semantic SERVO shooter_feed WRITE; dual hardware handled by Mega
 "io.ultrasonic[""front_left""]",True,False,semantic ULTRASONIC front_left READ
 "io.ultrasonic[""front_right""]",True,False,semantic ULTRASONIC front_right READ
 "io.voltage[""battery""].volts",True,True,semantic VOLTAGE battery READ; expected range configured in io_rules.py
-"io.camera[""front""].see()",True,False,tested separately by camera protocol
+"io.camera[""front""].see()",True,True,tested separately by camera protocol
 "io.bumper[""front_left""]",True,False,semantic BUMPER front_left READ
 "io.bumper[""front_right""]",True,False,semantic BUMPER front_right READ
 "io.selector[""pi_arduino""]",True,False,semantic selector input; checkout rule not enabled yet

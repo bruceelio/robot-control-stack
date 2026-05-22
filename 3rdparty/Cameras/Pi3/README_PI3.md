@@ -18,7 +18,17 @@ ModuleNotFoundError: No module named 'picamera2'
 
 # Required setup
 
-Activate environment:
+To simply test working (haven't verified this!!) will show what the Pi sees for  a few seconds
+```bash
+rpicam-still
+```
+If would like a photo then
+
+```bash
+rpicam-still -o test.jpg
+```
+
+Then to activate environment:
 
 ```bash
 source ~/apriltag-env/bin/activate

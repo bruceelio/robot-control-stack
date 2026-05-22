@@ -10,7 +10,21 @@ from tests.hw_io.io_runner import run_io_checkout
 
 
 def _io(robot):
-    return resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
+    from hw_io.cameras.camera_process import CameraProcessManager
+
+    camera_manager = CameraProcessManager(
+        camera_names=list(CONFIG.cameras.keys()),
+        robot=robot,
+    )
+
+    io = resolve_io(
+        robot=robot,
+        hardware_profile=CONFIG.hardware_profile,
+        camera_manager=camera_manager,
+    )
+
+    camera_manager.start()
+    return io, camera_manager
 
 
 def _csv_path():
@@ -25,18 +39,18 @@ def _csv_path():
     requires_robot=True,
 )
 def test_precomp_io_checkout(robot):
-    io = _io(robot)
-    return run_io_checkout(io, _csv_path())
+    io, camera_manager = _io(robot)
+    try:
+        return run_io_checkout(io, _csv_path())
+    finally:
+        camera_manager.stop()
 
 if __name__ == "__main__":
-    from hw_io.resolve import resolve_io
-    from config import CONFIG
-
     print("=== Running IO Checkout (direct mode) ===")
 
-    # resolve IO the same way your tests do
-    io = resolve_io(robot=None, hardware_profile=CONFIG.hardware_profile)
+    io, camera_manager = _io(robot=None)
 
-    # run checkout
-    from tests.hw_io.io_runner import run_io_checkout
-    run_io_checkout(io, _csv_path())
+    try:
+        run_io_checkout(io, _csv_path())
+    finally:
+        camera_manager.stop()

@@ -11,6 +11,7 @@ import csv
 import os
 import sys
 import time
+import math
 from typing import Callable, Iterable, Optional
 
 from tests.hw_io.io_path import parse_io_path, read_io_path, write_io_path
@@ -227,6 +228,8 @@ def run_rule(rule: str, io, path: str, notes: str = "") -> Result:
             result = test_led_output(io, path)
         elif rule == "otos":
             result = test_otos(io, path)
+        elif rule == "camera_observation":
+            result = test_camera_observation(io, path)
         else:
             result = Result("FAIL", path, f"unknown rule: {rule}")
 
@@ -409,7 +412,92 @@ def test_servo_output(io, path: str) -> Result:
         return Result("ABORT", path, "operator quit")
     return Result("FAIL", path, {"w": "wrong direction", "n": "no movement", "b": "binding", "f": "operator failed"}.get(choice, "operator failed"))
 
+def test_camera_observation(io, path: str) -> Result:
+    print("Point the camera at visible AprilTags.")
+    print("This test will call the configured camera's see() method.")
+    print("Confirm that the marker IDs, distances, and angles look plausible.")
 
+    while True:
+        try:
+            observations = []
+            deadline = time.monotonic() + 8.0
+
+            while time.monotonic() < deadline:
+                observations = read_io_path(io, path)
+
+                if observations:
+                    break
+
+                print("waiting for camera observations...")
+                sleep_io(io, 0.5)
+        except Exception as exc:
+            return Result("FAIL", path, f"camera error: {exc}")
+
+        if observations is None:
+            print("observations: None")
+        else:
+            try:
+                count = len(observations)
+            except Exception:
+                count = "unknown"
+
+            print(f"observations: {count}")
+
+            for detection in observations:
+                if isinstance(detection, dict):
+                    marker_id = detection.get("id", "?")
+                    distance_mm = detection.get("distance_mm", "?")
+                    bearing_deg = detection.get("bearing_deg", "?")
+                    vertical_deg = detection.get("vertical_deg", "?")
+                    camera_name = detection.get("camera", "?")
+                else:
+                    marker_id = getattr(detection, "id", "?")
+                    camera_name = getattr(detection, "camera", "front")
+
+                    position = getattr(detection, "position", None)
+                    if position is not None:
+                        distance_mm = getattr(position, "distance", "?")
+                        horizontal_angle = getattr(position, "horizontal_angle", None)
+                        vertical_angle = getattr(position, "vertical_angle", None)
+
+                        bearing_deg = (
+                            math.degrees(horizontal_angle)
+                            if horizontal_angle is not None
+                            else "?"
+                        )
+                        vertical_deg = (
+                            math.degrees(vertical_angle)
+                            if vertical_angle is not None
+                            else "?"
+                        )
+                    else:
+                        distance_mm = getattr(detection, "distance_mm", "?")
+                        bearing_deg = getattr(detection, "bearing_deg", "?")
+                        vertical_deg = getattr(detection, "vertical_deg", "?")
+
+                print(
+                    f"  camera={camera_name} "
+                    f"id={marker_id} "
+                    f"distance_mm={distance_mm:.0f} "
+                    f"bearing_deg={bearing_deg:.1f} "
+                    f"vertical_deg={vertical_deg:.1f}"
+                )
+
+        choice = operator_choice(
+            "[c] correct/pass  [r] refresh  [f] fail  [s] skip  [q] quit: ",
+            allowed=("c", "r", "f", "s", "q"),
+        )
+
+        if choice == "c":
+            return Result("PASS", path)
+        if choice == "r":
+            continue
+        if choice == "s":
+            return Result("SKIP", path, "operator skipped")
+        if choice == "q":
+            return Result("ABORT", path, "operator quit")
+        if choice == "f":
+            return Result("FAIL", path, "operator failed")
 
 def test_encoder(io, path: str) -> Result:
     parsed = parse_io_path(path)

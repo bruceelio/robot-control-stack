@@ -4,6 +4,12 @@ import math
 import hashlib
 from calibration import CALIBRATION
 from hw_io.base import IOMap
+from hw_io.cameras.detection_pipeline import (
+    arena_detections_from_message,
+    build_vision_message,
+    corrected_bearing_deg,
+    corrected_distance,
+)
 
 # ==================================================
 # Configuration
@@ -121,7 +127,14 @@ def age_objects(perception: Perception):
 # Main sensing entry point
 # ==================================================
 
-def sense(io: IOMap, perception: Perception, stop_robot=True):
+def sense(
+    io: IOMap,
+    perception: Perception,
+    *,
+    latest_markers=None,
+    camera_name: str = PRIMARY_CAMERA,
+    stop_robot=True,
+):
     now = time.time()
     _FRAME_ORDER_BUFFER.clear()
     age_objects(perception)
@@ -158,39 +171,75 @@ def sense(io: IOMap, perception: Perception, stop_robot=True):
         change_only=True,
     )
 
-    if PRIMARY_CAMERA not in calibrated:
+    if camera_name not in calibrated:
         raise RuntimeError(
-            f"PRIMARY_CAMERA={PRIMARY_CAMERA!r} not in calibration. "
+            f"camera_name={camera_name!r} not in calibration. "
             f"Calibrated={sorted(calibrated)}"
         )
 
-    if PRIMARY_CAMERA not in available:
+    if latest_markers is None and camera_name not in available:
         raise RuntimeError(
-            f"PRIMARY_CAMERA={PRIMARY_CAMERA!r} not in IO. "
+            f"camera_name={camera_name!r} not in IO. "
             f"Available={sorted(available)}"
         )
 
-    # Optional: strict mode (recommended once you add a 2nd camera)
-    if missing_in_io:
-        raise RuntimeError(f"Calibrated cameras missing in IO: {sorted(missing_in_io)}")
+    # Legacy synchronous mode:
+    # cameras must exist in IO because perception owns capture.
+    #
+    # Async mode:
+    # latest_markers are supplied externally by vision workers,
+    # so IO cameras are intentionally empty.
+    if latest_markers is None and missing_in_io:
+        raise RuntimeError(
+            f"Calibrated cameras missing in IO: {sorted(missing_in_io)}"
+        )
+
     # if missing_in_cal:
     #     raise RuntimeError(f"IO cameras missing calibration: {sorted(missing_in_cal)}")
 
-    cam_cal = CALIBRATION.cameras[PRIMARY_CAMERA]
-    seen = io.cameras()[PRIMARY_CAMERA].see()
+    cam_cal = CALIBRATION.cameras[camera_name]
+
+    if latest_markers is None:
+        seen = io.cameras()[camera_name].see()
+    else:
+        seen = list(latest_markers)
 
     # --------------------------------------------------
 
     arena_markers, acidic_markers, basic_markers = classify_markers(seen)
 
     # Export arena-marker measurements for localisation providers
-    arena_observations = build_arena_observations(arena_markers, cam_cal)
+    vision_message = build_vision_message(
+        camera_name=camera_name,
+        timestamp=now,
+        markers=arena_markers,
+        cam_cal=cam_cal,
+    )
+
+    arena_observations = arena_detections_from_message(vision_message)
 
     # For now, keep object updates relative unless an external pose is provided elsewhere
     pose = None
 
-    update_objects("acidic", acidic_markers, pose, perception, now, cam_cal)
-    update_objects("basic", basic_markers, pose, perception, now, cam_cal)
+    update_objects(
+        "acidic",
+        acidic_markers,
+        pose,
+        perception,
+        now,
+        cam_cal,
+        camera_name=camera_name,
+    )
+
+    update_objects(
+        "basic",
+        basic_markers,
+        pose,
+        perception,
+        now,
+        cam_cal,
+        camera_name=camera_name,
+    )
 
     # Log current seen markers left -> right (most negative bearing first)
     if DEBUG and _FRAME_ORDER_BUFFER:
@@ -249,47 +298,21 @@ def classify_markers(markers):
     return arena, acidic, basic
 
 
-# ==================================================
-# Camera-corrected measurement helpers
-# ==================================================
-
-def build_arena_observations(arena_markers, cam):
-    """
-    Convert raw arena marker detections into normalised observations suitable for localisation.
-
-    Returns list[dict] with keys:
-      id, distance_mm, bearing_deg, camera
-    """
-    obs = []
-    for m in arena_markers:
-        obs.append({
-            "id": int(m.id),
-            "distance_mm": corrected_distance(m, cam),
-            "bearing_deg": corrected_bearing_deg(m, cam),
-            "camera": PRIMARY_CAMERA,
-        })
-    return obs
-
-def corrected_distance(m, cam):
-    return float(m.position.distance) * cam.optical.distance_scale
-
-
-def corrected_bearing_deg(m, cam):
-    raw = math.degrees(float(m.position.horizontal_angle))
-
-    bearing = raw
-    bearing *= cam.optical.bearing_sign
-    bearing += cam.optical.bearing_offset_deg
-    bearing += cam.mount.yaw_offset_deg
-
-    return bearing
-
 
 # ==================================================
 # Object tracking
 # ==================================================
 
-def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
+def update_objects(
+    kind,
+    markers,
+    robot_pose,
+    perception: Perception,
+    now,
+    cam,
+    *,
+    camera_name: str,
+):
     memory = perception.objects[kind]
 
     for m in markers:
@@ -313,7 +336,7 @@ def update_objects(kind, markers, robot_pose, perception: Perception, now, cam):
                 "last_seen": now,
                 "age": 0,
                 "relative": True,
-                "camera": PRIMARY_CAMERA,  # or "front" if you prefer
+                "camera": camera_name,  # or
             }
 
             _FRAME_ORDER_BUFFER.append({

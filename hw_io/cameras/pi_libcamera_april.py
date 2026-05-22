@@ -162,6 +162,7 @@ class PiLibcameraAprilCamera:
             raise ValueError("Specify either tag_size_m or tag_size_for_id, not both")
 
         self._picam2 = Picamera2()
+
         try:
             print(f"[PiCam] sensor_modes = {self._picam2.sensor_modes}")
         except Exception as e:
@@ -184,7 +185,9 @@ class PiLibcameraAprilCamera:
             print(f"[PiCam] Requested config kwargs = {config_kwargs}")
         except Exception:
             pass
+
         self._picam2.start()
+
 
         control_updates = {}
 

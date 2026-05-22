@@ -10,6 +10,7 @@ from config import CONFIG
 from hw_io.base import IOMap
 from hw_io.cameras.base import Camera
 from hw_io.cameras.resolve import resolve_camera
+from hw_io.cameras.async_camera_proxy import AsyncCameraProxy
 from hw_io.clients import (
     MegaSerialClient,
     MegaSerialConfig,
@@ -252,8 +253,9 @@ class BobBotIO(IOMap):
       semantic io.* convention -> hard Mega/Uno API call
     """
 
-    def __init__(self, robot, mega_client=None, uno_client=None):
+    def __init__(self, robot, mega_client=None, uno_client=None, camera_manager=None):
         self.robot = robot
+        self.camera_manager = camera_manager
         self._cameras: Dict[str, Camera] = {}
         self._outputs = NullOutputs()
 
@@ -281,6 +283,7 @@ class BobBotIO(IOMap):
         self._detect_cameras()
         self._init_sensors()
         self._init_actuators()
+
 
     def ensure_auto_mode(self, force: bool = False) -> None:
         if self.mega is None:
@@ -345,6 +348,24 @@ class BobBotIO(IOMap):
 
         if not enabled:
             print("[CAMERA] camera detection disabled")
+            return
+
+        async_vision_enabled = bool(
+            getattr(CONFIG, "async_vision_enabled", False)
+        )
+
+        if async_vision_enabled:
+            if self.camera_manager is None:
+                print("[CAMERA WARN] async vision enabled but no camera_manager provided")
+                return
+
+            for key in CONFIG.cameras.keys():
+                self._cameras[key] = AsyncCameraProxy(
+                    camera_name=key,
+                    camera_manager=self.camera_manager,
+                )
+                print(f"[CAMERA] async proxy connected: {key}")
+
             return
 
         for key, camera_name in CONFIG.cameras.items():

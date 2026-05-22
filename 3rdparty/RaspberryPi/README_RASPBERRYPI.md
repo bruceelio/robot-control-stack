@@ -55,32 +55,29 @@ This is intended to be reproducible by someone else (or future you).
 
 ## System Update
 
+Might take around 10-15 minutes
 ```bash
 sudo apt update
 sudo apt upgrade -y
+sudo reboot
 ````
 
 ---
 
-# 2. Enable Camera
-
-Run:
+# 2. Verify Camera
 
 ```bash
-sudo raspi-config
-```
+which rpicam-still
+which libcamera-still
+which rpicam-hello
+which libcamera-hello
+````
 
-Then:
-
-* Interface Options → Camera → Enable
-
-Reboot:
-
+Verify Picamera 2 works
 ```bash
-sudo reboot
-```
+python3 -c "from picamera2 import Picamera2; print('OK')"
+````
 
----
 
 # 3. Network Setup (SSH Access)
 
@@ -124,10 +121,13 @@ cd ~/robot
 Correct pattern:
 
 ```bash
+scp -r * bt@192.168.8.236:/home/bt/robot
+```
+
+Above should cover everything. Alternatively for smaller sets
+```bash
 scp -r config bt@192.168.8.236:/home/bt/robot
-scp -r calibration bt@192.168.8.236:/home/bt/robot
-scp -r hw_io bt@192.168.8.236:/home/bt/robot
-scp -r diagnostics bt@192.168.8.236:/home/bt/robot
+
 scp main.py bt@192.168.8.236:/home/bt/robot
 scp robot_controller.py bt@192.168.8.236:/home/bt/robot
 
@@ -189,6 +189,7 @@ pip install --upgrade pip
 pip install numpy opencv-python
 pip install pupil-apriltags
 pip install picamera2
+pip install opencv-python
 ```
 
 ---

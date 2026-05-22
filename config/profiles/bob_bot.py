@@ -19,6 +19,8 @@ CAMERAS = {
     "front": "pi3_fullfov_640_360",
 }
 
+ASYNC_VISION_ENABLED = True
+
 SURFACE_MULTIPLIERS = {
     "simulation": {"rotate": 1.00, "drive": 1.00},
     "tile": {"rotate": 1.00, "drive": 1.00},

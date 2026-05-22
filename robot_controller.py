@@ -33,6 +33,7 @@ from hw_io.encoder_manager import EncoderManager, make_signals
 
 from log_trace import next_tick
 from hw_io.buzzer_patterns import BuzzerCue
+from hw_io.cameras.camera_process import CameraProcessManager
 
 print("\n=== CALIBRATION CAMERA CHECK ===")
 print("Calibration cameras:", CALIBRATION.cameras.keys())
@@ -67,28 +68,20 @@ class Controller:
         # Core subsystems
         # -------------------------
 
-        # IO layer (single source of hardware truth) — create this FIRST
+        self.camera_manager = CameraProcessManager(
+            camera_names=list(CONFIG.cameras.keys()),
+            robot=self.robot,
+        )
+
+        # IO layer (single source of hardware truth)
         self.io: IOMap = resolve_io(
             robot=robot,
             hardware_profile=CONFIG.hardware_profile,
+            camera_manager=self.camera_manager,
         )
 
-        # --------------------------------------------------
-        # TEMP DEBUG — CAMERA SANITY CHECK (IOMap-based)
-        # --------------------------------------------------
-        print("\n=== CAMERA SANITY CHECK (IOMap) ===")
-        try:
-            cams = self.io.cameras()
-            print("io.cameras():", list(cams.keys()))
-            front = cams.get("front")
-            if front is None:
-                print("No 'front' camera found in io.cameras()")
-            else:
-                seen = front.see()
-                print(f"io.cameras()['front'].see() OK — saw {len(seen)} markers")
-        except Exception as e:
-            print("IOMap camera check FAILED:", e)
-        print("=== END CAMERA CHECK ===\n")
+        self.camera_manager.start()
+        print("[CAMERA_PROCESS] manager started")
 
         # Level2 now consumes IO, not robot
         self.lvl2 = Level2(
@@ -255,12 +248,14 @@ class Controller:
         )
 
         if pose_obs is not None:
+            '''
             print(
                 f"[LOC][ACCEPT] src={pose_obs.source} "
                 f"x={pose_obs.x:.1f} y={pose_obs.y:.1f} "
                 f"hdg={'None' if pose_obs.heading is None else f'{math.degrees(pose_obs.heading):.1f}'} "
                 f"conf={pose_obs.confidence:.2f}"
             )
+            '''
             self.localisation.accept(pose_obs)
 
         pose = self.localisation.pose
@@ -284,6 +279,7 @@ class Controller:
             print(f"[LOC][METHOD] {self._last_loc_method} -> {current_method}")
             self._last_loc_method = current_method
 
+        '''
         print(
             f"[LOC] arena={len(arena_obs)} "
             f"pose_obs={'YES' if pose_obs else 'NO'} "
@@ -291,6 +287,7 @@ class Controller:
             f"pos_valid={pos_valid} hdg_valid={hdg_valid} "
             f"x={x_str} y={y_str} hdg={hdg_str}"
         )
+        '''
 
         # -------------------------
         # SCRIPTED START

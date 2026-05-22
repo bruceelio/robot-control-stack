@@ -1,5 +1,7 @@
 # calibration/cameras/pi3_fullfov_640_360.py
 
+# can track april tags at 15 sec/rotation (0.11 speed)
+
 from .pi3_640_480 import *  # noqa
 
 # Override only what must change immediately

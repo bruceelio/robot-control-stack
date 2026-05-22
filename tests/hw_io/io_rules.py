@@ -17,7 +17,7 @@ TEST_RULES = {
     "io.imu": "imu",
     "io.otos": "otos",
 
-    "io.camera": "external_protocol",
+    "io.camera": "camera_observation",
     "io.audio": "external_protocol",
 }
 
