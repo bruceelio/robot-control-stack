@@ -73,7 +73,7 @@ def run_vision_worker(
                     last_status = "ok"
                     last_marker_count = marker_count
 
-                message = build_vision_message(
+                vision_message = build_vision_message(
                     camera_name=camera_name,
                     timestamp=timestamp,
                     markers=markers,
@@ -81,7 +81,7 @@ def run_vision_worker(
                     status="ok",
                 )
 
-                message["markers"] = list(markers)
+                vision_message["markers"] = list(markers)
 
 
             except Exception as e:
@@ -91,10 +91,11 @@ def run_vision_worker(
                         flush=True,
                     )
                     last_status = "error"
-                message = {
+                vision_message = {
                     "camera": camera_name,
                     "timestamp": time.time(),
                     "detections": [],
+                    "markers": [],
                     "status": "error",
                     "error": repr(e),
                     "traceback": traceback.format_exc(),
@@ -107,7 +108,7 @@ def run_vision_worker(
             except Exception:
                 pass
 
-            output_queue.put(message)
+            output_queue.put(vision_message)
 
     finally:
         if camera is not None and hasattr(camera, "close"):

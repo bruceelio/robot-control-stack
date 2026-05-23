@@ -27,6 +27,7 @@ class Config:
     wheel_type: str
     cameras: dict
     async_vision_enabled: bool
+    vision_sources: dict
     encoders: dict
     camera_mounts: dict
     gripper_mount: dict
@@ -158,6 +159,7 @@ RESOLVE_MAP = {
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),
     "cameras": ("profile", "CAMERAS"),
+    "vision_sources": ("profile", "VISION_SOURCES"),
     "async_vision_enabled": ("profile", "ASYNC_VISION_ENABLED"),
     "encoders": ("computed", "encoders"),
     "camera_mounts": ("profile", "CAMERA_MOUNTS"),

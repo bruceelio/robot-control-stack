@@ -19,6 +19,14 @@ CAMERAS = {
     "front": "pi3_fullfov_640_360",
 }
 
+VISION_SOURCES = {
+    "vision1": {
+        "camera": "front",
+        "provider": "apriltag_pnp",
+        "enabled": True,
+    }
+}
+
 ASYNC_VISION_ENABLED = True
 
 SURFACE_MULTIPLIERS = {
@@ -73,7 +81,7 @@ MAX_MOTOR_POWER = 0.5
 
 # Increase timed duration scaling
 BASE_ROTATE_FACTOR = 1.0
-BASE_DRIVE_FACTOR = 1.1
+BASE_DRIVE_FACTOR = 1.0
 
 # InitEscape (400, 40)
 INIT_ESCAPE_DRIVE_MM = 0

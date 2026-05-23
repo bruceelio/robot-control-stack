@@ -16,7 +16,7 @@ The system is structured as:
 - Strategy layer → decides *what to do*
 - Path Planning → decides *where to go*
 - Motion Planning → decides *how to move feasibly*
-- Controller layer → decides *how to follow the path*
+- Controller (Path Planning) layer → decides *how to follow the path*
 - Motion layer → executes commands
 
 ---

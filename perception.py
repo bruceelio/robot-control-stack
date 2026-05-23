@@ -5,11 +5,14 @@ import hashlib
 from calibration import CALIBRATION
 from hw_io.base import IOMap
 from hw_io.cameras.detection_pipeline import (
-    arena_detections_from_message,
+    arena_detections_from_vision_message,
     build_vision_message,
     corrected_bearing_deg,
     corrected_distance,
 )
+from localisation.providers.vision.apriltag_observations import (
+        apriltag_observations_by_source,
+    )
 
 # ==================================================
 # Configuration
@@ -132,6 +135,7 @@ def sense(
     perception: Perception,
     *,
     latest_markers=None,
+    latest_vision_message=None,
     camera_name: str = PRIMARY_CAMERA,
     stop_robot=True,
 ):
@@ -199,24 +203,39 @@ def sense(
 
     cam_cal = CALIBRATION.cameras[camera_name]
 
-    if latest_markers is None:
+    if latest_vision_message is not None:
+        seen = list(latest_vision_message.get("markers", []))
+    elif latest_markers is None:
         seen = io.cameras()[camera_name].see()
     else:
         seen = list(latest_markers)
 
     # --------------------------------------------------
 
+    all_apriltag_markers = list(seen)
     arena_markers, acidic_markers, basic_markers = classify_markers(seen)
 
-    # Export arena-marker measurements for localisation providers
-    vision_message = build_vision_message(
-        camera_name=camera_name,
-        timestamp=now,
-        markers=arena_markers,
-        cam_cal=cam_cal,
+    # Vision workers already produce vision_message.
+    # Legacy synchronous mode still rebuilds locally.
+
+    if latest_vision_message is not None:
+        vision_message = latest_vision_message
+    else:
+        vision_message = build_vision_message(
+            camera_name=camera_name,
+            timestamp=now,
+            markers=arena_markers,
+            cam_cal=cam_cal,
+        )
+        vision_message["markers"] = all_apriltag_markers
+
+    arena_observations = arena_detections_from_vision_message(
+        vision_message
     )
 
-    arena_observations = arena_detections_from_message(vision_message)
+    source_id, apriltag_observations = (
+        apriltag_observations_by_source(vision_message)
+    )
 
     # For now, keep object updates relative unless an external pose is provided elsewhere
     pose = None
