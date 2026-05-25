@@ -76,7 +76,7 @@ class ReacquireTarget(Primitive):
             return None
 
         if self.target_id is not None:
-            from perception import get_visible_targets
+            from perception.perception import get_visible_targets
 
             visible = get_visible_targets(
                 perception,

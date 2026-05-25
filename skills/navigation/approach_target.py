@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 import time
-import statistics
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -21,7 +20,7 @@ from skills.perception.reacquire_target import ReacquireTarget
 from skills.perception.select_target_utils import get_closest_target
 
 # perception.py defines this helper at module level
-from perception import get_visible_targets
+from perception.perception import get_visible_targets
 
 
 def _cfg(config: Any, name: str, fallback: Any) -> Any:

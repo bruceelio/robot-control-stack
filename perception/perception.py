@@ -1,18 +1,26 @@
-# perception.py
+# perception/perception.py
+
 import time
 import math
 import hashlib
 from calibration import CALIBRATION
+from config import CONFIG
 from hw_io.base import IOMap
-from hw_io.cameras.detection_pipeline import (
+from perception.vision.detection_pipeline import (
     arena_detections_from_vision_message,
     build_vision_message,
     corrected_bearing_deg,
     corrected_distance,
 )
-from localisation.providers.vision.apriltag_observations import (
+from perception.vision.apriltag_observations import (
         apriltag_observations_by_source,
     )
+from perception.vision.vision_calibration import (
+    get_vision_pnp_calibration,
+)
+from localisation.providers.vision.pose_apriltag_pnp import (
+    AprilTagPnPPoseProvider,
+)
 
 # ==================================================
 # Configuration
@@ -42,6 +50,7 @@ PRIMARY_CAMERA = "front"
 
 _FRAME_ORDER_BUFFER = []
 
+_APRILTAG_PNP_PROVIDER = AprilTagPnPPoseProvider()
 
 # ==================================================
 # Simple logger
@@ -236,6 +245,27 @@ def sense(
     source_id, apriltag_observations = (
         apriltag_observations_by_source(vision_message)
     )
+
+    if source_id is not None:
+        vision_pnp_cal = get_vision_pnp_calibration(
+            source_id=source_id,
+            perception_camera_name=camera_name,
+        )
+
+        pnp_result = _APRILTAG_PNP_PROVIDER.estimate(
+            source_id=source_id,
+            apriltag_observations=apriltag_observations,
+            intrinsic_matrix=vision_pnp_cal.camera_matrix,
+            distortion_coefficients=vision_pnp_cal.distortion_coefficients,
+            camera_to_robot_transform=vision_pnp_cal.camera_to_robot_transform,
+        )
+
+        print(
+            f"[PNP_PROVIDER] "
+            f"source={pnp_result.source_id} "
+            f"tags={pnp_result.tag_count} "
+            f"valid={pnp_result.valid}"
+        )
 
     # For now, keep object updates relative unless an external pose is provided elsewhere
     pose = None

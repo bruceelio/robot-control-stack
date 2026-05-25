@@ -4,7 +4,7 @@ import math
 import time
 
 from behaviors.init_escape import InitEscape
-from perception import classify_markers, corrected_bearing_deg, corrected_distance
+from perception.perception import classify_markers, corrected_bearing_deg, corrected_distance
 from level2.level2_canonical import Level2
 from motion_backends import create_motion_backend
 from config import CONFIG

@@ -9,7 +9,7 @@ from typing import Any
 
 from calibration import CALIBRATION
 from config import CONFIG
-from hw_io.cameras.detection_pipeline import build_vision_message
+from perception.vision.detection_pipeline import build_vision_message
 from hw_io.cameras.resolve import resolve_camera
 
 

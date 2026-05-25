@@ -48,8 +48,9 @@ class TimedMotionBackend:
                 + (1.0 - alpha) * self._filtered_battery_voltage
             )
 
-        scale = nominal_v / self._filtered_battery_voltage
-        scale = min(1.25, max(0.8, scale))
+        ratio = nominal_v / self._filtered_battery_voltage
+        scale = ratio ** 2.0
+        scale = min(1.50, max(0.8, scale))
 
 #        print(
 #           f"[BATTERY] raw={actual_v:.2f}V "

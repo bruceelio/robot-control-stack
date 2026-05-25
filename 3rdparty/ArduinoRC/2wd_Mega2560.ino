@@ -173,6 +173,12 @@ static const int LIFT_UP_US             = 2250;
 // ------------------------- BATTERY INPUT -----------------
 static const char BATTERY_VOLTAGE_PIN[] = "A0"; // update if/when battery source changes
 
+static const float BATTERY_DIVIDER_RATIO = 5.0f; // your code already assumes A0 volts * 5
+
+static const float BATTERY_LOW_WARN_V       = 11.0f;
+static const float BATTERY_CRITICAL_WARN_V  = 10.5f;
+static const float BATTERY_SHUTDOWN_NOW_V   = 10.0f;
+
 // ------------------------- SYSTEM ------------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";
 static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (500 ms)
@@ -283,6 +289,54 @@ float normalize(int val) {
   if (val >= dead_min && val <= dead_max) return 0.0f;
   if (val < dead_min) return (float)(val - dead_min) / (float)dead_min;
   return (float)(val - dead_max) / (float)(100 - dead_max);
+}
+
+// =========================================================
+// BATTERY VOLTAGE LOW PIEZO ALARM
+// =========================================================
+
+float readBatteryVoltage() {
+  int raw = analogRead(PIN_VOLTAGE_BATTERY);
+  float sensorVolts = raw * (5.0f / 1023.0f);
+  return sensorVolts * BATTERY_DIVIDER_RATIO;
+}
+
+void updateBatteryAlarm() {
+  static unsigned long lastBeepMs = 0;
+  static bool beepOn = false;
+
+  float v = readBatteryVoltage();
+  unsigned long now = millis();
+
+  if (v <= BATTERY_SHUTDOWN_NOW_V) {
+    tone(PIN_PIEZO_BUZZER, 2200);   // continuous alarm
+    stopDrive();
+    writeShooterMotor(0.0f);
+    writeCollectorMotor(0.0f);
+    return;
+  }
+
+  if (v <= BATTERY_CRITICAL_WARN_V) {
+    if (now - lastBeepMs >= 200) {  // fast beep
+      lastBeepMs = now;
+      beepOn = !beepOn;
+      if (beepOn) tone(PIN_PIEZO_BUZZER, 2200);
+      else noTone(PIN_PIEZO_BUZZER);
+    }
+    return;
+  }
+
+  if (v <= BATTERY_LOW_WARN_V) {
+    if (now - lastBeepMs >= 800) {  // slow beep
+      lastBeepMs = now;
+      beepOn = !beepOn;
+      if (beepOn) tone(PIN_PIEZO_BUZZER, 1800);
+      else noTone(PIN_PIEZO_BUZZER);
+    }
+    return;
+  }
+
+  noTone(PIN_PIEZO_BUZZER);
 }
 
 // =========================================================
@@ -1074,6 +1128,11 @@ void setup() {
   pinMode(PIN_ULTRASONIC_FRONT_RIGHT_TRIG, OUTPUT);
   pinMode(PIN_ULTRASONIC_FRONT_RIGHT_ECHO, INPUT);
 
+  // Piezo Pins
+
+  pinMode(PIN_PIEZO_BUZZER, OUTPUT);
+  noTone(PIN_PIEZO_BUZZER);
+
   // Limits / quadrature inputs
   pinMode(PIN_LIMIT_LIFT_HIGH, INPUT_PULLUP);
   pinMode(PIN_LIMIT_LIFT_LOW, INPUT_PULLUP);
@@ -1120,6 +1179,8 @@ void setup() {
 void loop() {
   servicePiSerial();
   readIbusFrame();
+
+  updateBatteryAlarm();
 
   // AUTO owns outputs while heartbeat is fresh.
   if (piHasControl()) {

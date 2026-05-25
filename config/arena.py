@@ -79,6 +79,66 @@ def marker_locations(arena_size: int):
 
     return markers
 
+MARKER_POSE_ADJUSTMENTS_M = {
+    # tag_id: {
+    #     "dx_m": 0.0,
+    #     "dy_m": 0.0,
+    #     "dz_m": 0.0,
+    #     "dyaw_rad": 0.0,
+    # }
+
+    # Example: tag 18 sticks 60 mm inward/outward.
+    # Adjust sign after testing.
+    18: {
+        "dx_m": 0.060,
+        "dy_m": 0.0,
+        "dz_m": 0.0,
+        "dyaw_rad": 0.0,
+    },
+}
+
+
+
+def marker_poses(arena_size: int):
+    locations = marker_locations(arena_size)
+
+    poses = {}
+
+    for tag_id, (x_mm, y_mm) in locations.items():
+
+        if 0 <= tag_id <= 4:          # top wall
+            yaw_rad = -math.pi / 2
+
+        elif 5 <= tag_id <= 9:        # right wall
+            yaw_rad = math.pi
+
+        elif 10 <= tag_id <= 14:      # bottom wall
+            yaw_rad = math.pi / 2
+
+        elif 15 <= tag_id <= 19:      # left wall
+            yaw_rad = 0.0
+
+        else:
+            yaw_rad = 0.0
+
+        adjust = MARKER_POSE_ADJUSTMENTS_M.get(tag_id, {})
+
+        x_m = (float(x_mm) / 1000.0) + float(adjust.get("dx_m", 0.0))
+        y_m = (float(y_mm) / 1000.0) + float(adjust.get("dy_m", 0.0))
+        z_m = 0.125 + float(adjust.get("dz_m", 0.0))
+        yaw_rad = yaw_rad + float(adjust.get("dyaw_rad", 0.0))
+
+        poses[tag_id] = {
+            "x_m": x_m,
+            "y_m": y_m,
+            "z_m": z_m,
+            "roll_rad": 0.0,
+            "pitch_rad": 0.0,
+            "yaw_rad": yaw_rad,
+        }
+
+    return poses
+
 # --------------------------------------------------
 # April Tags
 # --------------------------------------------------

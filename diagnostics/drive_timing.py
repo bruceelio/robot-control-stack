@@ -7,7 +7,7 @@ from primitives.motion import Drive
 from primitives.base import PrimitiveStatus
 from behaviors.init_escape import InitEscape
 from localisation.localisation_temp import Localisation
-from perception import Perception, sense
+from perception.perception import Perception, sense
 
 from motion_backends import create_motion_backend
 from level2.level2_canonical import Level2

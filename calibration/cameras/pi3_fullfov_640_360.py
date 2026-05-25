@@ -4,13 +4,25 @@
 
 from .pi3_640_480 import *  # noqa
 
-# Override only what must change immediately
+# --------------------------------------------------
+# Legacy 2D / bearing-distance calibration
+# --------------------------------------------------
+# Used by cam1_markers2 / triangulation-style localisation.
+CAMERA_PARAMS = (477.0, 477.0, 320.0, 240.0)
+DISTORTION_COEFFICIENTS = (0.0, 0.0, 0.0, 0.0, 0.0)
 
-# Adjust principal point for 640x360
-CAMERA_PARAMS = (477.0, 477.0, 320.0, 240.0)    #default values
+# --------------------------------------------------
+# PnP calibration
+# --------------------------------------------------
+# Used only by AprilTagPnPPoseProvider.
+# Temporary runtime calibration for 640x360 stream.
+PNP_CAMERA_PARAMS = (390.0, 390.0, 320.0, 180.0)
+PNP_DISTORTION_COEFFICIENTS = (0.0, 0.0, 0.0, 0.0, 0.0)
+
 
 NOTES = (
     "Temporary calibration derived from pi3_640_480. "
-    "Only cy adjusted for 640x360. "
+    "CAMERA_PARAMS preserves legacy 2D localisation behaviour. "
+    "PNP_CAMERA_PARAMS is used only for AprilTag PnP. "
     "Full calibration required for accuracy."
 )

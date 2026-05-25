@@ -44,7 +44,7 @@ VOLTAGE_SENSORS = {
     "battery": "stemedu_voltage_sensor_0_25v",
 }
 
-BATTERY_VOLTAGE_NOMINAL = 13.7
+BATTERY_VOLTAGE_NOMINAL = 14.17
 
 # CAMERA/GRIPPER MOUNTS
 
@@ -57,8 +57,8 @@ BATTERY_VOLTAGE_NOMINAL = 13.7
 CAMERA_MOUNTS = {
     "front": {
         "x_mm": 40.0,
-        "y_mm": -70.0,
-        "z_mm": 170.0,
+        "y_mm": -90.0,
+        "z_mm": 215.0,
         "roll_deg": 0.0,
         "pitch_deg": -8.0,
         "yaw_deg": 0.0,
