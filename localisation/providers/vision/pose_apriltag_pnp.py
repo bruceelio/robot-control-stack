@@ -59,10 +59,13 @@ def build_pnp_points(
         object_points.extend(tag_object_points)
         image_points.extend(corners_px)
 
+
     return (
         np.array(object_points, dtype=np.float64),
         np.array(image_points, dtype=np.float64),
     )
+
+
 
 def filter_observations_by_tag_ids(
     usable_observations: list[tuple[dict, dict]],

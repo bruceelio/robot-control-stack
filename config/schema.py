@@ -38,6 +38,9 @@ class Config:
 
     # Strategy
     default_target_kind: str
+    match_zone_source: str
+    match_zone_fixed: int
+    usb_match_zone_file: str
 
     # Motion / robot
     motion_backend: str
@@ -172,6 +175,9 @@ RESOLVE_MAP = {
 
     # Strategy
     "default_target_kind": ("strategy", "DEFAULT_TARGET_KIND"),
+    "match_zone_source": ("strategy", "MATCH_ZONE_SOURCE"),
+    "match_zone_fixed": ("strategy", "MATCH_ZONE_FIXED"),
+    "usb_match_zone_file": ("strategy", "USB_MATCH_ZONE_FILE"),
 
     # Motion / robot
     "motion_backend": ("profile", "MOTION_BACKEND"),

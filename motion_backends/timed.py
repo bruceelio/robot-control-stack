@@ -21,7 +21,7 @@ class TimedMotionBackend:
     # Internal helper
     # --------------------------------------------------
 
-    def _battery_voltage_scale(self) -> float:
+    def _battery_voltage_scale(self, *, power: float, motion_kind: str) -> float:
         nominal_v = self.cfg.battery_voltage_nominal
 
         try:
@@ -29,34 +29,44 @@ class TimedMotionBackend:
         except (AttributeError, KeyError):
             actual_v = None
 
-        # Missing reading -> fall back to nominal
-        if actual_v is None:
+        if actual_v is None or actual_v <= 1.0:
             actual_v = nominal_v
 
-        # Reject nonsense
-        if actual_v <= 1.0:
-            actual_v = nominal_v
-
-        # Exponential moving average
         alpha = 0.2
 
         if self._filtered_battery_voltage is None:
             self._filtered_battery_voltage = actual_v
         else:
             self._filtered_battery_voltage = (
-                alpha * actual_v
-                + (1.0 - alpha) * self._filtered_battery_voltage
+                    alpha * actual_v
+                    + (1.0 - alpha) * self._filtered_battery_voltage
             )
 
         ratio = nominal_v / self._filtered_battery_voltage
-        scale = ratio ** 2.0
+
+        if motion_kind == "rotate":
+            exponent = 1.0
+        else:
+            p = abs(power)
+            if p <= 0.20:
+                exponent = 1.0
+            elif p >= 0.35:
+                exponent = 2.0
+            else:
+                # Smooth ramp from 1.0 at p=0.20 to 2.0 at p=0.35
+                exponent = 1.0 + ((p - 0.20) / (0.35 - 0.20))
+
+        scale = ratio ** exponent
         scale = min(1.50, max(0.8, scale))
 
-#        print(
-#           f"[BATTERY] raw={actual_v:.2f}V "
-#            f"filtered={self._filtered_battery_voltage:.2f}V "
-#            f"scale={scale:.3f}"
-#        )
+        print(
+            f"[BATTERY_COMP] kind={motion_kind} "
+            f"raw={actual_v:.2f}V "
+            f"filtered={self._filtered_battery_voltage:.2f}V "
+            f"ratio={ratio:.3f} "
+            f"exp={exponent:.2f} "
+            f"scale={scale:.3f}"
+        )
 
         return scale
 
@@ -72,11 +82,21 @@ class TimedMotionBackend:
             min(self.cfg.max_motor_power, compensated),
         )
 
-    def _run(self, left: float, right: float, duration: float):
+    def _run(
+            self,
+            left: float,
+            right: float,
+            duration: float,
+            *,
+            motion_kind: str,
+    ):
         if duration <= 0:
             return
 
-        scale = self._battery_voltage_scale()
+        scale = self._battery_voltage_scale(
+            power=max(abs(left), abs(right)),
+            motion_kind=motion_kind,
+        )
 
         left = self._apply_voltage_compensation(left, scale)
         right = self._apply_voltage_compensation(right, scale)
@@ -175,7 +195,7 @@ class TimedMotionBackend:
             f"p={power:.2f} t={duration:.3f}s"
         )
 
-        self._run(left, right, duration)
+        self._run(left, right, duration, motion_kind="drive")
 
     def rotate(self, angle_deg: float):
         # angle_deg stays logical for estimate/localisation
@@ -202,4 +222,4 @@ class TimedMotionBackend:
             f"p={power:.2f} t={duration:.3f}s"
         )
 
-        self._run(left, right, duration)
+        self._run(left, right, duration, motion_kind="rotate")

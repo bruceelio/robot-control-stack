@@ -175,9 +175,9 @@ static const char BATTERY_VOLTAGE_PIN[] = "A0"; // update if/when battery source
 
 static const float BATTERY_DIVIDER_RATIO = 5.0f; // your code already assumes A0 volts * 5
 
-static const float BATTERY_LOW_WARN_V       = 11.0f;
-static const float BATTERY_CRITICAL_WARN_V  = 10.5f;
-static const float BATTERY_SHUTDOWN_NOW_V   = 10.0f;
+static const float BATTERY_LOW_WARN_V       = 12.0f;
+static const float BATTERY_CRITICAL_WARN_V  = 11.5f;
+static const float BATTERY_SHUTDOWN_NOW_V   = 11.0f;
 
 // ------------------------- SYSTEM ------------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";

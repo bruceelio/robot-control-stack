@@ -16,7 +16,9 @@ DISTORTION_COEFFICIENTS = (0.0, 0.0, 0.0, 0.0, 0.0)
 # --------------------------------------------------
 # Used only by AprilTagPnPPoseProvider.
 # Temporary runtime calibration for 640x360 stream.
-PNP_CAMERA_PARAMS = (390.0, 390.0, 320.0, 180.0)
+# PNP_CAMERA_PARAMS = (390.0, 390.0, 320.0, 180.0)
+# PNP_CAMERA_PARAMS = (493.0, 370.0, 320.0, 180.0) (this isn't the right path)
+PNP_CAMERA_PARAMS = (493.0, 493.0, 320.0, 180.0)
 PNP_DISTORTION_COEFFICIENTS = (0.0, 0.0, 0.0, 0.0, 0.0)
 
 

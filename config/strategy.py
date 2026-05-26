@@ -20,6 +20,12 @@ class StartupScript(Enum):
     BASIC_GRAB = auto()
     ACIDIC_GRAB = auto()
 
+class MatchZoneSource(Enum):
+    AUTO = "auto"
+    SR = "sr"
+    USB = "usb"
+    FIXED = "fixed"
+
 
 ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.SIMULATION         # Run this for WeBots
@@ -39,5 +45,17 @@ STARTUP_SCRIPT = StartupScript.NONE
 DEFAULT_TARGET_KIND = "acidic"
 # DEFAULT_TARGET_KIND = "basic"
 
-START_BASE = 0
+# =========================
+# Match / Starting Zone
+# =========================
+
+MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
+# MATCH_ZONE_SOURCE = MatchZoneSource.SR       # Competition: use SR API robot.zone
+# MATCH_ZONE_SOURCE = MatchZoneSource.USB      # Home testing: read USB stick
+# MATCH_ZONE_SOURCE = MatchZoneSource.FIXED    # Debugging: use MATCH_ZONE_FIXED
+
+MATCH_ZONE_FIXED = 0
+USB_MATCH_ZONE_FILE = "zone.txt"
+
+
 START_SLOT = 3

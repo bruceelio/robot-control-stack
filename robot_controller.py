@@ -22,7 +22,7 @@ from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
 from config.strategy import STARTUP_SCRIPT, StartupScript
 from config.arena import get_start_pose
-from config.strategy import START_BASE, START_SLOT
+from config.strategy import START_SLOT
 
 from calibration import CALIBRATION
 from calibration.resolve import resolve
@@ -34,6 +34,7 @@ from hw_io.encoder_manager import EncoderManager, make_signals
 from log_trace import next_tick
 from hw_io.buzzer_patterns import BuzzerCue
 from hw_io.cameras.camera_process import CameraProcessManager
+from perf_monitor import PerformanceMonitor
 
 print("\n=== CALIBRATION CAMERA CHECK ===")
 print("Calibration cameras:", CALIBRATION.cameras.keys())
@@ -63,6 +64,8 @@ class Controller:
         self.robot = robot
         self.signals = make_signals()
         self.encoder_manager = EncoderManager(CONFIG.encoders)
+
+        self.perf = PerformanceMonitor("main", report_every_s=5.0)
 
         # -------------------------
         # Core subsystems
@@ -114,7 +117,12 @@ class Controller:
 
         self.localisation = Localisation()
 
-        start_x, start_y, start_heading = get_start_pose(START_BASE, START_SLOT)
+        match_zone = self.io.usb["match_zone"]
+
+        start_x, start_y, start_heading = get_start_pose(
+            match_zone,
+            START_SLOT,
+        )
         self.localisation.set_pose(
             (start_x, start_y),
             heading=start_heading,
@@ -122,7 +130,7 @@ class Controller:
             timestamp=time.time(),
         )
         print(
-            f"[LOC][START] base={START_BASE} slot={START_SLOT} "
+            f"[LOC][START] zone={match_zone} slot={START_SLOT} "
             f"pose=({start_x:.1f}, {start_y:.1f}, {math.degrees(start_heading):.1f}deg)"
         )
 
@@ -230,6 +238,14 @@ class Controller:
     # --------------------------------------------------
 
     def update(self):
+        tick_start = time.perf_counter()
+
+        try:
+            self._update_impl()
+        finally:
+            self.perf.record_tick(time.perf_counter() - tick_start)
+
+    def _update_impl(self):
         next_tick()
 
         now_s = time.time()

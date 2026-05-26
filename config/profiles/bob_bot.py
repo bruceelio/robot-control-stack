@@ -8,7 +8,7 @@ from .simulation import *  # noqa
 # Surface: provides scaling factors for drive and rotate
 
 ROBOT_ID = "bob_bot"                # "sr1". "bob_bot"
-HARDWARE_PROFILE = "bob_bot"        # "sr1", "bob_bot"
+HARDWARE_PROFILE = "bob_bot"        # "sr1", "bob_bot" (file in hw_io/profiles/ that maps IO)
 ENVIRONMENT = "real"            # "simulation", "real"
 SURFACE = "tile"                    # "simulation", "tile", "wood", "carpet"
 
@@ -74,14 +74,41 @@ GRIPPER_MOUNT = {
     "yaw_deg": 0.0,
 }
 
+"""
+# All poses are relative to base_link:
+# base_link = midpoint between the two drive wheels
+# +x forward, +y left, +z up
+
+CAMERA_MOUNTS = {
+    "front": {
+        "x_mm": 85.0,
+        "y_mm": -110.0,
+        "z_mm": 210.0,
+        "roll_deg": 0.0,
+        "pitch_deg": -18.0,
+        "yaw_deg": 8.0,
+    }
+}
+
+GRIPPER_MOUNT = {
+    "x_mm": 160.0,
+    "y_mm": 0.0,
+    "z_mm": 35.0,
+    "roll_deg": 0.0,
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+}
+"""
+
+
 ROTATION_SIGN = 1
 
 # Lower commanded power
 MAX_MOTOR_POWER = 0.5
 
 # Increase timed duration scaling
-BASE_ROTATE_FACTOR = 1.0
-BASE_DRIVE_FACTOR = 1.0
+BASE_ROTATE_FACTOR = 1.05
+BASE_DRIVE_FACTOR = 1.1
 
 # InitEscape (400, 40)
 INIT_ESCAPE_DRIVE_MM = 0
@@ -127,28 +154,3 @@ VISIBLE_MAX_AGE_S = 0.35
 FINAL_APPROACH_MARKER_PUSH = 0
 
 
-"""
-# All poses are relative to base_link:
-# base_link = midpoint between the two drive wheels
-# +x forward, +y left, +z up
-
-CAMERA_MOUNTS = {
-    "front": {
-        "x_mm": 85.0,
-        "y_mm": -110.0,
-        "z_mm": 210.0,
-        "roll_deg": 0.0,
-        "pitch_deg": -18.0,
-        "yaw_deg": 8.0,
-    }
-}
-
-GRIPPER_MOUNT = {
-    "x_mm": 160.0,
-    "y_mm": 0.0,
-    "z_mm": 35.0,
-    "roll_deg": 0.0,
-    "pitch_deg": 0.0,
-    "yaw_deg": 0.0,
-}
-"""

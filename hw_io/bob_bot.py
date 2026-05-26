@@ -17,6 +17,7 @@ from hw_io.clients import (
     StubUnoSerialClient,
     UnoSerialClient,
     UnoSerialConfig,
+    UsbMediaClient,
 )
 
 
@@ -261,6 +262,7 @@ class BobBotIO(IOMap):
 
         self.mega = mega_client if mega_client is not None else self._make_mega_client()
         self.uno = uno_client if uno_client is not None else self._make_uno_client()
+        self.usb_media = UsbMediaClient()
 
         self._motor = None
         self._servo = None
@@ -274,6 +276,7 @@ class BobBotIO(IOMap):
         self._encoder = None
         self._led = None
         self._audio = None
+        self._usb = None
 
         self._hb_seq = 1
         self._last_hb_t = 0.0
@@ -432,6 +435,12 @@ class BobBotIO(IOMap):
                 "deadwheel_perpendicular": EncoderReading(lambda: self._read_encoder("deadwheel_perpendicular")),
                 "shooter": EncoderReading(lambda: self._read_encoder("shooter")),
             },
+        )
+
+        self._usb = ReadOnlyCollection(
+            {
+                "match_zone": self._read_match_zone,
+            }
         )
 
     def _init_actuators(self):
@@ -620,6 +629,63 @@ class BobBotIO(IOMap):
             return False
         return text in {"true", "high", "on"}
 
+    def _read_match_zone(self) -> int:
+        source = CONFIG.match_zone_source.value.lower()
+
+        # -------------------------
+        # AUTO
+        # -------------------------
+        if "auto" in source:
+
+            # Try SR API first
+            try:
+                if self.robot is not None:
+                    zone = getattr(self.robot, "zone", None)
+                    if zone is not None:
+                        print(f"[MATCH ZONE] SR zone={zone}")
+                        return int(zone)
+            except Exception:
+                pass
+
+            # Try USB media
+            try:
+                zone = self.usb_media.read_int(
+                    CONFIG.usb_match_zone_file
+                )
+                print(f"[MATCH ZONE] USB zone={zone}")
+                return int(zone)
+            except Exception:
+                pass
+
+            # Fallback
+            print(f"[MATCH ZONE] FIXED zone={CONFIG.match_zone_fixed}")
+            return int(CONFIG.match_zone_fixed)
+
+        # -------------------------
+        # SR
+        # -------------------------
+        if "sr" in source:
+            return int(self.robot.zone)
+
+        # -------------------------
+        # USB
+        # -------------------------
+        if "usb" in source:
+            zone = self.usb_media.read_int(
+                CONFIG.usb_match_zone_file
+            )
+            return int(zone)
+
+        # -------------------------
+        # FIXED
+        # -------------------------
+        if "fixed" in source:
+            return int(CONFIG.match_zone_fixed)
+
+        raise ValueError(
+            f"Unknown MATCH_ZONE_SOURCE: {CONFIG.match_zone_source}"
+        )
+
     def _read_current(self, name: str) -> Optional[float]:
         if self.mega is None:
             return None
@@ -711,6 +777,10 @@ class BobBotIO(IOMap):
     @property
     def encoder(self):
         return self._encoder
+
+    @property
+    def usb(self):
+        return self._usb
 
     @property
     def motor(self):
