@@ -20,6 +20,11 @@ def build_pnp_points(
         corners_px = obs.get("corners_px")
         tag_size_m = obs.get("tag_size_m")
 
+        tag_id = int(obs.get("tag_id", -1))
+
+        if tag_id in (18, 19):
+            print(f"[PNP_CORNERS] tag={tag_id} corners_px={corners_px}")
+
         if not corners_px or tag_size_m is None:
             continue
 
@@ -41,10 +46,10 @@ def build_pnp_points(
         tangent_y = normal_x
 
         local_corners = [
-            (+half, -half),
-            (+half, +half),
-            (-half, +half),
-            (-half, -half),
+            (-half, -half),  # bottom-left
+            (+half, -half),  # bottom-right
+            (+half, +half),  # top-right
+            (-half, +half),  # top-left
         ]
 
         tag_object_points = []
@@ -165,12 +170,13 @@ class AprilTagPnPPoseProvider:
             if len(debug_object_points) < 4:
                 continue
 
+            # FIXED: Uses SQPNP for multi-point clouds to filter noise
             debug_success, debug_rvec, debug_tvec = cv2.solvePnP(
                 debug_object_points,
                 debug_image_points,
                 np.array(intrinsic_matrix, dtype=np.float64),
                 np.array(distortion_coefficients, dtype=np.float64),
-                flags=cv2.SOLVEPNP_ITERATIVE,
+                flags=cv2.SOLVEPNP_SQPNP if len(debug_object_points) > 4 else cv2.SOLVEPNP_IPPE_SQUARE,
             )
 
             if not debug_success:
@@ -189,8 +195,22 @@ class AprilTagPnPPoseProvider:
             debug_reproj = float(np.mean(debug_errors))
 
             debug_rotation_matrix, _ = cv2.Rodrigues(debug_rvec)
+
             debug_camera_position_world = -debug_rotation_matrix.T @ debug_tvec
             debug_camera_position_world = debug_camera_position_world.reshape(3)
+
+            debug_obs, debug_field_pose = debug_observations[0]
+
+            tag_x = float(debug_field_pose["x_m"])
+            tag_y = float(debug_field_pose["y_m"])
+
+            print(
+                f"[PNP_LEFT_WALL_DIAG] "
+                f"tag={debug_obs['tag_id']} "
+                f"cam_x_plus_z={tag_x + float(debug_tvec[2][0]):.3f} "
+                f"cam_y_minus_x={tag_y - float(debug_tvec[0][0]):.3f} "
+                f"cam_y_plus_x={tag_y + float(debug_tvec[0][0]):.3f}"
+            )
 
             print(
                 f"[PNP_COMPARE] "
@@ -230,13 +250,51 @@ class AprilTagPnPPoseProvider:
         camera_matrix = np.array(intrinsic_matrix, dtype=np.float64)
         dist_coeffs = np.array(distortion_coefficients, dtype=np.float64)
 
+        # FIXED: Upgraded flag for cleaner square/multi-target math matrices
+        pnp_flag = (
+            cv2.SOLVEPNP_SQPNP
+            if point_count > 4
+            else cv2.SOLVEPNP_IPPE_SQUARE
+        )
+
         success, rvec, tvec = cv2.solvePnP(
             object_points,
             image_points,
             camera_matrix,
             dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE,
+            flags=pnp_flag,
         )
+
+        # ---------------------------------------------------------
+        # DEBUG: Dump all candidate solutions
+        # ---------------------------------------------------------
+
+        generic_ok, rvecs, tvecs, reproj_errors = cv2.solvePnPGeneric(
+            object_points,
+            image_points,
+            camera_matrix,
+            dist_coeffs,
+            flags=pnp_flag,
+        )
+
+        if generic_ok:
+            for i, (cand_rvec, cand_tvec) in enumerate(zip(rvecs, tvecs)):
+                cand_R, _ = cv2.Rodrigues(cand_rvec)
+
+                cand_cam_pos = (-cand_R.T @ cand_tvec).reshape(3)
+
+                reproj = -1.0
+                if reproj_errors is not None and len(reproj_errors) > i:
+                    reproj = float(np.ravel(reproj_errors[i])[0])
+
+                print(
+                    f"[PNP_CANDIDATE] "
+                    f"i={i} "
+                    f"reproj={reproj:.2f}px "
+                    f"x_m={cand_cam_pos[0]:.3f} "
+                    f"y_m={cand_cam_pos[1]:.3f} "
+                    f"z_m={cand_cam_pos[2]:.3f}"
+                )
 
         is_valid = bool(success) and usable_tag_count >= 2
 
@@ -259,6 +317,19 @@ class AprilTagPnPPoseProvider:
 
         rotation_matrix, _ = cv2.Rodrigues(rvec)
 
+        print("[PNP_RAW_R]")
+        print(rotation_matrix)
+
+        print(
+            "[PNP_RAW_T] "
+            f"x={tvec[0][0]:.3f} "
+            f"y={tvec[1][0]:.3f} "
+            f"z={tvec[2][0]:.3f}"
+        )
+
+        print("[PNP_PRE_WORLD_TRANSFORM]")
+        print(f"rotation_det={np.linalg.det(rotation_matrix):.4f}")
+
         camera_position_world = -rotation_matrix.T @ tvec
         camera_position_world = camera_position_world.reshape(3)
 
@@ -266,15 +337,42 @@ class AprilTagPnPPoseProvider:
         pnp_y_m = float(camera_position_world[1])
         pnp_z_m = float(camera_position_world[2])
 
+        pnp_x_m = float(tvec[0][0])
+        pnp_y_m = float(tvec[1][0])
+        pnp_z_m = float(tvec[2][0])
+
+        print(
+            f"[PNP_DIRECT_TVEC] "
+            f"x_m={pnp_x_m:.3f} "
+            f"y_m={pnp_y_m:.3f} "
+            f"z_m={pnp_z_m:.3f}"
+        )
+
         if isinstance(camera_to_robot_transform, dict):
             mount_x_m = float(camera_to_robot_transform.get("x_mm", 0.0)) / 1000.0
             mount_y_m = float(camera_to_robot_transform.get("y_mm", 0.0)) / 1000.0
+            mount_yaw_rad = float(camera_to_robot_transform.get("yaw_rad", 0.0))
         else:
             mount_x_m = float(getattr(camera_to_robot_transform, "x_mm", 0.0)) / 1000.0
             mount_y_m = float(getattr(camera_to_robot_transform, "y_mm", 0.0)) / 1000.0
+            mount_yaw_rad = float(getattr(camera_to_robot_transform, "yaw_rad", 0.0))
 
-        robot_x_m = pnp_x_m - mount_x_m
-        robot_y_m = pnp_y_m - mount_y_m
+        # FIXED FOR PITCH: Transpose to extract the Camera-to-World matrix
+        R_c2w = rotation_matrix.T
+
+        # FIXED FOR PITCH: Calculate yaw using the camera's sideways X-axis vector.
+        # This keeps the yaw calculation stable even when the camera tilts down.
+        cam_yaw_rad = float(np.arctan2(R_c2w[0, 1], R_c2w[0, 0]))
+
+        # Calculate the final robot chassis heading relative to the world
+        robot_pose_yaw = cam_yaw_rad - mount_yaw_rad
+
+        # Rotate the mounting offsets into the field grid using the robot's heading
+        cos_theta = np.cos(robot_pose_yaw)
+        sin_theta = np.sin(robot_pose_yaw)
+
+        robot_x_m = pnp_x_m - (mount_x_m * cos_theta - mount_y_m * sin_theta)
+        robot_y_m = pnp_y_m - (mount_x_m * sin_theta + mount_y_m * cos_theta)
 
         print(
             f"[PNP_TVEC] "
@@ -350,8 +448,8 @@ class AprilTagPnPPoseProvider:
             source_id=source_id,
             pose_x_m=robot_x_m,
             pose_y_m=robot_y_m,
-            pose_theta_rad=None,
-            ambiguity_score=None,
+            pose_theta_rad=robot_pose_yaw,  # FIXED: Returns computed angle
+            ambiguity_score=0.0,
             reprojection_score=reprojection_score,
             tag_count=usable_tag_count,
             timestamp_ms=timestamp_ms,

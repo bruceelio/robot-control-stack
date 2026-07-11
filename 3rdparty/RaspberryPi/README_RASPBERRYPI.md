@@ -156,7 +156,7 @@ Create virtual environment:
 
 ```bash
 cd ~
-python3 -m venv apriltag-env
+python3 -m venv --system-site-packages apriltag-env
 ```
 
 Activate:
@@ -220,30 +220,38 @@ Otherwise, you will get:
 
 ModuleNotFoundError: No module named 'picamera2'
 
-# Required setup
+# Part B - Deploy New Code
 
-Activate environment:
+# Part C - Daily Robot Startup
+
+## Login to the Raspberry Pi
+
+```bash
+ssh bt@192.168.8.236
+```
+
+## Activate the Python environment
 
 ```bash
 source ~/apriltag-env/bin/activate
 ```
-Verify:
+
+(Optional) Verify the camera and AprilTag libraries:
 
 ```bash
-python3 -c "from picamera2 import Picamera2; print('OK')"
-python3 -c "from pupil_apriltags import Detector; print('OK')"
+python3 -c "from picamera2 import Picamera2; print('Picamera2 OK')"
+python3 -c "from pupil_apriltags import Detector; print('AprilTag OK')"
 ```
 
-Run:
+## Run the robot
 
 ```bash
 cd ~/robot
 python3 main.py
 ```
 
----
 
-# 9. Selecting Robot Mode
+# Part D - Selecting Robot Mode
 
 The system supports multiple robot profiles:
 
