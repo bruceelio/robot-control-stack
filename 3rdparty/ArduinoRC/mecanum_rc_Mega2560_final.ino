@@ -105,6 +105,11 @@ unsigned long shooterFeedPulseStartMs = 0;
 // =========================================================
 
 bool readIbusFrame() {
+  bool receivedValidFrame = false;
+
+  // Drain every byte currently waiting in the UART buffer. iBus sends a
+  // 32-byte frame roughly every 7 ms, so returning after only one frame can
+  // allow the Mega serial buffer to overflow.
   while (IBUS_SERIAL.available()) {
     uint8_t b = IBUS_SERIAL.read();
 
@@ -134,7 +139,9 @@ bool readIbusFrame() {
       uint16_t rxsum = ibus_buf[30] | (ibus_buf[31] << 8);
       ibus_idx = 0;
 
-      if (sum != rxsum) return false;
+      // Ignore a damaged frame but continue draining the UART so the parser
+      // can resynchronise immediately on the next valid frame.
+      if (sum != rxsum) continue;
 
       for (int ch = 0; ch < 14; ch++) {
         ibus_ch[ch] = ibus_buf[2 + ch * 2] |
@@ -142,11 +149,11 @@ bool readIbusFrame() {
       }
 
       ibus_last_frame_ms = millis();
-      return true;
+      receivedValidFrame = true;
     }
   }
 
-  return false;
+  return receivedValidFrame;
 }
 
 uint16_t ibusMicros(uint8_t chZeroBased) {
@@ -410,7 +417,7 @@ void loop() {
   // Stop every controlled output if the FlySky/iBus signal is lost.
   if (millis() - ibus_last_frame_ms > IBUS_TIMEOUT_MS) {
     stopAllControlledOutputs();
-    delay(20);
+    delay(5);
     return;
   }
 
@@ -418,5 +425,5 @@ void loop() {
   updateShooterFromIbus();
   updateShooterFeedFromIbus();
 
-  delay(20);
+  delay(5);
 }
