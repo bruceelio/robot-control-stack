@@ -75,10 +75,10 @@ static const float TURN_SCALE   = 0.45f;
 // Preserved from the tested non-mecanum sketch
 static const float TELEOP_SHOOTER_SCALE = 0.8f;
 
-static const unsigned long SHOOTER_FEED_PULSE_MS = 700;
+static const unsigned long SHOOTER_FEED_PULSE_MS = 600;
 static const int SHOOTER_FEED_STOP_US      = 1500;
-static const int SHOOTER_FEED_LEFT_RUN_US  = 2000;
-static const int SHOOTER_FEED_RIGHT_RUN_US = 1000;
+static const int SHOOTER_FEED_LEFT_RUN_US  = 2400;
+static const int SHOOTER_FEED_RIGHT_RUN_US = 600;
 
 static const unsigned long IBUS_TIMEOUT_MS = 200;
 
