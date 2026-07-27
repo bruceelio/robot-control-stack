@@ -1,124 +1,298 @@
 # diagnostics/drive_timing.py
 
+from __future__ import annotations
+
+import csv
 import time
-import math
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
-from primitives.motion import Drive
-from primitives.base import PrimitiveStatus
-from behaviors.init_escape import InitEscape
-from localisation.localisation_temp import Localisation
-from perception.perception import Perception, sense
-
-from motion_backends import create_motion_backend
-from level2.level2_canonical import Level2
 from config import CONFIG
-from calibration.resolve import resolve as resolve_calibration
 from hw_io.resolve import resolve_io
 
 
-# Distances to test (mm)
-DISTANCES_MM = [100, 200, 400, 600, 1000, 1500]
+LEFT_DRIVE_MOTOR = "drive_front_left"
+RIGHT_DRIVE_MOTOR = "drive_front_right"
+
+RESULTS_PATH = Path("diagnostics/results/drive_timing.csv")
+
+CSV_FIELDS = [
+    "timestamp",
+    "robot_id",
+    "hardware_profile",
+    "trial",
+    "direction",
+    "left_motor",
+    "right_motor",
+    "left_power",
+    "right_power",
+    "duration_commanded_s",
+    "duration_powered_s",
+    "battery_before_v",
+    "battery_after_v",
+    "distance_measured_mm",
+    "notes",
+]
 
 
-def _update_localisation(io, perception, localisation):
-    pose, _objects = sense(io, perception)
-    if pose is None:
-        localisation.invalidate()
-        return None
-    x, y, heading = pose
-    localisation.set_pose((x, y), heading)
-    return (x, y, heading)
+def _prompt_float(
+    prompt: str,
+    *,
+    minimum: Optional[float] = None,
+    maximum: Optional[float] = None,
+) -> float:
+    while True:
+        raw = input(prompt).strip()
+
+        try:
+            value = float(raw)
+        except ValueError:
+            print("Enter a numeric value.")
+            continue
+
+        if minimum is not None and value < minimum:
+            print(f"Value must be at least {minimum}.")
+            continue
+
+        if maximum is not None and value > maximum:
+            print(f"Value must not exceed {maximum}.")
+            continue
+
+        return value
 
 
-def run(robot):
-    print("\n=== DRIVE CALIBRATION DIAGNOSTIC ===\n")
+def _prompt_direction() -> tuple[str, float]:
+    while True:
+        raw = input("Direction [F/R]: ").strip().lower()
 
-    # --- Core subsystems (match Controller) ---
-    io = resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
-    lvl2 = Level2(io, max_power=CONFIG.max_motor_power)
-    perception = Perception(io)
-    localisation = Localisation()
+        if raw in {"f", "forward"}:
+            return "forward", 1.0
 
-    calibration = resolve_calibration(config=CONFIG)
+        if raw in {"r", "reverse", "backward"}:
+            return "reverse", -1.0
 
-    motion_backend = create_motion_backend(
-        CONFIG.motion_backend,
-        lvl2,
-        CONFIG,
-        calibration,
-    )
+        print("Enter F for forward or R for reverse.")
 
-    # -------------------------------------------------
-    # Optional: InitEscape for repeatable starting pose
-    # -------------------------------------------------
-    print("[DIAG] Running InitEscape...")
-    escape = InitEscape()
-    escape.start(config=CONFIG, motion_backend=motion_backend)
+
+def _prompt_yes_no(prompt: str, *, default: bool = False) -> bool:
+    suffix = " [Y/n]: " if default else " [y/N]: "
 
     while True:
-        status = escape.update(
-            lvl2=lvl2,
-            localisation=localisation,
-            motion_backend=motion_backend,
-        )
-        if status.name == "SUCCEEDED":
-            break
-        time.sleep(0.02)
+        raw = input(prompt + suffix).strip().lower()
 
-    print("[DIAG] InitEscape complete\n")
-    time.sleep(0.5)
+        if raw == "":
+            return default
 
-    # -------------------------------------------------
-    # Drive tests
-    # -------------------------------------------------
-    test_distances = []
-    for d in DISTANCES_MM:
-        test_distances.append(d)
-        test_distances.append(-d)
+        if raw in {"y", "yes"}:
+            return True
 
-    print("cmd_mm\tactual_mm\terror_mm")
+        if raw in {"n", "no"}:
+            return False
 
-    for distance in test_distances:
-        # Pose before
-        p0 = _update_localisation(io, perception, localisation)
-        if p0 is None:
-            print("[ERROR] No pose before drive (vision lost?)")
-            return
-        x0, y0, _h0 = p0
+        print("Enter Y or N.")
 
-        drive = Drive(distance_mm=distance)
-        drive.start(motion_backend=motion_backend)
 
+def _read_battery_voltage(io) -> Optional[float]:
+    try:
+        value = io.voltage["battery"].volts
+    except (AttributeError, KeyError, TypeError):
+        return None
+
+    if value is None:
+        return None
+
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if value <= 1.0:
+        return None
+
+    return value
+
+
+def _format_voltage(value: Optional[float]) -> str:
+    return "unavailable" if value is None else f"{value:.2f} V"
+
+
+def _append_result(row: dict) -> None:
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not RESULTS_PATH.exists() or RESULTS_PATH.stat().st_size == 0
+
+    with RESULTS_PATH.open("a", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=CSV_FIELDS)
+
+        if write_header:
+            writer.writeheader()
+
+        writer.writerow(row)
+
+
+def _stop_drive(left_motor, right_motor) -> None:
+    """Stop both named drive motors through the semantic hw_io interface."""
+    first_error: Optional[Exception] = None
+
+    try:
+        left_motor.power = 0.0
+    except Exception as exc:
+        first_error = exc
+
+    try:
+        right_motor.power = 0.0
+    except Exception:
+        if first_error is None:
+            raise
+
+    if first_error is not None:
+        raise first_error
+
+
+def run(robot=None) -> None:
+    print("\n=== PHYSICAL DRIVE TIMING DIAGNOSTIC ===")
+    print("Measures physical distance produced by chosen motor power and duration.")
+    print("This diagnostic bypasses the Level2 software interface.")
+    print("Keep the test lane clear and be ready to stop the robot.\n")
+
+    io = resolve_io(
+        robot=robot,
+        hardware_profile=CONFIG.hardware_profile,
+    )
+
+    # Named semantic devices are the final application-facing hw_io boundary.
+    # The resolver maps these names to the selected physical or simulated backend.
+    left_motor = io.motor[LEFT_DRIVE_MOTOR]
+    right_motor = io.motor[RIGHT_DRIVE_MOTOR]
+
+    max_power = float(getattr(CONFIG, "max_motor_power", 1.0))
+    trial = 1
+
+    try:
         while True:
-            status = drive.update(motion_backend=motion_backend)
-            if status == PrimitiveStatus.SUCCEEDED:
+            print(f"\n--- Trial {trial} ---")
+
+            direction, direction_sign = _prompt_direction()
+
+            power_magnitude = _prompt_float(
+                f"Motor power magnitude [0.0 to {max_power:.2f}]: ",
+                minimum=0.0,
+                maximum=max_power,
+            )
+
+            duration_commanded_s = _prompt_float(
+                "Drive duration (seconds): ",
+                minimum=0.01,
+            )
+
+            signed_power = direction_sign * power_magnitude
+            left_power = signed_power
+            right_power = signed_power
+
+            print("\nPosition and align the robot at the starting mark.")
+            print(
+                f"Next command: {direction} at power {power_magnitude:.3f} "
+                f"for {duration_commanded_s:.3f} s"
+            )
+
+            confirmation = input(
+                "Press Enter to run, or type Q then Enter to quit: "
+            ).strip().lower()
+
+            if confirmation in {"q", "quit"}:
                 break
-            if status == PrimitiveStatus.FAILED:
-                print(f"[ERROR] Drive FAILED at distance {distance}")
-                return
-            time.sleep(0.01)
 
-        time.sleep(0.2)  # settle
+            battery_before_v = _read_battery_voltage(io)
+            print(f"Battery before: {_format_voltage(battery_before_v)}")
+            print("DRIVING...")
 
-        # Pose after
-        p1 = _update_localisation(io, perception, localisation)
-        if p1 is None:
-            print("[ERROR] No pose after drive (vision lost?)")
-            return
-        x1, y1, _h1 = p1
+            powered_started_s = time.monotonic()
 
-        # Euclidean distance travelled
-        dx = x1 - x0
-        dy = y1 - y0
-        actual = math.sqrt(dx * dx + dy * dy)
+            try:
+                left_motor.power = left_power
+                right_motor.power = right_power
 
-        # Preserve sign based on commanded direction
-        if distance < 0:
-            actual *= -1
+                # Use hw_io sleep so the selected backend can continue any
+                # required heartbeat or service behaviour while driving.
+                io.sleep(duration_commanded_s)
 
-        error = actual - distance
+            except Exception:
+                print("\n[ERROR] Direct hw_io drive command failed.")
+                print("Run tests/test_motion.py to troubleshoot motor operation.")
+                raise
 
-        print(f"{distance:.1f}\t{actual:.1f}\t{error:.1f}")
-        time.sleep(0.5)
+            finally:
+                powered_stopped_s = time.monotonic()
 
-    print("\n=== END DRIVE CALIBRATION ===")
+                try:
+                    _stop_drive(left_motor, right_motor)
+                except Exception:
+                    print("\n[ERROR] One or both motor stop commands failed.")
+                    raise
+
+            duration_powered_s = powered_stopped_s - powered_started_s
+
+            print("Drive complete.")
+            io.sleep(0.25)
+
+            battery_after_v = _read_battery_voltage(io)
+            print(f"Battery after:  {_format_voltage(battery_after_v)}")
+
+            distance_measured_mm = _prompt_float(
+                "Measured distance travelled (mm): ",
+                minimum=0.0,
+            )
+
+            notes = input("Notes (optional): ").strip()
+
+            row = {
+                "timestamp": datetime.now().astimezone().isoformat(
+                    timespec="seconds"
+                ),
+                "robot_id": getattr(CONFIG, "robot_id", ""),
+                "hardware_profile": getattr(CONFIG, "hardware_profile", ""),
+                "trial": trial,
+                "direction": direction,
+                "left_motor": LEFT_DRIVE_MOTOR,
+                "right_motor": RIGHT_DRIVE_MOTOR,
+                "left_power": f"{left_power:.6f}",
+                "right_power": f"{right_power:.6f}",
+                "duration_commanded_s": f"{duration_commanded_s:.6f}",
+                "duration_powered_s": f"{duration_powered_s:.6f}",
+                "battery_before_v": (
+                    "" if battery_before_v is None else f"{battery_before_v:.6f}"
+                ),
+                "battery_after_v": (
+                    "" if battery_after_v is None else f"{battery_after_v:.6f}"
+                ),
+                "distance_measured_mm": f"{distance_measured_mm:.3f}",
+                "notes": notes,
+            }
+
+            _append_result(row)
+
+            print(
+                f"Saved trial {trial}: {direction}, "
+                f"power={power_magnitude:.3f}, "
+                f"time={duration_commanded_s:.3f} s, "
+                f"distance={distance_measured_mm:.1f} mm"
+            )
+            print(f"Results file: {RESULTS_PATH}")
+
+            trial += 1
+
+            if not _prompt_yes_no("Run another trial?", default=True):
+                break
+
+    finally:
+        # Final safety stop for normal exit, Ctrl+C, or an unexpected error.
+        try:
+            _stop_drive(left_motor, right_motor)
+        except Exception as exc:
+            print(f"[WARN] Final motor stop failed: {exc}")
+
+    print("\n=== END PHYSICAL DRIVE TIMING DIAGNOSTIC ===")
+
+
+if __name__ == "__main__":
+    run(robot=None)

@@ -1,6 +1,6 @@
-// 3rdparty/ArduinoRC/2wd_Mega2560.ino
+// 3rdparty/ArduinoRC/BobBot_Mega2560_4wd_mecanum.ino
 //
-// (9) added lift
+// Full Pi-compatible BobBot firmware with 4WD mecanum FlySky teleop.
 // BobBot / Mega reusable control sketch
 //
 // Design intent:
@@ -10,12 +10,14 @@
 //   not by searching through the whole file
 //
 // Current active functions:
-// - FlySky iBus teleop drive on CH1/CH2
+// - FlySky iBus 4WD mecanum teleop on CH1/CH2/CH4
 // - FlySky gripper control on CH5
-// - Pi USB serial AUTO mode with heartbeat
+// - Pi USB serial AUTO mode and existing Pi-facing protocol
 // - named motor endpoints:
 //     drive_front_left
 //     drive_front_right
+//     drive_rear_left
+//     drive_rear_right
 //     shooter
 //     collector
 // - named servo endpoints:
@@ -35,10 +37,12 @@
 //     AUDIO <name> PLAY ...
 //
 // Notes:
-// - RoboClaw A (pins 18/19) is currently the active drive link
+// - RoboClaw A (pins 18/19) controls the front motors
 // - drive_front_left  -> RoboClaw A M1
 // - drive_front_right -> RoboClaw A M2
-// - RoboClaw B (pins 14/15) is wired but not currently used in this sketch
+// - RoboClaw B (pins 14/15) controls the rear motors
+// - drive_rear_left   -> RoboClaw B M1
+// - drive_rear_right  -> RoboClaw B M2
 // - gripper is a paired mirrored servo group on pins 11 and 13
 // - lift is a single servo on pin 12
 // - shooter / collector use Cytron MDD20A wiring defined below
@@ -117,6 +121,7 @@ static const uint8_t PIN_ENC_SHOOTER_B          = 37;
 
 // ------------------------- DIGITAL INPUTS ----------------
 static const uint8_t PIN_SELECTOR_PI_ARDUINO    = 32;
+static const uint8_t PIN_BUTTON_START = 34;
 
 static const uint8_t PIN_BUMPER_FRONT_LEFT      = 47;
 static const uint8_t PIN_BUMPER_FRONT_RIGHT     = 49;
@@ -149,8 +154,14 @@ static const char SERVO_NAME_GRIPPER[]           = "gripper";
 static const char SERVO_NAME_LIFT[]              = "lift";
 
 // ------------------------- FLYSKY CHANNELS ---------------
-static const uint8_t CH_DRIVE_ROTATE = 1; // right stick left/right
+static const uint8_t CH_DRIVE_STRAFE   = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
+static const uint8_t CH_DRIVE_ROTATE   = 4; // left stick left/right
+
+static const float TELEOP_DRIVE_SCALE  = 0.38f;
+static const float TELEOP_STRAFE_SCALE = 0.38f;
+static const float TELEOP_TURN_SCALE   = 0.45f;
+
 static const uint8_t CH_GRIP = 5; // currently assigned gripper control
 static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
 static const float TELEOP_SHOOTER_SCALE = 0.8f; // CH_LIFT also controls shooter power
@@ -1042,6 +1053,14 @@ void handlePiCommand(char *line) {
       }
     }
 
+    if (strcmp(rkind, "BUTTON") == 0) {
+      if (strcmp(a1, "start") == 0) {
+        bool pressed = (digitalRead(PIN_BUTTON_START) == LOW);
+        replyValue("BUTTON", pressed);
+        return;
+      }
+    }
+
     if (strcmp(rkind, "QUAD") == 0 && count >= 3) {
       replyValue("QUAD", readQuadPair((uint8_t)atoi(a1), (uint8_t)atoi(a2)));
       return;
@@ -1150,6 +1169,8 @@ void setup() {
   pinMode(PIN_ENC_SHOOTER_A, INPUT_PULLUP);
   pinMode(PIN_ENC_SHOOTER_B, INPUT_PULLUP);
 
+  pinMode(PIN_BUTTON_START, INPUT_PULLUP);
+
   pinMode(PIN_LED_LISIPAROI_PWM, OUTPUT);
   analogWrite(PIN_LED_LISIPAROI_PWM, 0);
 
@@ -1214,30 +1235,39 @@ void loop() {
     return;
   }
 
-  // Differential drive from FlySky
+  // 4WD mecanum drive from FlySky.
+  // CH2 = forward/reverse, CH1 = strafe, CH4 = rotate.
   int throttle = ibusToPercent(CH_DRIVE_THROTTLE - 1);
+  int strafe   = ibusToPercent(CH_DRIVE_STRAFE - 1);
   int rotate   = ibusToPercent(CH_DRIVE_ROTATE - 1);
 
-  float fwd  = normalize(throttle);
-  float turn = normalize(rotate);
+  float fwd  = normalize(throttle) * TELEOP_DRIVE_SCALE;
+  float side = normalize(strafe)   * TELEOP_STRAFE_SCALE;
+  float turn = normalize(rotate)   * TELEOP_TURN_SCALE;
 
-  float driveScale = 0.38f;
-  float turnScale  = 0.45f;
+  // Standard mecanum mix.
+  float frontLeft  = fwd + side + turn;
+  float frontRight = fwd - side - turn;
+  float rearLeft   = fwd - side + turn;
+  float rearRight  = fwd + side - turn;
 
-  fwd  *= driveScale;
-  turn *= turnScale;
+  // Preserve the wheel-command ratios when any command exceeds full scale.
+  float maxVal = max(
+      max(fabs(frontLeft), fabs(frontRight)),
+      max(fabs(rearLeft), fabs(rearRight))
+  );
 
-  float left  = fwd + turn;
-  float right = fwd - turn;
-
-  float maxVal = max(fabs(left), fabs(right));
   if (maxVal > 1.0f) {
-    left  /= maxVal;
-    right /= maxVal;
+    frontLeft  /= maxVal;
+    frontRight /= maxVal;
+    rearLeft   /= maxVal;
+    rearRight  /= maxVal;
   }
 
-  writeDriveFrontLeft(left);
-  writeDriveFrontRight(right);
+  writeDriveFrontLeft(frontLeft);
+  writeDriveFrontRight(frontRight);
+  writeDriveRearLeft(rearLeft);
+  writeDriveRearRight(rearRight);
   updateGripFromIbus();
   updateLiftFromIbus();
   updateShooterFeedFromIbus();
