@@ -166,24 +166,39 @@ def run(robot=None) -> None:
     right_motor = io.motor[RIGHT_DRIVE_MOTOR]
 
     max_power = float(getattr(CONFIG, "max_motor_power", 1.0))
+
+    print(
+        f"Maximum motor power: {max_power:.2f}\n"
+        f"Source: CONFIG.max_motor_power for "
+        f"{getattr(CONFIG, 'robot_id', 'selected robot')}"
+    )
+
+
     trial = 1
+    reuse_previous_settings = False
 
     try:
         while True:
             print(f"\n--- Trial {trial} ---")
 
-            direction, direction_sign = _prompt_direction()
+            if reuse_previous_settings:
+                print("Reusing previous drive settings:")
+                print(f"  Direction: {direction}")
+                print(f"  Power:     {power_magnitude:.3f}")
+                print(f"  Duration:  {duration_commanded_s:.3f} s")
+            else:
+                direction, direction_sign = _prompt_direction()
 
-            power_magnitude = _prompt_float(
-                f"Motor power magnitude [0.0 to {max_power:.2f}]: ",
-                minimum=0.0,
-                maximum=max_power,
-            )
+                power_magnitude = _prompt_float(
+                    f"Motor power magnitude [0.0 to {max_power:.2f}]: ",
+                    minimum=0.0,
+                    maximum=max_power,
+                )
 
-            duration_commanded_s = _prompt_float(
-                "Drive duration (seconds): ",
-                minimum=0.01,
-            )
+                duration_commanded_s = _prompt_float(
+                    "Drive duration (seconds): ",
+                    minimum=0.01,
+                )
 
             signed_power = direction_sign * power_magnitude
             left_power = signed_power
@@ -283,6 +298,16 @@ def run(robot=None) -> None:
 
             if not _prompt_yes_no("Run another trial?", default=True):
                 break
+
+            print("\nPrevious drive settings:")
+            print(f"  Direction: {direction}")
+            print(f"  Power:     {power_magnitude:.3f}")
+            print(f"  Duration:  {duration_commanded_s:.3f} s")
+
+            reuse_previous_settings = _prompt_yes_no(
+                "Reuse previous drive settings?",
+                default=True,
+            )
 
     finally:
         # Final safety stop for normal exit, Ctrl+C, or an unexpected error.

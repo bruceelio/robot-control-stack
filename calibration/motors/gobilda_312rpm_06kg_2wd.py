@@ -1,4 +1,4 @@
-# calibration/profiles/bob_bot.py
+# calibration/motors/gobilda_312rpm_06kg_2wd.py
 
 """
 Calibration profile for motors
