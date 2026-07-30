@@ -97,6 +97,21 @@ class MegaSerialClient:
         power = max(-1.0, min(1.0, float(power)))
         return self.send(f"MOTOR {name} WRITE power={power:.4f}")
 
+    def drive_write(
+            self,
+            name: str,
+            *,
+            left: float,
+            right: float,
+    ) -> str:
+        left = max(-1.0, min(1.0, float(left)))
+        right = max(-1.0, min(1.0, float(right)))
+
+        return self.send(
+            f"DRIVE {name} WRITE "
+            f"left={left:.4f} right={right:.4f}"
+        )
+
     def led_write(self, name: str, *, brightness: float) -> str:
         brightness = max(0.0, min(1.0, float(brightness)))
         return self.send(f"LED {name} WRITE brightness={brightness:.4f}")

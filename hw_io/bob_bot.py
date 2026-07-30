@@ -180,6 +180,73 @@ class MegaSemanticMotor:
         resp = self._mega.motor_write(self._name, power=command_value)
         print(f"[BOBBOT MOTOR] resp={resp}")
 
+class MegaSemanticDrive:
+    """
+    Coordinated left/right drive output.
+
+    Sends both motor powers in one serial command so the Mega can apply
+    them as one paired update.
+    """
+
+    def __init__(
+        self,
+        owner: "BobBotIO",
+        mega: MegaSerialClient,
+        name: str,
+        *,
+        left_polarity: int = 1,
+        right_polarity: int = 1,
+    ):
+        self._owner = owner
+        self._mega = mega
+        self._name = name
+        self._left_polarity = 1 if left_polarity >= 0 else -1
+        self._right_polarity = 1 if right_polarity >= 0 else -1
+        self._left_power = 0.0
+        self._right_power = 0.0
+
+    @property
+    def left_power(self) -> float:
+        return self._left_power
+
+    @property
+    def right_power(self) -> float:
+        return self._right_power
+
+    def set_power(self, *, left: float, right: float) -> None:
+        left = max(-1.0, min(1.0, float(left)))
+        right = max(-1.0, min(1.0, float(right)))
+
+        starting_motion = (
+            abs(self._left_power) < 1e-6
+            and abs(self._right_power) < 1e-6
+            and (abs(left) > 1e-6 or abs(right) > 1e-6)
+        )
+
+        if starting_motion:
+            self._owner.ensure_auto_mode(force=True)
+
+        self._left_power = left
+        self._right_power = right
+
+        self._owner._heartbeat_if_due(force=True)
+
+        command_left = self._left_polarity * left
+        command_right = self._right_polarity * right
+
+        print(
+            f"[BOBBOT DRIVE] name={self._name} "
+            f"left={command_left} right={command_right}"
+        )
+
+        resp = self._mega.drive_write(
+            self._name,
+            left=command_left,
+            right=command_right,
+        )
+
+        print(f"[BOBBOT DRIVE] resp={resp}")
+
 
 class LedOutput:
     def __init__(self, write_fn):
@@ -265,6 +332,7 @@ class BobBotIO(IOMap):
         self.usb_media = UsbMediaClient()
 
         self._motor = None
+        self._drive = None
         self._servo = None
 
         self._bumper = None
@@ -498,6 +566,30 @@ class BobBotIO(IOMap):
                 "drive_rear_right": rear_right,
                 "collector": collector,
                 "shooter": shooter,
+            },
+        )
+
+        front_drive = MegaSemanticDrive(
+            self,
+            self.mega,
+            "front",
+            left_polarity=CONFIG.motor_polarity[0],
+            right_polarity=CONFIG.motor_polarity[1],
+        )
+
+        rear_drive = MegaSemanticDrive(
+            self,
+            self.mega,
+            "rear",
+            left_polarity=getattr(CONFIG, "motor_rear_left_polarity", 1),
+            right_polarity=getattr(CONFIG, "motor_rear_right_polarity", 1),
+        )
+
+        self._drive = NamedIndexedCollection(
+            ordered_items=[front_drive, rear_drive],
+            named_items={
+                "front": front_drive,
+                "rear": rear_drive,
             },
         )
 
@@ -789,6 +881,10 @@ class BobBotIO(IOMap):
     @property
     def motors(self):
         return self._motor
+
+    @property
+    def drive(self):
+        return self._drive
 
     @property
     def servo(self):

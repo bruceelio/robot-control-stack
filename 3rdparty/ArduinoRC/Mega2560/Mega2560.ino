@@ -897,6 +897,45 @@ void handlePiCommand(char *line) {
   char name[32];
   float value = 0.0f;
 
+  // Coordinated drive protocol:
+  //   DRIVE front WRITE left=0.3000 right=0.3000
+  //   DRIVE rear WRITE left=0.3000 right=0.3000
+  char driveName[16];
+  char driveLeftText[32];
+  char driveRightText[32];
+
+  if (sscanf(
+      line,
+      "DRIVE %15s WRITE left=%31s right=%31s",
+      driveName,
+      driveLeftText,
+      driveRightText
+    ) == 3) {
+
+    float leftPower = constrain(atof(driveLeftText), -1.0f, 1.0f);
+    float rightPower = constrain(atof(driveRightText), -1.0f, 1.0f);
+
+    if (strcmp(driveName, "front") == 0) {
+      motorDriveFrontLeftPower = leftPower;
+      motorDriveFrontRightPower = rightPower;
+    } else if (strcmp(driveName, "rear") == 0) {
+      motorDriveRearLeftPower = leftPower;
+      motorDriveRearRightPower = rightPower;
+    } else {
+      PI_SERIAL.print("ERR DRIVE ");
+      PI_SERIAL.println(driveName);
+      return;
+    }
+
+    PI_SERIAL.print("OK DRIVE ");
+    PI_SERIAL.print(driveName);
+    PI_SERIAL.print(" left=");
+    PI_SERIAL.print(leftPower, 4);
+    PI_SERIAL.print(" right=");
+    PI_SERIAL.println(rightPower, 4);
+    return;
+  }
+
   char motorName[32];
   char motorValueText[32];
 
