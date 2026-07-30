@@ -194,6 +194,11 @@ static const float BATTERY_SHUTDOWN_NOW_V   = 11.0f;
 static const char DEVICE_ID[] = "MEGA_AUX_1";
 static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (500 ms)
 
+// Hold the first front-drive command briefly so a matching command for the
+// opposite wheel can be committed in the same AUTO update. If no partner
+// arrives, apply the original command individually after this timeout.
+static const unsigned long DRIVE_PAIR_TIMEOUT_MS = 50UL;
+
 // =========================================================
 // STATE
 // =========================================================
@@ -208,6 +213,14 @@ float motorDriveRearLeftPower   = 0.0f;
 float motorDriveRearRightPower  = 0.0f;
 float motorShooterPower         = 0.0f;
 float motorCollectorPower       = 0.0f;
+
+// Pending AUTO commands for the front left/right drive pair.
+// TeleOp bypasses this staging and continues writing all wheel outputs directly.
+bool pendingDriveFrontLeftValid  = false;
+bool pendingDriveFrontRightValid = false;
+float pendingDriveFrontLeftPower  = 0.0f;
+float pendingDriveFrontRightPower = 0.0f;
+unsigned long pendingDrivePairStartMs = 0;
 
 float servoGripperPosition      = -1.0f;   // -1=open, +1=closed
 float servoLiftPosition         = 0.0f;    // -1=down, +1=up
@@ -595,16 +608,70 @@ bool piHasControl() {
   return piAutoRequested && piHeartbeatFresh();
 }
 
+void clearPendingFrontDrivePair() {
+  pendingDriveFrontLeftValid = false;
+  pendingDriveFrontRightValid = false;
+  pendingDrivePairStartMs = 0;
+}
+
+void applyPendingFrontDriveIndividually() {
+  if (pendingDriveFrontLeftValid) {
+    motorDriveFrontLeftPower = pendingDriveFrontLeftPower;
+  }
+
+  if (pendingDriveFrontRightValid) {
+    motorDriveFrontRightPower = pendingDriveFrontRightPower;
+  }
+
+  clearPendingFrontDrivePair();
+}
+
+void servicePendingFrontDrivePair() {
+  if (!pendingDriveFrontLeftValid && !pendingDriveFrontRightValid) {
+    return;
+  }
+
+  if (millis() - pendingDrivePairStartMs >= DRIVE_PAIR_TIMEOUT_MS) {
+    applyPendingFrontDriveIndividually();
+  }
+}
+
+void stageFrontDriveCommand(bool isLeft, float value) {
+  value = constrain(value, -1.0f, 1.0f);
+
+  // Do not combine a newly arriving command with an already expired command.
+  servicePendingFrontDrivePair();
+
+  if (!pendingDriveFrontLeftValid && !pendingDriveFrontRightValid) {
+    pendingDrivePairStartMs = millis();
+  }
+
+  if (isLeft) {
+    pendingDriveFrontLeftPower = value;
+    pendingDriveFrontLeftValid = true;
+  } else {
+    pendingDriveFrontRightPower = value;
+    pendingDriveFrontRightValid = true;
+  }
+
+  // Order-independent: left/right and right/left both commit as one update.
+  if (pendingDriveFrontLeftValid && pendingDriveFrontRightValid) {
+    motorDriveFrontLeftPower = pendingDriveFrontLeftPower;
+    motorDriveFrontRightPower = pendingDriveFrontRightPower;
+    clearPendingFrontDrivePair();
+  }
+}
+
 bool setMotorByName(const char *name, float value) {
   value = constrain(value, -1.0f, 1.0f);
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_LEFT) == 0) {
-    motorDriveFrontLeftPower = value;
+    stageFrontDriveCommand(true, value);
     return true;
   }
 
   if (strcmp(name, MOTOR_NAME_DRIVE_FRONT_RIGHT) == 0) {
-    motorDriveFrontRightPower = value;
+    stageFrontDriveCommand(false, value);
     return true;
   }
 
@@ -665,6 +732,7 @@ void handlePiCommand(char *line) {
   }
 
   if (strcmp(line, "MODE AUTO") == 0) {
+    clearPendingFrontDrivePair();
     piAutoRequested = true;
     piLastHeartbeatMs = millis();
     PI_SERIAL.println("OK MODE AUTO");
@@ -672,12 +740,14 @@ void handlePiCommand(char *line) {
   }
 
   if (strcmp(line, "MODE TELEOP") == 0) {
+    clearPendingFrontDrivePair();
     piAutoRequested = false;
     PI_SERIAL.println("OK MODE TELEOP");
     return;
   }
 
   if (strcmp(line, "STOP") == 0) {
+    clearPendingFrontDrivePair();
     motorDriveFrontLeftPower = 0.0f;
     motorDriveFrontRightPower = 0.0f;
     motorDriveRearLeftPower = 0.0f;
@@ -722,10 +792,10 @@ void handlePiCommand(char *line) {
       // Active drive link: RoboClaw A on 18/19
       if (txPin == PIN_ROBOCLAW_A_TX && rxPin == PIN_ROBOCLAW_A_RX) {
         if (strcmp(tokCh, "M1") == 0) {
-          motorDriveFrontLeftPower = value;
+          stageFrontDriveCommand(true, value);
           ok = true;
         } else if (strcmp(tokCh, "M2") == 0) {
-          motorDriveFrontRightPower = value;
+          stageFrontDriveCommand(false, value);
           ok = true;
         }
       }
@@ -1079,6 +1149,7 @@ void handlePiCommand(char *line) {
     char *tok2 = strtok(nullptr, " ");
 
     if (tok1 && tok2) {
+      clearPendingFrontDrivePair();
       motorDriveFrontLeftPower = constrain(atof(tok1), -1.0f, 1.0f);
       motorDriveFrontRightPower = constrain(atof(tok2), -1.0f, 1.0f);
       PI_SERIAL.println("OK DRV");
@@ -1199,6 +1270,7 @@ void setup() {
 
 void loop() {
   servicePiSerial();
+  servicePendingFrontDrivePair();
   readIbusFrame();
 
   updateBatteryAlarm();
@@ -1219,6 +1291,7 @@ void loop() {
 
   // Drop back to teleop on timeout
   if (piAutoRequested && !piHeartbeatFresh()) {
+    clearPendingFrontDrivePair();
     piAutoRequested = false;
     stopDrive();
     writeShooterMotor(0.0f);
