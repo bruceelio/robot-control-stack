@@ -20,6 +20,16 @@ class StartupScript(Enum):
     BASIC_GRAB = auto()
     ACIDIC_GRAB = auto()
 
+class Challenge(Enum):
+    NONE = auto()
+    VISION = auto()
+    MOVEMENT = auto()
+    MECHANICS = auto()
+    SENSING = auto()
+    SIMULATOR = auto()
+    TRANSPORTATION = auto()
+    STOPPING = auto()
+
 class MatchZoneSource(Enum):
     AUTO = "auto"
     SR = "sr"
@@ -32,14 +42,24 @@ ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-# RUN_MODE = RunMode.NORMAL
-RUN_MODE = RunMode.TESTS
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
 
 STARTUP_SCRIPT = StartupScript.NONE
 # STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
+
+CHALLENGE = Challenge.NONE
+# CHALLENGE = Challenge.VISION
+# CHALLENGE = Challenge.MOVEMENT
+# CHALLENGE = Challenge.MECHANICS
+# CHALLENGE = Challenge.SENSING
+# CHALLENGE = Challenge.SIMULATOR
+# CHALLENGE = Challenge.TRANSPORTATION
+# CHALLENGE = Challenge.STOPPING
 
 
 DEFAULT_TARGET_KIND = "acidic"
@@ -56,6 +76,5 @@ MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
 
 MATCH_ZONE_FIXED = 0
 USB_MATCH_ZONE_FILE = "zone.txt"
-
 
 START_SLOT = 3

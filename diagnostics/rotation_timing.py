@@ -11,6 +11,7 @@ from typing import Optional
 from config import CONFIG
 from hw_io.resolve import resolve_io
 
+DRIVE_GROUP = "front"
 
 LEFT_DRIVE_MOTOR = "drive_front_left"
 RIGHT_DRIVE_MOTOR = "drive_front_right"
@@ -137,23 +138,12 @@ def _append_result(row: dict) -> None:
         writer.writerow(row)
 
 
-def _stop_drive(left_motor, right_motor) -> None:
-    """Stop both named drive motors through the semantic hw_io interface."""
-    first_error: Optional[Exception] = None
-
-    try:
-        left_motor.power = 0.0
-    except Exception as exc:
-        first_error = exc
-
-    try:
-        right_motor.power = 0.0
-    except Exception:
-        if first_error is None:
-            raise
-
-    if first_error is not None:
-        raise first_error
+def _stop_drive(drive) -> None:
+    """Stop both front drive motors with one paired command."""
+    drive.set_power(
+        left=0.0,
+        right=0.0,
+    )
 
 
 def run(robot=None) -> None:
@@ -169,8 +159,8 @@ def run(robot=None) -> None:
 
     # Named semantic devices are the final application-facing hw_io boundary.
     # The resolver maps these names to the selected physical or simulated backend.
-    left_motor = io.motor[LEFT_DRIVE_MOTOR]
-    right_motor = io.motor[RIGHT_DRIVE_MOTOR]
+
+    drive = io.drive[DRIVE_GROUP]
 
     max_power = float(getattr(CONFIG, "max_motor_power", 1.0))
 
@@ -233,8 +223,10 @@ def run(robot=None) -> None:
             powered_started_s = time.monotonic()
 
             try:
-                left_motor.power = left_power
-                right_motor.power = right_power
+                drive.set_power(
+                    left=left_power,
+                    right=right_power,
+                )
 
                 # Use hw_io sleep so the selected backend can continue any
                 # required heartbeat or service behaviour while rotating.
@@ -245,14 +237,16 @@ def run(robot=None) -> None:
                 print("Run tests/test_motion.py to troubleshoot motor operation.")
                 raise
 
+
             finally:
-                powered_stopped_s = time.monotonic()
 
                 try:
-                    _stop_drive(left_motor, right_motor)
-                except Exception:
-                    print("\n[ERROR] One or both motor stop commands failed.")
-                    raise
+
+                    _stop_drive(drive)
+
+                finally:
+
+                    powered_stopped_s = time.monotonic()
 
             duration_powered_s = powered_stopped_s - powered_started_s
 
@@ -322,7 +316,7 @@ def run(robot=None) -> None:
     finally:
         # Final safety stop for normal exit, Ctrl+C, or an unexpected error.
         try:
-            _stop_drive(left_motor, right_motor)
+            _stop_drive(drive)
         except Exception as exc:
             print(f"[WARN] Final motor stop failed: {exc}")
 

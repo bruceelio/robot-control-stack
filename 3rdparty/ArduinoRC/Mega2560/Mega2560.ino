@@ -158,9 +158,9 @@ static const uint8_t CH_DRIVE_STRAFE   = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
 static const uint8_t CH_DRIVE_ROTATE   = 4; // left stick left/right
 
-static const float TELEOP_DRIVE_SCALE  = 0.38f;
-static const float TELEOP_STRAFE_SCALE = 0.38f;
-static const float TELEOP_TURN_SCALE   = 0.45f;
+static const float TELEOP_DRIVE_SCALE  = 0.80f;
+static const float TELEOP_STRAFE_SCALE = 0.80f;
+static const float TELEOP_TURN_SCALE   = 0.80f;
 
 static const uint8_t CH_GRIP = 5; // currently assigned gripper control
 static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob

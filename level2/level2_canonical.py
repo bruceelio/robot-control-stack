@@ -58,23 +58,41 @@ class Level2:
     # DRIVE / ROTATE
     # -----------------------------
 
-    def DRIVE(self, left_power: float, right_power: float, duration: Optional[float] = None):
+    def DRIVE(
+            self,
+            left_power: float,
+            right_power: float,
+            duration: Optional[float] = None,
+    ):
         """Drive robot: positive = forward, negative = backward."""
         left_power = self._clip(left_power)
         right_power = self._clip(right_power)
-        print(f"[Level2] DRIVE L={left_power} R={right_power} duration={duration}")
 
-        motors = getattr(self.io, "motors", None)
-        if motors is None:
-            raise RuntimeError("Level2.DRIVE: io.motors is not available")
+        print(
+            f"[Level2] DRIVE "
+            f"L={left_power} R={right_power} duration={duration}"
+        )
+
+        drive = getattr(self.io, "drive", None)
+        if drive is None:
+            raise RuntimeError("Level2.DRIVE: io.drive is not available")
+
+        front_drive = drive["front"]
 
         try:
-            motors[0].power = left_power
-            motors[1].power = right_power
+            front_drive.set_power(
+                left=left_power,
+                right=right_power,
+            )
+
             if duration is not None:
                 self.SLEEP(duration)
+
         finally:
-            self._stop_motors()
+            front_drive.set_power(
+                left=0.0,
+                right=0.0,
+            )
 
     def ROTATE(self, angle_deg: float):
         """

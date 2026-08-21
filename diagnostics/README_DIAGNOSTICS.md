@@ -1,4 +1,4 @@
-diagnostics/README.md
+diagnostics/README_DIAGNOSTICS.md
 
 # Diagnostics
 
@@ -134,6 +134,38 @@ Diagnostics should **never hardcode calibration values**.
 
 ---
 
+## Relationship to Analysis
+
+Diagnostics collect raw measurement data.
+
+Analysis tools process that data into useful engineering information such as:
+
+* Graphs
+* Curve fitting
+* Statistical summaries
+* Calibration constants
+
+Typical workflow:
+
+```
+Robot Diagnostic
+        │
+        ▼
+CSV results
+        │
+        ▼
+Analysis program
+        │
+        ├── Graphs
+        ├── Regression
+        ├── Statistics
+        └── Calibration values
+```
+
+Diagnostics should remain focused on collecting accurate data.
+
+Analysis programs should perform all graphing, regression, and numerical modelling so that historical datasets can be re-analysed at any time.
+
 ## Relationship to Behaviors and Navigation
 
 Diagnostics:
@@ -174,4 +206,43 @@ They exist so that **calibration, tuning, and understanding** do not contaminate
 > Calibration tells you *what numbers to use*
 > Runtime code simply *uses the numbers*
 
--
+---
+
+# Running Diagnostics
+
+Open a terminal in the project root directory.
+
+Diagnostics are executed as Python modules.
+
+Examples:
+
+```bash
+python3 -m diagnostics.drive_timing
+python3 -m diagnostics.rotation_timing
+python3 -m diagnostics.drive_encoder
+```
+
+Analysis programs are executed in the same way.
+
+Examples:
+
+```bash
+python3 -m diagnostics.analysis.analyse_drive_timing
+python3 -m diagnostics.analysis.analyse_rotation_timing
+python3 -m diagnostics.analysis.analyse_drive_encoder
+```
+
+Results are normally written to:
+
+```
+diagnostics/results/
+```
+
+Generated graphs, reports, and curve-fitting results should be written to:
+
+```
+diagnostics/analysis/graphs/
+diagnostics/analysis/reports/
+```
+
+Running modules using `python3 -m` is the preferred method because it ensures imports are resolved correctly from the project root.

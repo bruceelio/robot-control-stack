@@ -21,6 +21,7 @@ from motion_backends import create_motion_backend
 from config import CONFIG
 from config.strategy import RUN_MODE, RunMode
 from config.strategy import STARTUP_SCRIPT, StartupScript
+from config.strategy import CHALLENGE
 from config.arena import get_start_pose
 from config.strategy import START_SLOT
 
@@ -44,6 +45,11 @@ try:
     from tests.runner import run_tests
 except ImportError:
     run_tests = None
+
+try:
+    from challenges.runner import run_challenge
+except ImportError:
+    run_challenge = None
 
 def safe_cue(lvl2, cue: BuzzerCue) -> None:
     print(f"[CUE] {cue.value}")  # always visible in sim/logs
@@ -221,6 +227,27 @@ class Controller:
                 safe_cue(self.lvl2, BuzzerCue.END)
 
             print("=== DIAGNOSTICS COMPLETE ===\n")
+            return
+
+        if RUN_MODE == RunMode.CHALLENGES:
+            if run_challenge is None:
+                safe_cue(self.lvl2, BuzzerCue.ERROR)
+                raise RuntimeError("Challenge runner not available")
+
+            print(f"\n=== RUNNING CHALLENGE MODE: {CHALLENGE.name} ===")
+            try:
+                run_challenge(
+                    challenge=CHALLENGE,
+                    controller=self,
+                )
+                safe_cue(self.lvl2, BuzzerCue.SUCCESS)
+            except Exception:
+                safe_cue(self.lvl2, BuzzerCue.ERROR)
+                raise
+            finally:
+                safe_cue(self.lvl2, BuzzerCue.END)
+
+            print("=== CHALLENGE COMPLETE ===\n")
             return
 
         # ----------------------------------
