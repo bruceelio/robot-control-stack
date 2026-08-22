@@ -234,7 +234,7 @@ class Controller:
                 safe_cue(self.lvl2, BuzzerCue.ERROR)
                 raise RuntimeError("Challenge runner not available")
 
-            print(f"\n=== RUNNING CHALLENGE MODE: {CHALLENGE.name} ===")
+            print(f"\n=== RUNNING CHALLENGE: {CHALLENGE.name} ===")
             try:
                 run_challenge(
                     challenge=CHALLENGE,

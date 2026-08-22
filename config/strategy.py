@@ -13,6 +13,7 @@ class RunMode(Enum):
     NORMAL = auto()
     TESTS = auto()
     DIAGNOSTICS = auto()
+    CHALLENGES = auto()
 
 
 class StartupScript(Enum):
@@ -42,8 +43,8 @@ ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-RUN_MODE = RunMode.NORMAL
-# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.NORMAL
+RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
@@ -52,9 +53,9 @@ STARTUP_SCRIPT = StartupScript.NONE
 # STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
 
-CHALLENGE = Challenge.NONE
+# CHALLENGE = Challenge.NONE
 # CHALLENGE = Challenge.VISION
-# CHALLENGE = Challenge.MOVEMENT
+CHALLENGE = Challenge.MOVEMENT
 # CHALLENGE = Challenge.MECHANICS
 # CHALLENGE = Challenge.SENSING
 # CHALLENGE = Challenge.SIMULATOR

@@ -23,7 +23,10 @@ ENVIRONMENT = "real"
 # -------------------------
 
 CAMERAS = {
-    "front": "pi3_fullfov_640_360",
+    "front": {
+        "profile": "pi3_fullfov_640_360",
+        "device": 0,
+    }
 }
 
 VISION_SOURCES = {
@@ -67,6 +70,9 @@ BATTERY_VOLTAGE_NOMINAL = 14.17
 # base_link = midpoint between drive wheels
 # +x forward, +y left, +z up
 
+# Arducam (mounted on the Right)
+# -----------------------
+
 CAMERA_MOUNTS = {
     "front": {
         "x_mm": 40.0,
@@ -87,8 +93,33 @@ GRIPPER_MOUNT = {
     "yaw_deg": 0.0,
 }
 
+"""
+# Pi3 (mounted on the left)
+# -----------------------
+
+CAMERA_MOUNTS = {
+    "front": {
+        "x_mm": 40.0,
+        "y_mm": -90.0,
+        "z_mm": 215.0,
+        "roll_deg": 0.0,
+        "pitch_deg": -8.0,
+        "yaw_deg": 0.0,
+    }
+}
+
+GRIPPER_MOUNT = {
+    "x_mm": 145.0,
+    "y_mm": 5.0,
+    "z_mm": 75.0,
+    "roll_deg": 0.0,
+    "pitch_deg": 0.0,
+    "yaw_deg": 0.0,
+}
+"""
 
 """
+# Pi3
 # Previous camera / gripper geometry
 
 CAMERA_MOUNTS = {

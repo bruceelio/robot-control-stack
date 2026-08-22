@@ -1,5 +1,7 @@
 # calibration/cameras/arducam_fullfov_640_400.py
 
+
+
 # CAMERA_PARAMS = (342.4, 342.9, 341.5, 199.1)                          # first pass; 1280 x 800 conversion
 # CAMERA_PARAMS = (349.2, 348.5, 335.0, 212.2)                          # latest test; 1280 x 800 conversion
 
