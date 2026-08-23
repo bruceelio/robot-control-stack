@@ -1,4 +1,4 @@
-# hw_io/bob_bot.py
+# checkout/bob_bot.py
 
 from __future__ import annotations
 

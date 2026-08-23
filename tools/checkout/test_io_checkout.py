@@ -3,10 +3,10 @@
 Run through the existing tests.runner entry point.
 """
 
-from tests.registry import register_test
+from tools.tests.registry import register_test
 from hw_io.resolve import resolve_io
 from config import CONFIG
-from tests.hw_io.io_runner import run_io_checkout
+from tools.checkout.io_runner import run_io_checkout
 
 
 def _io(robot):
@@ -29,7 +29,7 @@ def _io(robot):
 
 def _csv_path():
     # Prefer explicit config, but keep a safe default for first bring-up.
-    return getattr(CONFIG, "io_map_csv", "tests/hw_io/maps/Bob_Bot.csv")
+    return getattr(CONFIG, "io_map_csv", "tests/checkout/maps/Bob_Bot.csv")
 
 
 @register_test(

@@ -219,12 +219,12 @@ def run(robot=None) -> None:
                     right=right_power,
                 )
 
-                # Use hw_io sleep so the selected backend can continue any
+                # Use checkout sleep so the selected backend can continue any
                 # required heartbeat or service behaviour while driving.
                 io.sleep(duration_commanded_s)
 
             except Exception:
-                print("\n[ERROR] Direct hw_io drive command failed.")
+                print("\n[ERROR] Direct checkout drive command failed.")
                 print("Run tests/test_motion.py to troubleshoot motor operation.")
                 raise
 

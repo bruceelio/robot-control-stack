@@ -69,7 +69,7 @@ def _prompt_direction() -> tuple[str, float, float]:
     Return the requested robot rotation direction and motor direction signs.
 
     Positive motor power is assumed to drive each wheel forwards through the
-    semantic hw_io interface.
+    semantic checkout interface.
     """
     while True:
         raw = input("Rotation direction [L/R]: ").strip().lower()
@@ -157,7 +157,7 @@ def run(robot=None) -> None:
         hardware_profile=CONFIG.hardware_profile,
     )
 
-    # Named semantic devices are the final application-facing hw_io boundary.
+    # Named semantic devices are the final application-facing checkout boundary.
     # The resolver maps these names to the selected physical or simulated backend.
 
     drive = io.drive[DRIVE_GROUP]
@@ -228,12 +228,12 @@ def run(robot=None) -> None:
                     right=right_power,
                 )
 
-                # Use hw_io sleep so the selected backend can continue any
+                # Use checkout sleep so the selected backend can continue any
                 # required heartbeat or service behaviour while rotating.
                 io.sleep(duration_commanded_s)
 
             except Exception:
-                print("\n[ERROR] Direct hw_io rotation command failed.")
+                print("\n[ERROR] Direct checkout rotation command failed.")
                 print("Run tests/test_motion.py to troubleshoot motor operation.")
                 raise
 

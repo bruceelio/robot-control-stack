@@ -1,4 +1,4 @@
-# hw_io/cameras/camera_process.py
+# checkout/cameras/camera_process.py
 
 from __future__ import annotations
 

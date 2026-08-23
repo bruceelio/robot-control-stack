@@ -1,4 +1,4 @@
-# hw_io/buzzer_patterns.py
+# checkout/buzzer_patterns.py
 from __future__ import annotations
 
 from dataclasses import dataclass

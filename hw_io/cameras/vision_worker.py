@@ -1,4 +1,4 @@
-# hw_io/cameras/vision_worker.py
+# checkout/cameras/vision_worker.py
 
 from __future__ import annotations
 

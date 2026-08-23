@@ -1,4 +1,4 @@
-# hw_io/clients/mega_client.py
+# checkout/clients/mega_client.py
 
 from __future__ import annotations
 

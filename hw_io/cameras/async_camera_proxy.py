@@ -1,4 +1,4 @@
-# hw_io/cameras/async_camera_proxy.py
+# checkout/cameras/async_camera_proxy.py
 
 class AsyncCameraProxy:
     def __init__(self, camera_name, camera_manager):

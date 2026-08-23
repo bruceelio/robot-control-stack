@@ -1,4 +1,4 @@
-# hw_io/cameras/sr_april.py
+# checkout/cameras/sr_april.py
 
 from hw_io.cameras.base import Camera
 

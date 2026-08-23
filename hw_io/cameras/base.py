@@ -1,4 +1,4 @@
-# hw_io/cameras/base.py
+# checkout/cameras/base.py
 
 from abc import ABC, abstractmethod
 

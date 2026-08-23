@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import time
 
-from tests.registry import register_test
+from tools.tests.registry import register_test
 
 try:
     from config import CONFIG
 except Exception:
     CONFIG = None
 
-from tests.mega_serial_client import MegaSerialClient, MegaSerialConfig
+from tools.tests.mega_serial_client import MegaSerialClient, MegaSerialConfig
 
 
 def _mega_config() -> MegaSerialConfig:

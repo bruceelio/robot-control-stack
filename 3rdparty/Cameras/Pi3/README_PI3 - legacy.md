@@ -1,5 +1,7 @@
 3rdparty/cameras/Pi3/README_PI3 .md
 
+# Legacy. See: README_CAMERAS.md
+
 # Pi Camera 3
 
 # ⚠️ CRITICAL: Virtual Environment Setup

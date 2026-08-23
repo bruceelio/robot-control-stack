@@ -1,4 +1,4 @@
-# hw_io/resolve.py
+# checkout/resolve.py
 
 from typing import Any
 

@@ -34,7 +34,7 @@ print("Calibration cameras:", CALIBRATION.cameras.keys())
 print("=== END CALIBRATION CHECK ===\n")
 
 try:
-    from tests.runner import run_tests
+    from tools.tests.runner import run_tests
 except ImportError:
     run_tests = None
 
@@ -178,7 +178,7 @@ class Controller:
 
         if RUN_MODE == RunMode.DIAGNOSTICS:
             print("\n=== RUNNING DIAGNOSTICS MODE ===")
-            from diagnostics.runner import run_diagnostics
+            from tools.diagnostics.runner import run_diagnostics
             try:
                 run_diagnostics(robot=self.robot, io=self.io)
                 safe_cue(self.lvl2, BuzzerCue.SUCCESS)

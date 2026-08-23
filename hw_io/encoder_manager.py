@@ -1,4 +1,4 @@
-# hw_io/encoder_manager.py
+# checkout/encoder_manager.py
 from __future__ import annotations
 
 from importlib import import_module

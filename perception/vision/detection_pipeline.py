@@ -1,4 +1,4 @@
-# hw_io/cameras/detection_pipeline.py
+# checkout/cameras/detection_pipeline.py
 
 from __future__ import annotations
 

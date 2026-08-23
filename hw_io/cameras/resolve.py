@@ -1,4 +1,4 @@
-# hw_io/cameras/resolve.py
+# checkout/cameras/resolve.py
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from config.arena_tags import resolve_tag_size_m
 
 from hw_io.cameras.sr_april import SRAprilCamera
 from hw_io.cameras.pi_libcamera_april import PiLibcameraAprilCamera
-from hw_io.cameras.opencv_usb_april import OpenCVUSBAprilCamera
+from hw_io.cameras.opencv_usb import OpenCVUSBCamera
 
 
 def resolve_camera(*, camera_name: str, device=None, robot):
@@ -82,7 +82,7 @@ def resolve_camera(*, camera_name: str, device=None, robot):
             colour_gains=getattr(cam_cfg, "COLOUR_GAINS", None),
         )
 
-    if backend == "opencv_usb_april":
+    if backend == "opencv_usb":
         calibration_profile = getattr(cam_cfg, "CALIBRATION_PROFILE", None)
         calibration = None
 
@@ -93,7 +93,7 @@ def resolve_camera(*, camera_name: str, device=None, robot):
         if calibration is not None:
             camera_params = getattr(calibration, "CAMERA_PARAMS", None)
 
-        return OpenCVUSBAprilCamera(
+        return OpenCVUSBCamera(
             device=device,
             capture_width=cam_cfg.CAPTURE_WIDTH,
             capture_height=cam_cfg.CAPTURE_HEIGHT,

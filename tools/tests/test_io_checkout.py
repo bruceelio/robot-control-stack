@@ -1,5 +1,5 @@
 # tests/test_io_checkout.py
-from tests.registry import register_test
+from tools.tests.registry import register_test
 from hw_io.resolve import resolve_io
 from config import CONFIG
 import json

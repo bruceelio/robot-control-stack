@@ -14,8 +14,8 @@ import time
 import math
 from typing import Callable, Iterable, Optional
 
-from tests.hw_io.io_path import parse_io_path, read_io_path, write_io_path
-from tests.hw_io.io_rules import (
+from tools.checkout.io_path import parse_io_path, read_io_path, write_io_path
+from tools.checkout.io_rules import (
     DEFAULT_MOTOR_POWER,
     DEFAULT_MOTOR_PULSE_SECONDS,
     DEFAULT_SERVO_RANGE,

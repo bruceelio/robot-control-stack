@@ -22,21 +22,22 @@ ENVIRONMENT = "real"
 # Cameras / Vision Hardware
 # -------------------------
 
+"""
 CAMERAS = {
     "front": {
         "profile": "pi3_fullfov_640_360",
         "device": 0,
     }
 }
-
 """
+
 CAMERAS = {
     "front": {
         "profile": "arducam_fullfov_640_400",
         "device": "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_OV9281_USB_Camera_UC599-video-index0",
     }
 }
-"""
+
 
 VISION_SOURCES = {
     "vision1": {
@@ -84,11 +85,11 @@ BATTERY_VOLTAGE_NOMINAL = 14.17
 
 CAMERA_MOUNTS = {
     "front": {
-        "x_mm": 40.0,
-        "y_mm": -90.0,
-        "z_mm": 215.0,
+        "x_mm": 60.0,   # forward/back
+        "y_mm": 160.0,  # right/left (right positive)
+        "z_mm": 190.0,
         "roll_deg": 0.0,
-        "pitch_deg": -8.0,
+        "pitch_deg": 0.0,
         "yaw_deg": 0.0,
     }
 }

@@ -1,5 +1,5 @@
 # tests/runner.py
-from tests.registry import TESTS
+from tools.tests.registry import TESTS
 
 
 def run_tests(

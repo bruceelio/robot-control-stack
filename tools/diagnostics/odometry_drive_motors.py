@@ -518,7 +518,7 @@ def _powered_trial(
         right_motor.power = signed_power
         io.sleep(duration_commanded_s)
     except Exception:
-        print("\n[ERROR] Direct hw_io drive command failed.")
+        print("\n[ERROR] Direct checkout drive command failed.")
         print("Run the drive motor IO checkout before repeating this diagnostic.")
         raise
     finally:

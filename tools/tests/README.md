@@ -78,7 +78,8 @@ The runner is the **only supported entry point** for running tests.
 Example:
 
 ```python
-from tests.registry import register_test
+from tools.tests.registry import register_test
+
 
 @register_test(category="safety", requires_robot=False)
 def test_virtual_front_bumper():
@@ -100,7 +101,8 @@ Tests are run via the test runner — **not by executing test files directly**.
 ### Run all tests
 
 ```python
-from tests.runner import run_tests
+from tools.tests.runner import run_tests
+
 run_tests()
 ```
 

@@ -30,13 +30,13 @@ python -m tests
 ## 2. Direct command mode
 
 ```bash
-python tests/hw_io/test_io_checkout.py
+python tests/checkout/test_io_checkout.py
 ```
 
 or
 
 ```bash
-python3 -m tests.hw_io.test_io_checkout
+python3 -m tests.checkout.test_io_checkout
 ```
 
 This bypasses the test framework and runs the checkout directly.

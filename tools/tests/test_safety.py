@@ -1,4 +1,4 @@
-from tests.registry import register_test
+from tools.tests.registry import register_test
 
 
 @register_test(category="safety", enabled=True, requires_robot=False)

@@ -1,4 +1,4 @@
-# hw_io/clients/usb_media_client.py
+# checkout/clients/usb_media_client.py
 
 from pathlib import Path
 
