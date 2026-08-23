@@ -29,6 +29,15 @@ CAMERAS = {
     }
 }
 
+"""
+CAMERAS = {
+    "front": {
+        "profile": "arducam_fullfov_640_400",
+        "device": "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_OV9281_USB_Camera_UC599-video-index0",
+    }
+}
+"""
+
 VISION_SOURCES = {
     "vision1": {
         "camera": "front",

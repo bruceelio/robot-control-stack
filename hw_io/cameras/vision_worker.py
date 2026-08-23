@@ -39,7 +39,11 @@ def run_vision_worker(
         cam_cal = CALIBRATION.cameras[camera_name]
 
         # Important: resolve/open camera inside this worker process.
-        camera_profile = CONFIG.cameras[camera_name]
+        camera_config = CONFIG.cameras[camera_name]
+
+        camera_profile = camera_config["profile"]
+        camera_device = camera_config["device"]
+
         output_queue.put({
             "camera": camera_name,
             "timestamp": time.time(),
@@ -47,12 +51,19 @@ def run_vision_worker(
             "markers": [],
             "status": "profile_resolved",
             "camera_profile": camera_profile,
+            "camera_device": camera_device,
         })
+
         print(f"[VISION_WORKER] starting camera={camera_name}", flush=True)
-        print(f"[VISION_WORKER] resolving profile={camera_profile}", flush=True)
+        print(
+            f"[VISION_WORKER] resolving "
+            f"profile={camera_profile} device={camera_device}",
+            flush=True,
+        )
 
         camera = resolve_camera(
             camera_name=camera_profile,
+            device=camera_device,
             robot=robot,
         )
         last_status = None

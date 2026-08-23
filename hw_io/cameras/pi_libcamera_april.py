@@ -100,6 +100,7 @@ class PiLibcameraAprilCamera:
     def __init__(
             self,
             *,
+            device: int | None = None,
             width: int = 640,
             height: int = 480,
             fps: int = 30,
@@ -127,6 +128,7 @@ class PiLibcameraAprilCamera:
             awb_enable: bool | None = None,
             colour_gains: tuple[float, float] | None = None,
     ) -> None:
+        self.device = device
         self.width = width
         self.height = height
         self.fps = fps
@@ -161,7 +163,10 @@ class PiLibcameraAprilCamera:
         if self._mixed_size_mode and self._single_size_mode:
             raise ValueError("Specify either tag_size_m or tag_size_for_id, not both")
 
-        self._picam2 = Picamera2()
+        if self.device is None:
+            raise ValueError("PiLibcameraAprilCamera requires a camera device")
+
+        self._picam2 = Picamera2(camera_num=self.device)
 
         try:
             print(f"[PiCam] sensor_modes = {self._picam2.sensor_modes}")
@@ -634,6 +639,7 @@ def print_marker_summary(marker: Marker) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Pi libcamera AprilTag standalone tester")
+    parser.add_argument("--device", type=int, default=0)
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
@@ -659,6 +665,7 @@ def main() -> int:
         camera_params = (args.fx, args.fy, args.cx, args.cy)
 
     with PiLibcameraAprilCamera(
+        device=args.device,
         width=args.width,
         height=args.height,
         fps=args.fps,

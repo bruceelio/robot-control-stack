@@ -8,9 +8,10 @@ from config.arena_tags import resolve_tag_size_m
 
 from hw_io.cameras.sr_april import SRAprilCamera
 from hw_io.cameras.pi_libcamera_april import PiLibcameraAprilCamera
+from hw_io.cameras.opencv_usb_april import OpenCVUSBAprilCamera
 
 
-def resolve_camera(*, camera_name: str, robot):
+def resolve_camera(*, camera_name: str, device=None, robot):
     """
     Build one camera backend from a named camera config.
 
@@ -51,6 +52,7 @@ def resolve_camera(*, camera_name: str, robot):
             camera_params = getattr(calibration, "CAMERA_PARAMS", None)
 
         return PiLibcameraAprilCamera(
+            device=device,
             width=cam_cfg.WIDTH,
             height=cam_cfg.HEIGHT,
             fps=cam_cfg.FPS,
@@ -78,6 +80,37 @@ def resolve_camera(*, camera_name: str, robot):
             analogue_gain=getattr(cam_cfg, "ANALOGUE_GAIN", None),
             awb_enable=getattr(cam_cfg, "AWB_ENABLE", None),
             colour_gains=getattr(cam_cfg, "COLOUR_GAINS", None),
+        )
+
+    if backend == "opencv_usb_april":
+        calibration_profile = getattr(cam_cfg, "CALIBRATION_PROFILE", None)
+        calibration = None
+
+        if calibration_profile is not None:
+            calibration = resolve_camera_calibration(calibration_profile)
+
+        camera_params = None
+        if calibration is not None:
+            camera_params = getattr(calibration, "CAMERA_PARAMS", None)
+
+        return OpenCVUSBAprilCamera(
+            device=device,
+            capture_width=cam_cfg.CAPTURE_WIDTH,
+            capture_height=cam_cfg.CAPTURE_HEIGHT,
+            width=cam_cfg.WIDTH,
+            height=cam_cfg.HEIGHT,
+            fps=cam_cfg.FPS,
+            pixel_format=getattr(cam_cfg, "PIXEL_FORMAT", "MJPG"),
+            families=cam_cfg.FAMILIES,
+            camera_params=camera_params,
+            quad_decimate=getattr(cam_cfg, "QUAD_DECIMATE", 1.5),
+            nthreads=getattr(cam_cfg, "NTHREADS", 2),
+            quad_sigma=getattr(cam_cfg, "QUAD_SIGMA", 0.0),
+            refine_edges=getattr(cam_cfg, "REFINE_EDGES", 1),
+            decode_sharpening=getattr(cam_cfg, "DECODE_SHARPENING", 0.25),
+            apriltag_debug=getattr(cam_cfg, "APRILTAG_DEBUG", 0),
+            min_decision_margin=cam_cfg.MIN_DECISION_MARGIN,
+            tag_size_for_id=resolve_tag_size_m,
         )
 
     raise RuntimeError(

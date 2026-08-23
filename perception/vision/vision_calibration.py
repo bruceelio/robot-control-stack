@@ -34,7 +34,9 @@ def get_vision_pnp_calibration(
             f"camera={perception_camera_name!r}"
         )
 
-    camera_profile_name = CONFIG.cameras[camera_name]
+    camera_config = CONFIG.cameras[camera_name]
+    camera_profile_name = camera_config["profile"]
+
     camera_profile = import_module(f"config.cameras.{camera_profile_name}")
 
     calibration_profile_name = camera_profile.CALIBRATION_PROFILE

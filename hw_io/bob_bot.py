@@ -439,10 +439,14 @@ class BobBotIO(IOMap):
 
             return
 
-        for key, camera_name in CONFIG.cameras.items():
+        for key, camera_config in CONFIG.cameras.items():
             try:
+                camera_profile = camera_config["profile"]
+                camera_device = camera_config["device"]
+
                 self._cameras[key] = resolve_camera(
-                    camera_name=camera_name,
+                    camera_name=camera_profile,
+                    device=camera_device,
                     robot=self.robot,
                 )
                 print(f"[CAMERA] connected: {key}")
