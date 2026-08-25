@@ -1,4 +1,5 @@
-# 3rdparty/cameras/Pi3/test_camera.py
+# tools/setup/cameras/pi//camera_smoke_test.py
+
 from picamera2 import Picamera2, Preview
 import argparse
 import time

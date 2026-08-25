@@ -303,6 +303,59 @@ The most important rule is:
 
 > Fix the optical and image configuration before calibration.
 
+## 4.1 Camera setup tool organisation
+
+Camera setup utilities live under:
+
+```text
+tools/setup/cameras/
+```
+
+Interface-specific implementations live below their interface:
+
+```text
+tools/setup/cameras/pi/
+tools/setup/cameras/usb/
+```
+
+Utilities intended to work across camera interfaces live directly under:
+
+```text
+tools/setup/cameras/
+```
+
+Current examples are:
+
+```text
+tools/setup/cameras/
+    camera_calibrate.py
+    camera_apriltag_validate.py
+
+    pi/
+        camera_smoke_test.py
+        camera_state.py
+        camera_test_configs.py
+        camera_config_tests.py
+
+        focus/
+            README.md
+            autofocus_baseline.py
+            test_focus_values.py
+            set_fixed_focus.py
+
+    usb/
+        ...
+```
+
+The organisation rule is:
+
+> A concept may be generic, but if a Python implementation depends specifically on
+> Picamera2/libcamera or V4L2/USB, it belongs in the corresponding interface directory.
+
+`camera_calibrate.py` and `camera_apriltag_validate.py` are intended to become
+interface-independent common tools. Their current implementations may still contain
+Pi-specific capture code while that generalisation is completed.
+
 ---
 
 # 5. Pi CSI Cameras
@@ -359,20 +412,20 @@ A standalone test script can be used to confirm:
 - preview works;
 - no robot control is involved.
 
-Example historical project command:
+Current project command:
 
 ```bash
-python3 test_camera.py --preview drm
+python3 tools/setup/cameras/pi/camera_smoke_test.py --preview drm
 ```
 
-The exact script name may change as diagnostics are consolidated, but the test goal
-remains the same.
+This is a setup/bring-up tool. It is kept under `pi/` because its implementation uses
+the Pi CSI / Picamera2 interface.
 
 ---
 
 ## 5.4 Preview modes
 
-Pi camera test utilities have historically supported preview modes such as:
+Pi camera setup utilities may support preview modes such as:
 
 ```bash
 --preview drm
@@ -404,24 +457,21 @@ constant:
 - sensor/crop mode where applicable.
 
 Historical Pi3 work used 30 FPS and originally experimented with 640×480. The
-current runtime profile should be treated as authoritative for the actual production
-resolution.
+current runtime camera profile is authoritative for the production capture and
+processing mode.
 
-A previous project helper was:
+There is no separate maintained `set_camera_mode.py` tool. Camera mode belongs in the
+camera profile so setup, calibration, validation, and runtime all refer to the same
+intended configuration.
 
-```bash
-python3 set_camera_mode.py
-```
-
-with a target around:
+For a 30 FPS mode, frame duration is approximately:
 
 ```text
-30 FPS
-FrameDuration ≈ 33333 µs
+33333 µs
 ```
 
-The important rule is not the old script name or old 640×480 value; the important
-rule is that the final runtime mode must be selected **before calibration**.
+The important rule is that the final runtime mode must be selected **before
+calibration**.
 
 ---
 
@@ -431,27 +481,33 @@ Some Pi CSI cameras, including Camera Module 3, have autofocus.
 
 Focus must be fixed before calibration if the runtime will use a fixed focus.
 
-## 6.1 Historical focus workflow
+## 6.1 Pi focus workflow
 
 Autofocus baseline:
 
 ```bash
-python3 focus/focus_autofocus_baseline.py
+python3 tools/setup/cameras/pi/focus/autofocus_baseline.py
 ```
 
 Candidate-value testing:
 
 ```bash
-python3 focus/test_focus_values.py
+python3 tools/setup/cameras/pi/focus/test_focus_values.py
 ```
 
 Lock selected focus:
 
 ```bash
-python3 focus/set_fixed_focus.py
+python3 tools/setup/cameras/pi/focus/set_fixed_focus.py
 ```
 
-The exact scripts may be replaced by newer diagnostics, but the procedure remains:
+The detailed Pi focus procedure is maintained in:
+
+```text
+tools/setup/cameras/pi/focus/README.md
+```
+
+The procedure is:
 
 1. establish autofocus baseline;
 2. test candidate lens positions;
@@ -525,13 +581,11 @@ LensPosition = selected fixed value
 FrameDuration ≈ 33333 µs
 ```
 
-A previous project helper was:
+Current project tool:
 
 ```bash
-python3 read_camera_state.py
+python3 tools/setup/cameras/pi/camera_state.py
 ```
-
-Use the current equivalent whenever available.
 
 The key principle is:
 
@@ -541,23 +595,26 @@ The key principle is:
 
 ## 7.1 Camera configuration testing
 
-Historical Pi-camera testing used candidate configuration files and test scripts such as:
+Pi-camera setup testing uses:
 
 ```text
-camera_test_configs.py
-run_camera_config_tests.py
+tools/setup/cameras/pi/camera_test_configs.py
+tools/setup/cameras/pi/camera_config_tests.py
 ```
+
+`camera_test_configs.py` contains the candidate configurations. `camera_config_tests.py`
+runs them.
 
 Example:
 
 ```bash
-python3 run_camera_config_tests.py --preview drm
+python3 tools/setup/cameras/pi/camera_config_tests.py --preview drm
 ```
 
 or:
 
 ```bash
-python3 run_camera_config_tests.py --preview save
+python3 tools/setup/cameras/pi/camera_config_tests.py --preview save
 ```
 
 Evaluate:
@@ -573,265 +630,397 @@ Evaluate:
 
 # 8. USB Cameras
 
-This section applies to USB/UVC cameras using:
+This section is a **bring-up and configuration procedure for a new USB/UVC camera**.
+
+It is intentionally not tied to a particular camera model. The goal is that a new
+camera — for example a Logitech C270, another Arducam, or any other Linux UVC camera —
+can be connected and taken through the same sequence to determine its correct robot
+configuration.
+
+The process is:
 
 ```text
-V4L2 / OpenCV
+connect camera
+    ↓
+identify Linux device
+    ↓
+find stable device path
+    ↓
+discover supported formats / resolutions / FPS
+    ↓
+discover available camera controls
+    ↓
+select candidate capture mode
+    ↓
+verify Python/OpenCV capture
+    ↓
+select processing resolution
+    ↓
+tune focus / exposure / gain if supported
+    ↓
+calibrate that exact optical + processing configuration
+    ↓
+validate AprilTag performance
+    ↓
+record the successful values in a camera profile
 ```
 
-The current example is the Arducam OV9281 USB camera.
+Do not begin by copying settings from another USB camera. Different UVC cameras may
+have different:
 
-The same command sequence is useful for most Linux USB cameras.
+- image formats;
+- maximum frame rates;
+- resolutions;
+- exposure-control names and ranges;
+- gain ranges;
+- autofocus behaviour;
+- field of view;
+- distortion;
+- calibration.
+
+The commands below are intended to discover those values from the camera itself.
 
 ---
 
-# 9. USB Camera Discovery — Command Sequence
+# 9. USB Camera Discovery — Step by Step
 
-This is the practical sequence to use when connecting or changing a USB camera.
+## Step 1 — Confirm Linux can see the camera
 
----
-
-## Step 1 — List camera/video devices
+Connect the camera, then run:
 
 ```bash
 v4l2-ctl --list-devices
 ```
 
-Example output may show:
+Typical output looks like:
 
 ```text
-unicam:
-    /dev/video0
-    /dev/video1
-
-Arducam Technology Co., Ltd. Arducam OV9281 USB Camera:
+<USB camera name>:
     /dev/video2
     /dev/video3
-    /dev/media5
+    /dev/media4
 ```
 
-Do not assume `/dev/video2` will always remain `/dev/video2`.
+At this stage, only establish:
+
+1. whether the expected camera appears;
+2. which `/dev/videoN` nodes belong to it.
+
+If the camera is absent here, do not continue into Python. Resolve the USB/Linux
+device problem first.
 
 ---
 
-## Step 2 — Find stable USB device paths
+## Step 2 — Find a stable device name
+
+Linux `/dev/videoN` numbers can change between boots or when another camera is
+connected.
+
+Run:
 
 ```bash
 ls -l /dev/v4l/by-id/
 ```
 
-For the current OV9281 this produced a stable path similar to:
+Look for entries belonging to the new camera, for example:
 
 ```text
-/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_OV9281_USB_Camera_UC599-video-index0
+usb-<manufacturer>_<camera>-video-index0
+usb-<manufacturer>_<camera>-video-index1
 ```
 
-and a second entry:
+Use the stable `/dev/v4l/by-id/...` path whenever possible.
 
-```text
-...-video-index1
-```
-
-Use the actual capture interface, currently:
-
-```text
-video-index0
-```
-
-Prefer the stable `/dev/v4l/by-id/...` path in robot configuration instead of a
-temporary `/dev/videoN` number.
-
----
-
-## Step 3 — Store the device path in a shell variable
-
-This makes later commands easier to read:
+Set it once in the current shell:
 
 ```bash
-DEVICE=/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_OV9281_USB_Camera_UC599-video-index0
+DEVICE=/dev/v4l/by-id/<camera-video-index0>
 ```
 
-For another USB camera, substitute its own stable path.
+Verify it:
+
+```bash
+ls -l "$DEVICE"
+```
+
+If the camera exposes more than one video index, do not assume which one is the image
+capture stream. Test each candidate using the next steps.
 
 ---
 
-## Step 4 — Inspect supported formats, resolutions and frame rates
+## Step 3 — Discover all supported formats, resolutions and frame rates
+
+Run:
 
 ```bash
 v4l2-ctl -d "$DEVICE" --list-formats-ext
 ```
 
-For the current OV9281, useful advertised modes include MJPG at:
+This is the primary command for determining what the camera can actually deliver.
+
+Record the useful combinations of:
 
 ```text
-1280 × 800
+pixel format
+capture width
+capture height
+frame rate
 ```
 
-with 30 FPS available.
-
-The camera also exposes YUYV modes, but the usable FPS differs by resolution.
-
-The current robot configuration uses:
+For example, a camera might advertise combinations such as:
 
 ```text
-capture:    1280 × 800 MJPG @ 30 FPS
-processing:  640 × 400
+MJPG   1280×720 @ 30 FPS
+MJPG    640×480 @ 30 FPS
+YUYV    640×480 @ 30 FPS
+YUYV   1280×720 @ 10 FPS
 ```
 
-This preserves the 1.6:1 aspect ratio:
+Those are only examples. Use the values reported by the actual camera.
 
-```text
-1280 / 800 = 1.6
-640 / 400 = 1.6
-```
+### Choosing the first candidate mode
 
-Therefore the software resize does not itself crop the image.
+For AprilTag work, initially favour a mode which:
+
+- preserves the camera's useful field of view;
+- provides enough pixels for distant tags;
+- can maintain the desired frame rate;
+- does not create excessive USB bandwidth;
+- can be resized cleanly to the intended processing resolution.
+
+MJPG is often useful for higher-resolution USB2 capture because it reduces USB
+bandwidth. YUYV can be simpler but requires much more bandwidth at the same
+resolution/FPS.
+
+Do not decide between them by assumption; use the camera's advertised modes and then
+test the candidates.
 
 ---
 
-## Step 5 — Inspect current V4L2 controls and ranges
+## Step 4 — Confirm the selected mode directly with V4L2
+
+Once a candidate has been chosen, inspect the device while using that exact node:
+
+```bash
+v4l2-ctl -d "$DEVICE" --all
+```
+
+This gives a broad snapshot of the active format and camera state.
+
+If troubleshooting a requested mode, return to:
+
+```bash
+v4l2-ctl -d "$DEVICE" --list-formats-ext
+```
+
+and confirm that the requested resolution, pixel format and FPS are actually an
+advertised combination.
+
+---
+
+## Step 5 — Discover the camera controls
+
+Run:
 
 ```bash
 v4l2-ctl -d "$DEVICE" --list-ctrls-menus
 ```
 
-For the current OV9281, observed controls include:
+Do this **before writing any control values**.
+
+Depending on the camera, this may expose controls for:
 
 ```text
+auto/manual exposure
+exposure time
+gain
+autofocus
+manual focus position
+white balance
 brightness
 contrast
-saturation
-hue
-white_balance_automatic
 gamma
-gain
-power_line_frequency
-white_balance_temperature
 sharpness
-backlight_compensation
-auto_exposure
-exposure_time_absolute
-exposure_dynamic_framerate
+power-line / anti-flicker frequency
+backlight compensation
 ```
 
-Observed ranges included:
+Control names and ranges are driver-specific.
 
-```text
-brightness                  -64 .. 64
-contrast                      0 .. 64
-saturation                    0 .. 128
-hue                         -40 .. 40
-gamma                        72 .. 500
-gain                          0 .. 100
-sharpness                     0 .. 6
-backlight_compensation        0 .. 2
-exposure_time_absolute        1 .. 5000
-```
-
-Observed exposure mode menu:
-
-```text
-1 = Manual
-3 = Aperture Priority
-```
-
-Observed mains-frequency menu:
-
-```text
-0 = Disabled
-1 = 50 Hz
-2 = 60 Hz
-```
-
-These values are camera/driver-specific. Always inspect the actual USB camera rather
-than assuming all UVC cameras expose the same ranges.
+A Logitech camera, an Arducam and another generic UVC camera may use different control
+names for conceptually similar features. The output of `--list-ctrls-menus` is the
+authoritative starting point.
 
 ---
 
-# 10. USB Exposure and Gain
+## Step 6 — Record the untouched control state
 
-The current OV9281 test configuration is:
+Before changing anything, save or copy the current state:
 
-```text
-auto_exposure = 1
-exposure_time_absolute = 45
-gain = 0
+```bash
+v4l2-ctl -d "$DEVICE" --all
 ```
 
-Standard UVC exposure absolute values are normally in 100 µs units, therefore:
+For individual controls, use the exact names discovered above:
 
-```text
-45 ≈ 4.5 ms
+```bash
+v4l2-ctl -d "$DEVICE" --get-ctrl=<control_name>
 ```
 
-This is also similar to the Pi-camera 4.5 ms exposure reference used during earlier
-AprilTag testing.
-
----
-
-## Step 6 — Set manual exposure
+or several at once:
 
 ```bash
 v4l2-ctl \
   -d "$DEVICE" \
-  --set-ctrl=auto_exposure=1,exposure_time_absolute=45,gain=0
+  --get-ctrl=<control_1>,<control_2>,<control_3>
 ```
 
-This is the current working OV9281 test setting.
-
-For another USB camera, first check that these control names and ranges exist.
+This provides a baseline and makes it much easier to identify which change caused an
+improvement or regression.
 
 ---
 
-## Step 7 — Verify the applied controls
+# 10. USB Focus, Exposure and Gain
 
-Minimal verification:
+The aim of this section is not to prescribe values. It is to determine the correct
+values for the new camera.
+
+## 10.1 Focus
+
+First inspect whether the camera exposes autofocus or manual-focus controls:
+
+```bash
+v4l2-ctl -d "$DEVICE" --list-ctrls-menus
+```
+
+If the camera has autofocus:
+
+1. establish that autofocus can produce a sharp image at the intended working range;
+2. determine whether runtime autofocus is sufficiently stable;
+3. if a fixed focus will be used, disable autofocus and test candidate manual focus
+   values;
+4. calibrate only after the final focus strategy has been chosen.
+
+Use the exact control names reported by the camera. A typical command shape is:
 
 ```bash
 v4l2-ctl \
   -d "$DEVICE" \
-  --get-ctrl=auto_exposure,exposure_time_absolute,gain
+  --set-ctrl=<autofocus_control>=0,<focus_control>=<candidate>
 ```
 
-Expected current OV9281 result:
-
-```text
-auto_exposure: 1 (Manual Mode)
-exposure_time_absolute: 45
-gain: 0
-```
-
-Expanded verification:
+Then verify:
 
 ```bash
 v4l2-ctl \
   -d "$DEVICE" \
-  --get-ctrl=auto_exposure,exposure_time_absolute,gain,power_line_frequency,brightness,contrast,gamma,sharpness,backlight_compensation
+  --get-ctrl=<autofocus_control>,<focus_control>
 ```
 
-Observed during current testing:
-
-```text
-gain: 0
-power_line_frequency: 2
-brightness: 0
-contrast: 32
-gamma: 100
-sharpness: 3
-backlight_compensation: 1
-auto_exposure: 1 (Manual Mode)
-exposure_time_absolute: 45
-```
-
-Values not explicitly being controlled by the project should be treated as observed
-state, not as mandatory target values.
+Do not copy focus values from another camera model.
 
 ---
 
-## Step 8 — Check persistence
+## 10.2 Exposure
 
-If intending to set USB controls once and leave them alone, explicitly test whether
-they survive:
+For moving robots and AprilTags, exposure is usually a trade-off:
+
+```text
+longer exposure → brighter image but more motion blur
+shorter exposure → darker image but less motion blur
+```
+
+Start by identifying the exact exposure controls:
+
+```bash
+v4l2-ctl -d "$DEVICE" --list-ctrls-menus
+```
+
+Then, if manual exposure is supported, test one variable at a time.
+
+Generic command shape:
+
+```bash
+v4l2-ctl \
+  -d "$DEVICE" \
+  --set-ctrl=<auto_exposure_control>=<manual_value>,<exposure_control>=<candidate>
+```
+
+Read the values back immediately:
+
+```bash
+v4l2-ctl \
+  -d "$DEVICE" \
+  --get-ctrl=<auto_exposure_control>,<exposure_control>
+```
+
+Never assume:
+
+- the numeric value means the same thing on another camera;
+- the driver accepted the requested value;
+- the manual-mode enumeration is the same between cameras.
+
+Use `--list-ctrls-menus` to determine the valid values first.
+
+---
+
+## 10.3 Gain
+
+If the image becomes too dark after reducing exposure, test gain separately.
+
+Generic form:
+
+```bash
+v4l2-ctl \
+  -d "$DEVICE" \
+  --set-ctrl=<gain_control>=<candidate>
+```
+
+Verify:
+
+```bash
+v4l2-ctl \
+  -d "$DEVICE" \
+  --get-ctrl=<gain_control>
+```
+
+Prefer enough light and a short usable exposure before relying heavily on gain.
+Evaluate the result through actual AprilTag detection rather than image appearance
+alone.
+
+---
+
+## 10.4 Other controls
+
+If results change unexpectedly, inspect all controls again:
+
+```bash
+v4l2-ctl -d "$DEVICE" --all
+```
+
+and:
+
+```bash
+v4l2-ctl -d "$DEVICE" --list-ctrls-menus
+```
+
+This is especially useful for:
+
+- automatic white balance;
+- brightness;
+- contrast;
+- gamma;
+- sharpness;
+- backlight compensation;
+- anti-flicker / power-line frequency.
+
+Do not change several of these at once during a controlled test.
+
+---
+
+## 10.5 Check whether controls persist
+
+USB cameras differ in whether settings survive:
 
 ```text
 camera close/reopen
@@ -840,64 +1029,256 @@ Pi reboot
 camera power cycle
 ```
 
-After each, rerun:
+After each boundary, read the important controls again:
 
 ```bash
-v4l2-ctl -d "$DEVICE" --get-ctrl=auto_exposure,exposure_time_absolute,gain
+v4l2-ctl \
+  -d "$DEVICE" \
+  --get-ctrl=<control_1>,<control_2>,<control_3>
 ```
 
-Some UVC devices/drivers retain controls and some reset them.
+If the required state resets, the runtime or startup procedure must explicitly apply
+those controls.
 
-Do not add startup-control code unless persistence proves necessary.
+If it persists reliably, additional startup-control code may be unnecessary.
 
 ---
 
-# 11. USB Capture Path
+# 11. USB Capture and Python Validation
 
-Current OV9281 runtime flow:
+After the Linux/V4L2 layer is understood, test the Python capture path independently
+of the robot controller.
 
-```text
-Arducam OV9281
-    ↓
-USB / UVC
-    ↓
-V4L2
-    ↓
-OpenCV VideoCapture
-    ↓
-1280 × 800 MJPG @ 30 FPS
-    ↓
-software resize
-    ↓
-640 × 400 processing frame
-    ↓
-RGB conversion
-    ↓
-shared AprilTagProcessor
+Activate the project environment:
+
+```bash
+source ~/apriltag-env/bin/activate
 ```
 
-The runtime backend reports requested and actual capture mode so the program can
-confirm that the camera accepted the desired configuration.
+Verify OpenCV:
+
+```bash
+python3 -c "import cv2; print(cv2.__version__)"
+```
+
+Verify the AprilTag package:
+
+```bash
+python3 -c "from pupil_apriltags import Detector; print('OK')"
+```
+
+---
+
+## 11.1 Run the common camera validator with explicit values
+
+Do not begin with hidden profile defaults while bringing up a new camera. Pass the
+candidate capture settings explicitly so the test is reproducible.
+
+Generic command:
+
+```bash
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width <capture_width> \
+  --capture-height <capture_height> \
+  --processing-width <processing_width> \
+  --processing-height <processing_height> \
+  --fps <fps> \
+  --format <pixel_format> \
+  --calibration-module calibration.cameras.<camera_profile> \
+  --tag-size-m <tag_size_m> \
+  --min-decision-margin <margin> \
+  --quad-decimate <decimate> \
+  --duration 10
+```
+
+For a newly connected camera **before calibration exists**, first establish that
+capture itself works using the available camera setup/smoke-test path. Do not interpret
+PnP distance from a calibration belonging to another camera.
+
+The validator becomes a geometry test only after the new camera has its own
+calibration profile.
+
+---
+
+## 11.2 Determine capture resolution separately from processing resolution
+
+These are different choices:
+
+```text
+USB capture resolution
+        ↓
+optional software resize
+        ↓
+AprilTag processing resolution
+```
+
+For example, a camera may capture at a larger native mode but process a smaller frame
+to reduce CPU load.
+
+When selecting the pair:
+
+1. preserve the intended aspect ratio unless cropping is deliberate;
+2. verify the resize is not accidentally changing the useful FOV;
+3. calibrate the geometry actually used by the AprilTag/PnP path;
+4. record both capture and processing dimensions in the camera profile.
+
+Do not assume that "higher capture resolution" automatically means better AprilTag
+performance. Test it.
+
+---
+
+## 11.3 Test candidate processing resolutions
+
+Keep the physical camera mode and exposure fixed while changing only the processing
+resolution.
+
+Example command shape:
+
+```bash
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width <fixed_capture_width> \
+  --capture-height <fixed_capture_height> \
+  --processing-width <candidate_width> \
+  --processing-height <candidate_height> \
+  --fps <fixed_fps> \
+  --format <fixed_format> \
+  --calibration-module calibration.cameras.<matching_calibration> \
+  --tag-size-m <tag_size_m> \
+  --min-decision-margin <fixed_margin> \
+  --quad-decimate <fixed_decimate> \
+  --duration 10
+```
+
+Change only one controlled variable between runs.
+
+If a matching calibration does not exist for the candidate processing geometry,
+detection count and decision margin may still be useful diagnostically, but **PnP
+distance/bearing must not be treated as valid**.
+
+---
+
+## 11.4 Test detector decimation
+
+Once camera mode, exposure and calibration are fixed, compare detector load versus
+range using `--quad-decimate`.
+
+Example:
+
+```bash
+--quad-decimate 1.5
+```
+
+then:
+
+```bash
+--quad-decimate 1.0
+```
+
+Keep everything else unchanged.
+
+Lower decimation means more detector pixels and generally more CPU work. It is not
+automatically better; choose it from measured detection performance and processing
+rate.
+
+---
+
+## 11.5 Use short and long runs for different purposes
+
+Use a short run while iterating:
+
+```bash
+--duration 10
+```
+
+Use a longer run when a candidate configuration looks promising:
+
+```bash
+--duration 60
+```
+
+The longer run is useful for confirming:
+
+- sustained processing rate;
+- intermittent detection loss;
+- stability over time.
+
+---
+
+## 11.6 Troubleshooting order when the Python test fails
+
+Work downward rather than changing random Python settings:
+
+```text
+1. Is DEVICE still set correctly?
+2. Does ls -l "$DEVICE" resolve?
+3. Does v4l2-ctl --list-devices show the camera?
+4. Does --list-formats-ext advertise the requested mode?
+5. Does --all show sensible camera state?
+6. Do the important controls read back correctly?
+7. Does OpenCV import?
+8. Does pupil_apriltags import?
+9. Does the standalone camera capture path work?
+10. Does the calibration match this camera/lens/processing geometry?
+11. Only then debug the AprilTag validator or runtime integration.
+```
+
+This sequence separates:
+
+```text
+USB problem
+device-path problem
+driver/V4L2 problem
+capture-mode problem
+control-state problem
+Python dependency problem
+calibration problem
+AprilTag problem
+runtime problem
+```
 
 ---
 
 # 12. Full-FOV Verification
 
-Matching aspect ratio proves that the software resize is not cropping, but it does not
-by itself prove that the USB firmware is exposing the entire physical sensor area.
+Resolution numbers alone do not tell you whether a camera is using its full useful
+field of view.
 
-To verify actual field of view:
+After selecting a candidate capture mode:
 
-1. capture or display the native camera image;
-2. compare scene boundaries;
-3. compare the native frame with the processed frame;
-4. verify that left/right/top/bottom boundaries are preserved.
+1. place the camera in a fixed position;
+2. note objects at the left, right, top and bottom edges;
+3. capture or preview the native mode;
+4. compare it with the intended processing frame;
+5. repeat for other candidate capture modes if necessary.
 
-For a camera comparison test, mount two cameras facing the same direction and compare
-their scene coverage directly.
+If capture and processing use the same aspect ratio, a simple resize should not
+intentionally crop the frame. However, the camera firmware itself may expose different
+sensor crops for different modes.
+
+This matters for AprilTags because field of view and pixels-per-degree trade against
+one another:
+
+```text
+wider FOV at the same processing width
+    → fewer pixels per degree
+    → smaller tag image at a given distance
+
+narrower FOV at the same processing width
+    → more pixels per degree
+    → larger tag image at the same distance
+```
+
+Therefore, when comparing candidate modes or cameras, do not judge only by resolution.
+Verify actual scene boundaries and then measure AprilTag performance.
+
+Once the final optical/capture/processing combination is chosen, proceed to
+calibration. Do not calibrate one mode and silently switch to another afterward.
 
 ---
-
 # 13. Common Calibration Rules
 
 Calibration determines the intrinsic camera parameters:
@@ -1105,25 +1486,29 @@ If chessboard detection is unreliable:
 
 # 15. Calibration Scripts
 
-Historical Pi-camera calibration used:
+The common calibration tool is:
+
+```text
+tools/setup/cameras/camera_calibrate.py
+```
+
+Current commands are:
 
 ```bash
-python3 calibrate_pi_camera.py --capture --preview
+python3 tools/setup/cameras/camera_calibrate.py --capture --preview
 ```
 
 and:
 
 ```bash
-python3 calibrate_pi_camera.py --solve
+python3 tools/setup/cameras/camera_calibrate.py --solve
 ```
 
-Some project versions also used:
+Capture without the preview option can also be requested where supported:
 
 ```bash
-python3 calibrate_pi_camera.py --capture
+python3 tools/setup/cameras/camera_calibrate.py --capture
 ```
-
-without live preview.
 
 The important workflow is:
 
@@ -1141,8 +1526,10 @@ inspect reprojection error
 copy results into calibration/cameras/<camera_profile>.py
 ```
 
-As the camera diagnostics are generalised, this should eventually become a common
-calibration tool rather than a Pi-specific tool.
+This tool is intended to be common across camera interfaces. The calibration solve
+logic is camera-independent; any remaining interface-specific capture code should be
+kept temporary while the Pi and USB capture paths are unified behind the configured
+camera/backend.
 
 ---
 
@@ -1211,53 +1598,152 @@ Check:
 - detection stability;
 - maximum useful distance;
 - minimum useful distance;
-- distance consistency;
-- bearing consistency;
-- vertical-angle consistency;
-- motion blur;
+- decision margin;
+- measured distance;
+- bearing;
+- vertical angle where used;
+- motion behaviour;
 - lighting sensitivity;
-- edge-of-frame behaviour.
+- edge-of-frame behaviour;
+- actual processing rate.
 
----
+## 18.1 USB baseline validation command
 
-## 18.1 Historical Pi3 AprilTag test
-
-A previous standalone command was:
-
-```bash
-python3 apriltag_pi3_test.py --preview drm
-```
-
-With explicit calibration values:
+For the current OV9281 wide-lens configuration:
 
 ```bash
-python3 apriltag_pi3_test.py \
-  --preview drm \
-  --fx 950 \
-  --fy 950 \
-  --cx 320 \
-  --cy 240 \
-  --tag-size-m 0.08
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width 1280 \
+  --capture-height 800 \
+  --processing-width 640 \
+  --processing-height 400 \
+  --fps 30 \
+  --format MJPG \
+  --calibration-module calibration.cameras.arducam_fullfov_640_400 \
+  --tag-size-m 0.08 \
+  --min-decision-margin 15 \
+  --quad-decimate 1.5 \
+  --duration 10
 ```
 
-Debug frame capture:
+The current preferred processing baseline is therefore:
+
+```text
+capture: 1280×800 MJPG @ 30
+processing: 640×400
+quad_decimate: 1.5
+minimum decision margin: 15
+```
+
+## 18.2 Pi Camera 3 comparison command
 
 ```bash
-python3 apriltag_pi3_test.py --preview save
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend pi \
+  --capture-width 640 \
+  --capture-height 360 \
+  --processing-width 640 \
+  --processing-height 360 \
+  --fps 30 \
+  --calibration-module calibration.cameras.pi3_fullfov_640_360 \
+  --tag-size-m 0.08 \
+  --min-decision-margin 15 \
+  --quad-decimate 1.5 \
+  --duration 10
 ```
 
-The long-term goal should be a common camera diagnostic tool that selects a camera
-profile rather than maintaining separate Pi-only and USB-only AprilTag scripts.
+The direct Pi validator may select a different internal libcamera sensor mode while still delivering the requested 640×360 processing frame. When exact raw sensor-mode equivalence matters, inspect the validator startup output rather than assuming the internal mode from the processing resolution.
+
+## 18.3 Troubleshooting detector resolution / decimation
+
+When a tag is weak or long-range behaviour is uncertain, change one processing variable at a time.
+
+Baseline:
+
+```text
+640×400, quad_decimate=1.5
+```
+
+Higher detector workload at the same processing resolution:
+
+```bash
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width 1280 \
+  --capture-height 800 \
+  --processing-width 640 \
+  --processing-height 400 \
+  --fps 30 \
+  --format MJPG \
+  --calibration-module calibration.cameras.arducam_fullfov_640_400 \
+  --tag-size-m 0.08 \
+  --min-decision-margin 15 \
+  --quad-decimate 1.0 \
+  --duration 10
+```
+
+Full processing resolution was also used diagnostically:
+
+```bash
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width 1280 \
+  --capture-height 800 \
+  --processing-width 1280 \
+  --processing-height 800 \
+  --fps 30 \
+  --format MJPG \
+  --calibration-module calibration.cameras.arducam_fullfov_640_400 \
+  --tag-size-m 0.08 \
+  --min-decision-margin 15 \
+  --quad-decimate 2.0 \
+  --duration 10
+```
+
+and:
+
+```bash
+PYTHONPATH=. python3 tools/setup/cameras/camera_apriltag_validate.py \
+  --backend usb \
+  --device "$DEVICE" \
+  --capture-width 1280 \
+  --capture-height 800 \
+  --processing-width 1280 \
+  --processing-height 800 \
+  --fps 30 \
+  --format MJPG \
+  --calibration-module calibration.cameras.arducam_fullfov_640_400 \
+  --tag-size-m 0.08 \
+  --min-decision-margin 15 \
+  --quad-decimate 1.5 \
+  --duration 10
+```
+
+**Important:** the current Arducam calibration module is for the 640×400 processing geometry. Therefore PnP distances from the 1280×800 diagnostic runs are not valid. Those runs are useful for detection rate, decision margin, and processing-rate comparisons only unless a matching 1280×800 calibration profile is created.
+
+## 18.4 Use longer runs when checking stability
+
+For a sustained check, change only the duration:
+
+```text
+--duration 60
+```
+
+This is useful for checking intermittent camera/detector behaviour while leaving the actual vision configuration unchanged.
 
 ---
 
 # 19. Current Detector Tuning
 
-Current shared AprilTag processing uses parameters such as:
+Current comparison baseline:
 
 ```text
 FAMILIES = tag36h11
-MIN_DECISION_MARGIN = 20
+MIN_DECISION_MARGIN = 15
 QUAD_DECIMATE = 1.5
 NTHREADS = 2
 QUAD_SIGMA = 0.0
@@ -1265,19 +1751,20 @@ REFINE_EDGES = 1
 DECODE_SHARPENING = 0.25
 ```
 
-These are detector parameters, not physical camera interface settings.
-
-They may eventually be tuned differently for different camera profiles.
-
-A useful diagnostic comparison is:
+The currently preferred Arducam operating point is:
 
 ```text
-QUAD_DECIMATE = 1.5
-vs
-QUAD_DECIMATE = 1.0
+capture: 1280×800 MJPG @ 30 FPS
+processing: 640×400
+quad_decimate: 1.5
+minimum decision margin: 15
+manual exposure: 75
+gain: 0
 ```
 
-particularly when testing long-range detection.
+The decimation experiments established that simply increasing detector work is not automatically better. `640×400 / 1.5` held about 30 FPS and remains the preferred baseline; `640×400 / 1.0` reduced processing rate without demonstrating a consistent detection-margin advantage in the comparison runs.
+
+Lighting changed between several tests, so decision margins from runs performed under visibly different lighting should not be treated as controlled algorithmic comparisons. Prefer back-to-back tests where only one setting changed.
 
 ---
 
@@ -1611,59 +2098,56 @@ python3 -c "from pupil_apriltags import Detector; print('OK')"
 
 ## USB / V4L2
 
-List devices:
+For a new or troublesome USB camera, use this sequence from the outside in:
 
 ```bash
 v4l2-ctl --list-devices
 ```
 
-Stable device paths:
-
 ```bash
 ls -l /dev/v4l/by-id/
 ```
-
-Store path:
 
 ```bash
 DEVICE=/dev/v4l/by-id/<camera-video-index0>
 ```
 
-Formats and FPS:
+```bash
+ls -l "$DEVICE"
+```
 
 ```bash
 v4l2-ctl -d "$DEVICE" --list-formats-ext
 ```
 
-Controls:
-
 ```bash
 v4l2-ctl -d "$DEVICE" --list-ctrls-menus
 ```
 
-Set current OV9281 manual exposure:
-
 ```bash
-v4l2-ctl \
-  -d "$DEVICE" \
-  --set-ctrl=auto_exposure=1,exposure_time_absolute=45,gain=0
+v4l2-ctl -d "$DEVICE" --all
 ```
 
-Verify:
+Then query the exact controls discovered for that camera:
 
 ```bash
-v4l2-ctl \
-  -d "$DEVICE" \
-  --get-ctrl=auto_exposure,exposure_time_absolute,gain
+v4l2-ctl -d "$DEVICE" --get-ctrl=<control_name>
 ```
 
-Expanded verification:
+Set only the control being tested:
 
 ```bash
-v4l2-ctl \
-  -d "$DEVICE" \
-  --get-ctrl=auto_exposure,exposure_time_absolute,gain,power_line_frequency,brightness,contrast,gamma,sharpness,backlight_compensation
+v4l2-ctl -d "$DEVICE" --set-ctrl=<control_name>=<candidate>
 ```
+
+and read it back:
+
+```bash
+v4l2-ctl -d "$DEVICE" --get-ctrl=<control_name>
+```
+
+Finally, validate the selected capture configuration through the standalone Python
+camera/AprilTag tools before involving the robot runtime.
 
 ---
 
@@ -1688,46 +2172,69 @@ v4l2-ctl \
 14. integrate into robot stack
 ```
 
-Historical helper names included:
+Current camera setup tool layout:
 
 ```text
-test_camera.py
-set_camera_mode.py
-focus/focus_autofocus_baseline.py
-focus/test_focus_values.py
-focus/set_fixed_focus.py
-camera_test_configs.py
-run_camera_config_tests.py
-read_camera_state.py
-calibrate_pi_camera.py
-apriltag_pi3_test.py
+tools/setup/cameras/
+    camera_calibrate.py
+    camera_apriltag_validate.py
+
+    pi/
+        camera_smoke_test.py
+        camera_state.py
+        camera_test_configs.py
+        camera_config_tests.py
+
+        focus/
+            README.md
+            autofocus_baseline.py
+            test_focus_values.py
+            set_fixed_focus.py
+
+    usb/
+        ...
 ```
 
-These names are retained here so none of the previous Pi3 setup knowledge is lost,
-even if some tools are later consolidated or renamed.
+Pi-specific files remain under `pi/` because they depend on Picamera2/libcamera.
+USB-specific setup tools belong under `usb/`. Common tools remain directly under
+`tools/setup/cameras/`.
 
 ---
 
-## USB example
+## USB camera — new-camera procedure
 
 ```text
 1. connect camera
 2. v4l2-ctl --list-devices
 3. ls -l /dev/v4l/by-id/
-4. select video-index0 capture path
-5. v4l2-ctl --list-formats-ext
-6. choose final capture format/resolution/FPS
-7. v4l2-ctl --list-ctrls-menus
-8. set exposure/gain as needed
-9. verify applied controls
-10. verify persistence if relying on manual one-time setup
-11. verify native and processing FOV
-12. capture calibration images
-13. solve calibration
-14. store calibration profile
-15. run standalone AprilTag validation
-16. integrate into robot stack
+4. set DEVICE to the stable capture path
+5. verify DEVICE resolves
+6. v4l2-ctl --list-formats-ext
+7. record candidate format / resolution / FPS combinations
+8. v4l2-ctl --list-ctrls-menus
+9. record the untouched control state
+10. choose one candidate capture mode
+11. verify Python/OpenCV capture
+12. choose processing resolution
+13. determine focus strategy if the camera supports focus
+14. tune exposure for motion performance
+15. tune gain only as required
+16. verify all requested controls by reading them back
+17. verify full FOV / crop behaviour
+18. fix the optical and image configuration
+19. capture calibration images
+20. solve calibration
+21. store a camera-specific calibration profile
+22. run standalone AprilTag validation
+23. test useful ranges and motion
+24. compare detector settings one variable at a time
+25. record the successful values in the reusable camera profile
+26. integrate the logical camera into the robot profile/runtime
+27. re-check control persistence after reboot/power-cycle
 ```
+
+The result of this procedure should be a camera profile discovered from the hardware,
+not a copy of another camera's settings.
 
 ---
 

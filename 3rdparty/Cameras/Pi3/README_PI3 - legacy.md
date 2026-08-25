@@ -61,7 +61,7 @@ python3 -c "from pupil_apriltags import Detector; print('OK')"
 ⚠️ Always verify actual values using:
 
 ```bash
-python3 read_camera_state.py
+python3 camera_state.py
 ```
 
 
@@ -121,7 +121,7 @@ All scripts support:
 ### Step 1: Smoke Test
 
 ```bash
-python3 test_camera.py --preview drm
+python3 camera_smoke_test.py --preview drm
 ```
 
 Verify:
@@ -175,7 +175,7 @@ focus/README.md
 1. Run autofocus baseline:
 
 ```bash
-python3 focus/focus_autofocus_baseline.py
+python3 focus/autofocus_baseline.py
 ```
 
 2. Test candidate values:
@@ -220,13 +220,13 @@ camera_test_configs.py
 ### Run tests
 
 ```bash
-python3 run_camera_config_tests.py --preview drm
+python3 camera_config_tests.py --preview drm
 ```
 
 ### Optional debug mode
 
 ```bash
-python3 run_camera_config_tests.py --preview save
+python3 camera_config_tests.py --preview save
 ```
 
 For each configuration, evaluate:
@@ -400,7 +400,7 @@ If the board is not detected consistently:
 ### Capture command
 
 ```bash
-python3 calibrate_pi_camera.py --capture --preview
+python3 camera_calibrate.py --capture --preview
 ```
 
 The calibration script supports interactive capture and shows live feedback during capture. It looks for the chessboard and lets you save images when detected. 
@@ -412,7 +412,7 @@ If you are using a non-GUI workflow, adapt this step to your preview/debug metho
 ### Solve command
 
 ```bash
-python3 calibrate_pi_camera.py --solve
+python3 camera_calibrate.py --solve
 ```
 
 This will:
@@ -502,7 +502,7 @@ Move farther → capture
 ### Capture images
 
 ```bash
-python3 calibrate_pi_camera.py --capture
+python3 camera_calibrate.py --capture
 ```
 
 ⚠️ If preview is needed during calibration, use saved frames instead of GUI.
@@ -510,7 +510,7 @@ python3 calibrate_pi_camera.py --capture
 ### Solve calibration
 
 ```bash
-python3 calibrate_pi_camera.py --solve
+python3 camera_calibrate.py --solve
 ```
 
 Copy output into:
@@ -532,19 +532,19 @@ calibration/cameras/pi3_640_480.py
 ### Basic test
 
 ```bash
-python3 apriltag_pi3_test.py --preview drm
+python3 camera_apriltag_validate.py --preview drm
 ```
 
 ### With calibration (replace with actual values)
 
 ```bash
-python3 apriltag_pi3_test.py --preview drm --fx 950 --fy 950 --cx 320 --cy 240 --tag-size-m 0.08
+python3 camera_apriltag_validate.py --preview drm --fx 950 --fy 950 --cx 320 --cy 240 --tag-size-m 0.08
 ```
 
 ### Debug frame capture
 
 ```bash
-python3 apriltag_pi3_test.py --preview save
+python3 camera_apriltag_validate.py --preview save
 ```
 
 Verify:
@@ -571,7 +571,7 @@ Only after validation:
 At any time, verify camera state:
 
 ```bash
-python3 read_camera_state.py
+python3 camera_state.py
 ```
 
 This reports:

@@ -76,7 +76,7 @@ The point is not to make the picture look nice. The point is to choose the focus
 Run:
 
 ```bash
-python3 focus_autofocus_baseline.py
+python3 autofocus_baseline.py
 ```
 
 What this does:

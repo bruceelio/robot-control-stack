@@ -1,3 +1,5 @@
+# tools/setup/cameras/pi/
+
 """Candidate Pi Camera 3 configurations for repeatable testing.
 
 Edit CONFIGS to add/remove candidate setups.

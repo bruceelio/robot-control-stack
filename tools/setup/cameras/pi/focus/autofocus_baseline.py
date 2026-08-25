@@ -1,4 +1,4 @@
-# 3rdparty/cameras/Pi3/focus/focus_autofocus_baseline.py
+# 3rdparty/cameras/Pi3/focus/autofocus_baseline.py
 
 from picamera2 import Picamera2
 import time

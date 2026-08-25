@@ -316,7 +316,7 @@ Or temporarily stop before `controller.run()`.
 ## Test Camera
 
 ```bash
-python3 3rdparty/cameras/Pi3/test_camera.py
+python3 3rdparty/cameras/Pi3/camera_smoke_test.py
 ```
 
 ---
@@ -324,8 +324,8 @@ python3 3rdparty/cameras/Pi3/test_camera.py
 ## Calibration
 
 ```bash
-python3 3rdparty/cameras/Pi3/calibrate_pi_camera.py --capture
-python3 3rdparty/cameras/Pi3/calibrate_pi_camera.py --solve
+python3 3rdparty/cameras/Pi3/camera_calibrate.py --capture
+python3 3rdparty/cameras/Pi3/camera_calibrate.py --solve
 ```
 
 ---
@@ -333,7 +333,7 @@ python3 3rdparty/cameras/Pi3/calibrate_pi_camera.py --solve
 ## AprilTag Test
 
 ```bash
-python3 3rdparty/cameras/Pi3/apriltag_pi3_test.py --preview
+python3 3rdparty/cameras/Pi3/camera_apriltag_validate.py --preview
 ```
 
 ---

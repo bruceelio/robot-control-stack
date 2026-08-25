@@ -7,6 +7,7 @@ class RobotProfile(Enum):
     SIMULATION = "simulation"
     SR1 = "sr1"
     BOB_BOT = "bob_bot"
+    ROB_BOT = "rob_bot"
 
 
 class RunMode(Enum):
@@ -38,13 +39,14 @@ class MatchZoneSource(Enum):
     FIXED = "fixed"
 
 
-ROBOT_PROFILE = RobotProfile.BOB_BOT
+# ROBOT_PROFILE = RobotProfile.BOB_BOT
+ROBOT_PROFILE = RobotProfile.ROB_BOT
 # ROBOT_PROFILE = RobotProfile.SIMULATION         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-RUN_MODE = RunMode.NORMAL
-# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.NORMAL
+RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 

@@ -6,6 +6,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+import subprocess
 
 from perception.vision.apriltag_processor import (
     AprilTagProcessor,
@@ -36,6 +37,17 @@ class OpenCVUSBCamera:
         height: int = 400,
         fps: int = 30,
         pixel_format: str = "MJPG",
+
+        auto_exposure: int | None = None,
+        exposure_time_absolute: int | None = None,
+        gain: int | None = None,
+        power_line_frequency: int | None = None,
+        brightness: int | None = None,
+        contrast: int | None = None,
+        gamma: int | None = None,
+        sharpness: int | None = None,
+        backlight_compensation: int | None = None,
+
         families: str = "tag36h11",
         tag_size_m: float | None = None,
         tag_size_for_id: Callable[[int], float] | None = None,
@@ -107,6 +119,42 @@ class OpenCVUSBCamera:
             cv2.CAP_PROP_FPS,
             self.fps,
         )
+
+        # --------------------------------------------------
+        # Configure USB camera controls
+        # --------------------------------------------------
+
+        controls = {
+            "auto_exposure": auto_exposure,
+            "exposure_time_absolute": exposure_time_absolute,
+            "gain": gain,
+            "power_line_frequency": power_line_frequency,
+            "brightness": brightness,
+            "contrast": contrast,
+            "gamma": gamma,
+            "sharpness": sharpness,
+            "backlight_compensation": backlight_compensation,
+        }
+
+        if isinstance(self.device, int):
+            v4l2_device = f"/dev/video{self.device}"
+        else:
+            v4l2_device = self.device
+
+        for name, value in controls.items():
+            if value is None:
+                continue
+
+            subprocess.run(
+                [
+                    "v4l2-ctl",
+                    "--device",
+                    v4l2_device,
+                    "--set-ctrl",
+                    f"{name}={value}",
+                ],
+                check=True,
+            )
 
         # --------------------------------------------------
         # Report actual configuration

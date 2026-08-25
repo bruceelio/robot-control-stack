@@ -50,7 +50,7 @@ HEIGHT = 400
 
 FAMILIES = "tag36h11"
 
-MIN_DECISION_MARGIN = 20
+MIN_DECISION_MARGIN = 15
 
 QUAD_DECIMATE = 1.5
 NTHREADS = 2
@@ -76,7 +76,7 @@ CALIBRATION_PROFILE = "arducam_fullfov_640_400"
 # ==================================================
 
 AUTO_EXPOSURE = 1                # 1=Manual, 3=Aperture Priority
-EXPOSURE_TIME_ABSOLUTE = 45      # range: 1 to 5000; 45 = 4.5 ms
+EXPOSURE_TIME_ABSOLUTE = 150      # range: 1 to 5000; 45 = 4.5 ms
 GAIN = 0                         # range: 0 to 100
 
 POWER_LINE_FREQUENCY = None      # 0=Disabled, 1=50 Hz, 2=60 Hz

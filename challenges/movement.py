@@ -37,7 +37,10 @@ def run(controller):
     else:
         exponent = 1.0 + ((power - 0.20) / (0.35 - 0.20))
 
-    power = power * (voltage_ratio ** exponent)
+    voltage_multiplier = voltage_ratio ** exponent
+    print(f"Voltage multiplier: {voltage_multiplier:.3f}")
+
+    power = power * voltage_multiplier
     power = min(power, CONFIG.max_motor_power)
 
     left_power = power * CONFIG.motor_polarity[0]

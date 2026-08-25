@@ -101,6 +101,29 @@ def resolve_camera(*, camera_name: str, device=None, robot):
             height=cam_cfg.HEIGHT,
             fps=cam_cfg.FPS,
             pixel_format=getattr(cam_cfg, "PIXEL_FORMAT", "MJPG"),
+
+            auto_exposure=getattr(cam_cfg, "AUTO_EXPOSURE", None),
+            exposure_time_absolute=getattr(
+                cam_cfg,
+                "EXPOSURE_TIME_ABSOLUTE",
+                None,
+            ),
+            gain=getattr(cam_cfg, "GAIN", None),
+            power_line_frequency=getattr(
+                cam_cfg,
+                "POWER_LINE_FREQUENCY",
+                None,
+            ),
+            brightness=getattr(cam_cfg, "BRIGHTNESS", None),
+            contrast=getattr(cam_cfg, "CONTRAST", None),
+            gamma=getattr(cam_cfg, "GAMMA", None),
+            sharpness=getattr(cam_cfg, "SHARPNESS", None),
+            backlight_compensation=getattr(
+                cam_cfg,
+                "BACKLIGHT_COMPENSATION",
+                None,
+            ),
+
             families=cam_cfg.FAMILIES,
             camera_params=camera_params,
             quad_decimate=getattr(cam_cfg, "QUAD_DECIMATE", 1.5),

@@ -1,9 +1,10 @@
-# 3rdparty/Cameras/Pi3/run_camera_config_tests.py
+# tools/setup/cameras/pi//camera_config_tests.py
+
 #!/usr/bin/env python3
 """Run a sequence of Pi Camera 3 test configurations.
 
 Typical use:
-    python3 run_camera_config_tests.py --preview drm
+    python3 camera_config_tests.py --preview drm
 
 This script:
 - loads CONFIGS from camera_test_configs.py
@@ -28,7 +29,7 @@ from typing import Any
 import cv2
 from picamera2 import Picamera2, Preview
 
-from camera_test_configs import CONFIGS
+from tools.setup.cameras.pi.camera_test_configs import CONFIGS
 
 
 MANUAL = 0

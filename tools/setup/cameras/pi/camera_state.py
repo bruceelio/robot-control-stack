@@ -1,4 +1,5 @@
-# 3rdparty/Cameras/Pi3/read_camera_state.py
+# tools/setup/cameras/pi/camera_state.py
+
 #!/usr/bin/env python3
 """Read and report current Pi Camera 3 state.
 
