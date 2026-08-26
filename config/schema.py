@@ -22,6 +22,7 @@ class Config:
     robot_id: str
     hardware_profile: str
     environment: str
+    drive_motor_profile: str
     surface: str
     drive_layout: str
     wheel_type: str
@@ -158,6 +159,7 @@ RESOLVE_MAP = {
     "robot_id": ("profile", "ROBOT_ID"),
     "hardware_profile": ("profile", "HARDWARE_PROFILE"),
     "environment": ("profile", "ENVIRONMENT"),
+    "drive_motor_profile": ("profile", "DRIVE_MOTOR_PROFILE"),
     "surface": ("profile", "SURFACE"),
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),

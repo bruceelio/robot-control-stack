@@ -1,8 +1,7 @@
 # config/__init__.py
 
-from dataclasses import asdict
+
 from importlib import import_module
-from pprint import pprint
 
 from .schema import resolve
 from . import arena
@@ -19,6 +18,3 @@ CONFIG = resolve(
     strategy=strategy,
 )
 
-print("\n=== RESOLVED CONFIGURATION ===")
-pprint(asdict(CONFIG), sort_dicts=False)
-print("=== END CONFIGURATION ===\n")

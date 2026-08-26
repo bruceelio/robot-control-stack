@@ -83,6 +83,17 @@ class Calibration:
     rotate_m_large: float
     rotate_b_large: float
 
+    # Voltage compensation
+    voltage_reference: float
+
+    voltage_low_model: str
+    voltage_low_a: float
+    voltage_low_b: float | None
+
+    voltage_high_model: str
+    voltage_high_a: float
+    voltage_high_b: float | None
+
     # ----------------------------------------------
     # Camera calibration
     # ----------------------------------------------

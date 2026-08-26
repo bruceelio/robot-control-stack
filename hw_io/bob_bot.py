@@ -644,22 +644,30 @@ class BobBotIO(IOMap):
             },
         )
 
-    def _heartbeat_if_due(self, *, force: bool = False) -> None:
+    def _heartbeat_if_due(self, *, force: bool = False):
         if self.mega is None or not self._auto_entered:
-            return
+            return None
 
         now = time.monotonic()
+
         if (not force) and (now - self._last_hb_t < self._hb_period_s):
-            return
+            return None
 
         try:
-            resp = self.mega.heartbeat(self._hb_seq)
-            print(f"[MEGA HB] seq={self._hb_seq} resp={resp}")
+            seq = self._hb_seq
+            resp = self.mega.heartbeat(seq)
+
+            if force:
+                print(f"[MEGA HB] seq={seq} resp={resp}")
+
             self._hb_seq += 1
             self._last_hb_t = now
+            return seq
+
         except Exception as e:
             print(f"[MEGA HB] error: {e}")
             self._auto_entered = False
+            return None
 
     @staticmethod
     def _parse_last_number(raw) -> Optional[float]:
@@ -940,12 +948,33 @@ class BobBotIO(IOMap):
 
     def sleep(self, secs: float) -> None:
         end = time.monotonic() + secs
+
+        first_hb = None
+        last_hb = None
+        count = 0
+
         while True:
             remaining = end - time.monotonic()
+
             if remaining <= 0:
                 break
-            self._heartbeat_if_due()
+
+            seq = self._heartbeat_if_due()
+
+            if seq is not None:
+                if first_hb is None:
+                    first_hb = seq
+
+                last_hb = seq
+                count += 1
+
             time.sleep(min(0.05, remaining))
+
+        if count:
+            print(
+                f"[MEGA HB] first={first_hb} "
+                f"last={last_hb} count={count}"
+            )
 
     def close(self) -> None:
         if self.mega is not None:

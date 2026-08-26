@@ -49,6 +49,9 @@ def resolve(*, config) -> Calibration:
     module_path = f"calibration.profiles.{profile_name}"
     profile = import_module(module_path)
 
+    motor_module_path = f"calibration.motors.{config.drive_motor_profile}"
+    motor = import_module(motor_module_path)
+
     # --------------------------------------------------
     # Resolve cameras (structured, optional)
     # --------------------------------------------------
@@ -92,24 +95,35 @@ def resolve(*, config) -> Calibration:
 
     return Calibration(
         # Drive
-        drive_switch_mm=profile.DRIVE_SWITCH_MM,
-        drive_power_short=profile.DRIVE_POWER_SHORT,
-        drive_power_long=profile.DRIVE_POWER_LONG,
-        drive_m_short=profile.DRIVE_M_SHORT,
-        drive_b_short=profile.DRIVE_B_SHORT,
-        drive_m_long=profile.DRIVE_M_LONG,
-        drive_b_long=profile.DRIVE_B_LONG,
+        drive_switch_mm=motor.DRIVE_SWITCH_MM,
+        drive_power_short=motor.DRIVE_POWER_SHORT,
+        drive_power_long=motor.DRIVE_POWER_LONG,
+        drive_m_short=motor.DRIVE_M_SHORT,
+        drive_b_short=motor.DRIVE_B_SHORT,
+        drive_m_long=motor.DRIVE_M_LONG,
+        drive_b_long=motor.DRIVE_B_LONG,
 
-        # Rotate (small / large angle)
-        rotate_switch_deg=profile.ROTATE_SWITCH_DEG,
+        # Rotate
+        rotate_switch_deg=motor.ROTATE_SWITCH_DEG,
 
-        rotate_power_small=profile.ROTATE_POWER_SMALL,
-        rotate_m_small=profile.ROTATE_M_SMALL,
-        rotate_b_small=profile.ROTATE_B_SMALL,
+        rotate_power_small=motor.ROTATE_POWER_SMALL,
+        rotate_m_small=motor.ROTATE_M_SMALL,
+        rotate_b_small=motor.ROTATE_B_SMALL,
 
-        rotate_power_large=profile.ROTATE_POWER_LARGE,
-        rotate_m_large=profile.ROTATE_M_LARGE,
-        rotate_b_large=profile.ROTATE_B_LARGE,
+        rotate_power_large=motor.ROTATE_POWER_LARGE,
+        rotate_m_large=motor.ROTATE_M_LARGE,
+        rotate_b_large=motor.ROTATE_B_LARGE,
+
+        # Voltage compensation
+        voltage_reference=motor.VOLTAGE_REFERENCE,
+
+        voltage_low_model=motor.VOLTAGE_LOW_MODEL,
+        voltage_low_a=motor.VOLTAGE_LOW_A,
+        voltage_low_b=getattr(motor, "VOLTAGE_LOW_B", None),
+
+        voltage_high_model=motor.VOLTAGE_HIGH_MODEL,
+        voltage_high_a=motor.VOLTAGE_HIGH_A,
+        voltage_high_b=getattr(motor, "VOLTAGE_HIGH_B", None),
 
         # Cameras
         cameras=cameras,

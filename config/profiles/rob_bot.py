@@ -17,6 +17,11 @@ ROBOT_ID = "rob_bot"
 HARDWARE_PROFILE = "bob_bot"
 ENVIRONMENT = "real"
 
+# -------------------------
+# Drive / Motors Hardware
+# -------------------------
+
+DRIVE_MOTOR_PROFILE = "dfrobot_254rpm_06kg_2wd_hogback94"
 
 # -------------------------
 # Cameras / Vision Hardware
@@ -69,8 +74,7 @@ VOLTAGE_SENSORS = {
     "battery": "stemedu_voltage_sensor_0_25v",
 }
 
-BATTERY_VOLTAGE_NOMINAL = 14.17
-
+BATTERY_VOLTAGE_NOMINAL = 13.15
 
 # -------------------------
 # Physical Geometry

@@ -17,6 +17,11 @@ ROBOT_ID = "bob_bot"
 HARDWARE_PROFILE = "bob_bot"
 ENVIRONMENT = "real"
 
+# -------------------------
+# Drive / Motors Hardware
+# -------------------------
+
+DRIVE_MOTOR_PROFILE = "gobilda_312rpm_06kg_2wd"
 
 # -------------------------
 # Cameras / Vision Hardware

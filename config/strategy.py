@@ -21,6 +21,7 @@ class StartupScript(Enum):
     NONE = auto()
     BASIC_GRAB = auto()
     ACIDIC_GRAB = auto()
+    MOTION_TEST = auto()
 
 class Challenge(Enum):
     NONE = auto()
@@ -45,15 +46,16 @@ ROBOT_PROFILE = RobotProfile.ROB_BOT
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-# RUN_MODE = RunMode.NORMAL
-RUN_MODE = RunMode.CHALLENGES
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
 
-STARTUP_SCRIPT = StartupScript.NONE
+# STARTUP_SCRIPT = StartupScript.NONE
 # STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
+STARTUP_SCRIPT = StartupScript.MOTION_TEST
 
 # CHALLENGE = Challenge.NONE
 # CHALLENGE = Challenge.VISION

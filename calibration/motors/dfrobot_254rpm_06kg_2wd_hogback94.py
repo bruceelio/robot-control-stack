@@ -30,9 +30,8 @@ ROTATE_B_SMALL = 0.0
 
 # Large-angle rotations (momentum) (if under roting need to increase)
 ROTATE_POWER_LARGE = 0.30
-ROTATE_M_LARGE = 0.017   # sec/deg (greater number is more time turning per deg)
+ROTATE_M_LARGE = 0.0108   # sec/deg (greater number is more time turning per deg)
 ROTATE_B_LARGE = 0.0
-
 
 
 # Rotation calibration
@@ -40,3 +39,23 @@ ROTATE_B_LARGE = 0.0
 # ROTATE_M = 0.0051
 # ROTATE_B = 0.15
 
+# =========================
+# Voltage Compensation
+# =========================
+
+# Voltage at which the drive/rotation calibration above was established.
+VOLTAGE_REFERENCE = 13.15
+
+# Linear compensation:
+# multiplier = 1 + A*dv
+# Quadratic compensation:
+# multiplier = 1 + A*dv + B*dv^2
+
+# 0.30 nominal power
+VOLTAGE_LOW_MODEL = "quadratic"
+VOLTAGE_LOW_A = -0.1208
+VOLTAGE_LOW_B = -0.04912
+
+# 0.60 nominal power
+VOLTAGE_HIGH_MODEL = "linear"
+VOLTAGE_HIGH_A = -0.0623

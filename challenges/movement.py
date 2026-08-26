@@ -4,8 +4,13 @@ from config import CONFIG
 from calibration import CALIBRATION
 
 
+
+
 def run(controller):
     io = controller.io
+
+    battery_voltage = io.voltage["battery"].volts
+    print(f"Battery voltage for movement: {battery_voltage:.2f} V")
 
     # -------------------------
     # Drive forward 1550 mm
@@ -26,19 +31,39 @@ def run(controller):
             + CALIBRATION.drive_b_long
         )
 
-    battery_voltage = io.voltage["battery"].volts
+    dv = battery_voltage - CALIBRATION.voltage_reference
 
-    voltage_ratio = CONFIG.battery_voltage_nominal / battery_voltage
-
-    if power <= 0.20:
-        exponent = 1.0
-    elif power >= 0.35:
-        exponent = 2.0
+    if power <= CALIBRATION.drive_power_short:
+        model = CALIBRATION.voltage_low_model
+        a = CALIBRATION.voltage_low_a
+        b = CALIBRATION.voltage_low_b
     else:
-        exponent = 1.0 + ((power - 0.20) / (0.35 - 0.20))
+        model = CALIBRATION.voltage_high_model
+        a = CALIBRATION.voltage_high_a
+        b = CALIBRATION.voltage_high_b
 
-    voltage_multiplier = voltage_ratio ** exponent
-    print(f"Voltage multiplier: {voltage_multiplier:.3f}")
+    if model == "linear":
+        voltage_multiplier = 1.0 + a * dv
+
+    elif model == "quadratic":
+        voltage_multiplier = 1.0 + a * dv + b * dv ** 2
+
+    elif model == "exponential":
+        voltage_multiplier = (
+                                     CALIBRATION.voltage_reference / battery_voltage
+                             ) ** a
+
+    else:
+        raise RuntimeError(
+            f"Unknown voltage compensation model: {model}"
+        )
+
+    print(
+        f"Battery voltage: {battery_voltage:.2f} V, "
+        f"model: {model}, "
+        f"voltage multiplier: {voltage_multiplier:.3f}, "
+        f"nominal power: {power:.3f}"
+    )
 
     power = power * voltage_multiplier
     power = min(power, CONFIG.max_motor_power)
@@ -60,10 +85,10 @@ def run(controller):
 
 
     # -------------------------
-    # Rotate 45 degrees
+    # Rotate 135 degrees
     # -------------------------
 
-    angle_deg = 45
+    angle_deg = 180
 
     if angle_deg < CALIBRATION.rotate_switch_deg:
         power = CALIBRATION.rotate_power_small
@@ -77,6 +102,43 @@ def run(controller):
             CALIBRATION.rotate_m_large * angle_deg
             + CALIBRATION.rotate_b_large
         )
+
+    dv = battery_voltage - CALIBRATION.voltage_reference
+
+    if power <= CALIBRATION.drive_power_short:
+        model = CALIBRATION.voltage_low_model
+        a = CALIBRATION.voltage_low_a
+        b = CALIBRATION.voltage_low_b
+    else:
+        model = CALIBRATION.voltage_high_model
+        a = CALIBRATION.voltage_high_a
+        b = CALIBRATION.voltage_high_b
+
+    if model == "linear":
+        voltage_multiplier = 1.0 + a * dv
+
+    elif model == "quadratic":
+        voltage_multiplier = 1.0 + a * dv + b * dv ** 2
+
+    elif model == "exponential":
+        voltage_multiplier = (
+                                     CALIBRATION.voltage_reference / battery_voltage
+                             ) ** a
+
+    else:
+        raise RuntimeError(
+            f"Unknown voltage compensation model: {model}"
+        )
+
+    print(
+        f"Battery voltage: {battery_voltage:.2f} V, "
+        f"model: {model}, "
+        f"voltage multiplier: {voltage_multiplier:.3f}, "
+        f"nominal power: {power:.3f}"
+    )
+
+    power = power * voltage_multiplier
+    power = min(power, CONFIG.max_motor_power)
 
     direction = CONFIG.rotation_sign
 

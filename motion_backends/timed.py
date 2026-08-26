@@ -22,7 +22,7 @@ class TimedMotionBackend:
     # --------------------------------------------------
 
     def _battery_voltage_scale(self, *, power: float, motion_kind: str) -> float:
-        nominal_v = self.cfg.battery_voltage_nominal
+        reference_v = self.cal.voltage_reference
 
         try:
             actual_v = self.lvl2.io.voltage["battery"].volts
@@ -30,7 +30,7 @@ class TimedMotionBackend:
             actual_v = None
 
         if actual_v is None or actual_v <= 1.0:
-            actual_v = nominal_v
+            actual_v = reference_v
 
         alpha = 0.2
 
@@ -42,29 +42,41 @@ class TimedMotionBackend:
                     + (1.0 - alpha) * self._filtered_battery_voltage
             )
 
-        ratio = nominal_v / self._filtered_battery_voltage
+        dv = self._filtered_battery_voltage - reference_v
+        p = abs(power)
 
-        if motion_kind == "rotate":
-            exponent = 1.0
+        if p <= self.cal.drive_power_short:
+            model = self.cal.voltage_low_model
+            a = self.cal.voltage_low_a
+            b = self.cal.voltage_low_b
         else:
-            p = abs(power)
-            if p <= 0.20:
-                exponent = 1.0
-            elif p >= 0.35:
-                exponent = 2.0
-            else:
-                # Smooth ramp from 1.0 at p=0.20 to 2.0 at p=0.35
-                exponent = 1.0 + ((p - 0.20) / (0.35 - 0.20))
+            model = self.cal.voltage_high_model
+            a = self.cal.voltage_high_a
+            b = self.cal.voltage_high_b
 
-        scale = ratio ** exponent
+        if model == "linear":
+            scale = 1.0 + a * dv
+
+        elif model == "quadratic":
+            scale = 1.0 + a * dv + b * dv ** 2
+
+        elif model == "exponential":
+            scale = (
+                            reference_v / self._filtered_battery_voltage
+                    ) ** a
+
+        else:
+            raise RuntimeError(
+                f"Unknown voltage compensation model: {model}"
+            )
+
         scale = min(1.50, max(0.8, scale))
 
         print(
             f"[BATTERY_COMP] kind={motion_kind} "
             f"raw={actual_v:.2f}V "
             f"filtered={self._filtered_battery_voltage:.2f}V "
-            f"ratio={ratio:.3f} "
-            f"exp={exponent:.2f} "
+            f"reference={reference_v:.2f}V "
             f"scale={scale:.3f}"
         )
 

@@ -39,10 +39,24 @@ ROTATE_POWER_LARGE = 0.20
 ROTATE_M_LARGE = 0.015   # sec/deg (greater number is more time turning per deg)
 ROTATE_B_LARGE = -0.0413
 
-
 # Rotation calibration
 # ROTATE_POWER = 0.50
 # ROTATE_M = 0.0051
 # ROTATE_B = 0.15
 
+# =========================
+# Voltage Compensation
+# =========================
 
+# Voltage at which this drivetrain calibration was established.
+VOLTAGE_REFERENCE = 14.17
+
+# Low-power compensation
+# scale = (reference_voltage / actual_voltage) ** A
+VOLTAGE_LOW_MODEL = "exponential"
+VOLTAGE_LOW_A = 1.0
+
+# High-power compensation
+# scale = (reference_voltage / actual_voltage) ** A
+VOLTAGE_HIGH_MODEL = "exponential"
+VOLTAGE_HIGH_A = 2.0
