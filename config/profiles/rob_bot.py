@@ -1,4 +1,4 @@
-# config/profiles/bob_bot.py
+# config/profiles/rob_bot.py
 
 # ==================================================
 # 1. ROBOT HARDWARE / CAPABILITIES
@@ -14,7 +14,7 @@
 # Selects whether the robot is running against real or simulated hardware.
 
 ROBOT_ID = "rob_bot"
-HARDWARE_PROFILE = "bob_bot"
+HARDWARE_PROFILE = "mega2560"
 ENVIRONMENT = "real"
 
 # -------------------------

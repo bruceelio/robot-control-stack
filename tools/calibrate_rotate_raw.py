@@ -53,7 +53,7 @@ def run_rotate(io_map, power: float, duration_s: float, clockwise: bool) -> None
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Raw timed rotate calibration for BobBot.")
-    parser.add_argument("--hardware-profile", default="bob_bot")
+    parser.add_argument("--hardware-profile", default="mega2560")
     parser.add_argument("--power", type=float, default=0.20, help="Rotation power magnitude.")
     parser.add_argument(
         "--durations",

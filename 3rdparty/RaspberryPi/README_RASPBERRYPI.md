@@ -264,7 +264,7 @@ Ensure configuration resolves correctly:
 Example output:
 
 ```
-hardware_profile: bob_bot
+hardware_profile: mega2560
 environment: real
 ```
 
@@ -286,7 +286,7 @@ Use:
 
 ```python
 robot_id = "bob_bot"
-hardware_profile = "bob_bot"
+hardware_profile = "mega2560"
 ```
 
 ---

@@ -48,7 +48,7 @@ class UnoSerialClient(StubUnoSerialClient):
     """
     Intentionally minimal for now.
 
-    Mirror the Mega constructor/config shape so BobBotIO can switch from the
+    Mirror the Mega constructor/config shape so BMega2560IO can switch from the
     stub to a real implementation later with minimal churn.
     """
 

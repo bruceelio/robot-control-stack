@@ -16,7 +16,7 @@ import termios
 import time
 import tty
 
-from hw_io.bob_bot import BobBotIO
+from hw_io.hw_mega2560 import Mega2560IO
 
 
 LEFT_MOTOR = "drive_front_left"
@@ -47,12 +47,12 @@ def print_markers(markers) -> None:
         )
 
 
-def set_rotation(io: BobBotIO, power: float) -> None:
+def set_rotation(io: Mega2560IO, power: float) -> None:
     io.motor[LEFT_MOTOR].power = power
     io.motor[RIGHT_MOTOR].power = -power
 
 
-def stop_drive(io: BobBotIO) -> None:
+def stop_drive(io: Mega2560IO) -> None:
     io.motor[LEFT_MOTOR].power = 0.0
     io.motor[RIGHT_MOTOR].power = 0.0
 
@@ -78,7 +78,7 @@ def ask_power() -> float:
 
 
 def main() -> None:
-    io = BobBotIO(robot=None)
+    io = Mega2560IO(robot=None)
 
     fd = None
     old_terminal = None

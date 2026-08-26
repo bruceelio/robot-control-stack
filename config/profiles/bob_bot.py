@@ -14,7 +14,7 @@
 # Selects whether the robot is running against real or simulated hardware.
 
 ROBOT_ID = "bob_bot"
-HARDWARE_PROFILE = "bob_bot"
+HARDWARE_PROFILE = "mega2560"
 ENVIRONMENT = "real"
 
 # -------------------------

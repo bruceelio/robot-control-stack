@@ -1,4 +1,4 @@
-# calibration/profiles/bob_bot.py
+# calibration/profiles/hw_mega2560.py
 
 """
 Calibration profile for simulation robot.

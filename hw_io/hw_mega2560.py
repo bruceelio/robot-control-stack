@@ -1,4 +1,4 @@
-# checkout/bob_bot.py
+# hw_io/hw_mega2560.py
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ class QuadratureSnapshot:
     """
     Raw A/B encoder phase snapshot abstraction.
 
-    Not used on BobBot.
+    Not used by the current Mega2560 hardware configuration.
 
     Retained for future robots that expose direct quadrature
     phase lines to the Pi or to a low-level MCU bridge.
@@ -149,7 +149,7 @@ class QuadratureSnapshot:
 class MegaSemanticMotor:
     def __init__(
         self,
-        owner: "BobBotIO",
+        owner: "Mega2560IO",
         mega: MegaSerialClient,
         name: str,
         polarity: int = 1,
@@ -176,9 +176,9 @@ class MegaSemanticMotor:
         self._owner._heartbeat_if_due(force=True)
 
         command_value = self._polarity * value
-        print(f"[BOBBOT MOTOR] name={self._name} power={command_value}")
+        print(f"[MEGA MOTOR] name={self._name} power={command_value}")
         resp = self._mega.motor_write(self._name, power=command_value)
-        print(f"[BOBBOT MOTOR] resp={resp}")
+        print(f"[MEGA MOTOR] resp={resp}")
 
 class MegaSemanticDrive:
     """
@@ -190,7 +190,7 @@ class MegaSemanticDrive:
 
     def __init__(
         self,
-        owner: "BobBotIO",
+        owner: "Mega2560IO",
         mega: MegaSerialClient,
         name: str,
         *,
@@ -235,7 +235,7 @@ class MegaSemanticDrive:
         command_right = self._right_polarity * right
 
         print(
-            f"[BOBBOT DRIVE] name={self._name} "
+            f"[MEGA DRIVE] name={self._name} "
             f"left={command_left} right={command_right}"
         )
 
@@ -245,7 +245,7 @@ class MegaSemanticDrive:
             right=command_right,
         )
 
-        print(f"[BOBBOT DRIVE] resp={resp}")
+        print(f"[MEGA DRIVE] resp={resp}")
 
 
 class LedOutput:
@@ -295,7 +295,7 @@ class MegaServoSigned:
       servo_write(11, +/-1.0)  # mirrored gripper
     """
 
-    def __init__(self, owner: "BobBotIO", write_fn):
+    def __init__(self, owner: "Mega2560IO", write_fn):
         self._owner = owner
         self._write_fn = write_fn
         self._position = None
@@ -315,10 +315,10 @@ class MegaServoSigned:
         self._write_fn(value)
 
 
-class BobBotIO(IOMap):
+class Mega2560IO(IOMap):
     """
-    BobBot bridge layer:
-      semantic io.* convention -> hard Mega/Uno API call
+    Mega2560 hardware bridge:
+        semantic io.* convention -> Mega/Uno hardware API
     """
 
     def __init__(self, robot, mega_client=None, uno_client=None, camera_manager=None):
@@ -993,4 +993,4 @@ class BobBotIO(IOMap):
                 try:
                     close()
                 except Exception as e:
-                    print(f"[BOBBOT CLOSE] close failed: {e}")
+                    print(f"[MEGA CLOSE] close failed: {e}")

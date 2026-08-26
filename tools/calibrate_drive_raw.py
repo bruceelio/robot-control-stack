@@ -47,7 +47,7 @@ def rearm_auto(io_map) -> None:
         except TypeError:
             pass
 
-        # fallback for older bob_bot.py
+        # fallback for older hw_mega2560.py
         if hasattr(io_map, "_auto_entered"):
             io_map._auto_entered = False
         io_map.ensure_auto_mode()
@@ -65,7 +65,7 @@ def run_drive(io_map, left_power: float, right_power: float, duration_s: float) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Raw timed drive calibration for BobBot.")
-    parser.add_argument("--hardware-profile", default="bob_bot")
+    parser.add_argument("--hardware-profile", default="mega2560")
     parser.add_argument("--power", type=float, default=0.20, help="Symmetric drive power.")
     parser.add_argument("--left-power", type=float, help="Override left motor power.")
     parser.add_argument("--right-power", type=float, help="Override right motor power.")
