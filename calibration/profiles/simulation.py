@@ -1,4 +1,4 @@
-# calibration/profiles/simulation.py
+# calibration/profiles/simulation_legacy.py
 
 """
 Calibration profile for simulation robot.

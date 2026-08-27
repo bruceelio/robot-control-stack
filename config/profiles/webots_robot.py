@@ -1,17 +1,122 @@
-# config/profiles/simulation.py
+# config/profiles/webots_robot.py
 
-# Identity
-ROBOT_ID = "sim"
-HARDWARE_PROFILE = "sr1"
+# ==================================================
+# 1. ROBOT HARDWARE / CAPABILITIES
+# ==================================================
+
+# ROBOT_ID:
+# Identifies this particular robot configuration.
+#
+# HARDWARE_PROFILE:
+# Selects the IOMap implementation appropriate to the robot hardware.
+#
+# ENVIRONMENT:
+# Selects whether the robot is running against real or simulated hardware.
+
+ROBOT_ID = "webots_robot"
+
 ENVIRONMENT = "simulation"
 SURFACE = "simulation"
 
-# Cameras
-CAMERAS = {
-    "front": "sr",
+IO = {
+    "audio.df_player":                    None,
+    "audio.piezo":                        "sr2026",
+
+    "bumper.front_left":                  "sr2026",
+    "bumper.front_right":                 "sr2026",
+
+    "button.start":                       None,
+
+    "camera.front":                       "sr2026",
+    "camera.rear":                        None,
+
+    "current.battery":                    "sr2026",
+    "current.gripper_right":              None,
+
+    "drive.front":                        "sr2026",
+    "drive.rear":                         None,
+
+    "encoder.deadwheel_parallel":         None,
+    "encoder.deadwheel_perpendicular":    None,
+    "encoder.drive_front_left":           None,
+    "encoder.drive_front_right":          None,
+    "encoder.shooter":                    None,
+
+    "imu.main":                           None,
+
+    "led.a":                              "sr2026",
+    "led.b":                              "sr2026",
+    "led.c":                              "sr2026",
+    "led.lisiparoi":                      None,
+
+    "limit.lift_high":                    None,
+    "limit.lift_low":                     None,
+
+    "match_zone.main":                    None,
+
+    "motor.collector":                    None,
+    "motor.drive_front_left":             "sr2026",
+    "motor.drive_front_right":            "sr2026",
+    "motor.drive_rear_left":              None,
+    "motor.drive_rear_right":             None,
+    "motor.shooter":                      None,
+
+    "otos.main":                          None,
+
+    "reflectance.centre":                 "sr2026",
+    "reflectance.left":                   "sr2026",
+    "reflectance.right":                  "sr2026",
+
+    "selector.pi_arduino":                None,
+
+    "servo.gripper":                      "sr2026",
+    "servo.lift":                         "sr2026",
+    "servo.shooter_feed":                 None,
+
+    "ultrasonic.front_left":              None,
+    "ultrasonic.front_right":             None,
+
+    "voltage.battery":                    "sr2026",
 }
 
-ENCODERS = {}
+
+# -------------------------
+# Drive / Motors Hardware
+# -------------------------
+
+DRIVE_MOTOR_PROFILE = "webots_2026_2wd"
+
+# -------------------------
+# Cameras / Vision Hardware
+# -------------------------
+
+CAMERAS = {
+    "front": {
+        "profile": "sr",
+        "device": None,
+    }
+}
+
+VISION_SOURCES = {
+    "vision1": {
+        "camera": "front",
+        "enabled": True,
+    }
+}
+
+ASYNC_VISION_ENABLED = False
+
+
+BATTERY_VOLTAGE_NOMINAL = 14.17
+
+# -------------------------
+# Physical Geometry
+# -------------------------
+
+
+# All poses are relative to base_link:
+# base_link = midpoint between drive wheels
+# +x forward, +y left, +z up
 
 CAMERA_MOUNTS = {
     "front": {
@@ -171,6 +276,5 @@ WALL_PARALLEL_TRIGGER_DEG = 10.0    # typically same as FINAL_APPROACH_MAX_DEGRE
 WALL_PARALLEL_MAX_ROTATE_DEG = 15.0
 WALL_PARALLEL_STEP_DEG = 5.0
 WALL_PARALLEL_TIMEOUT_S = 4.0
-
 
 

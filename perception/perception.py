@@ -4,7 +4,6 @@ import time
 import math
 import hashlib
 from calibration import CALIBRATION
-from config import CONFIG
 from hw_io.base import IOMap
 from perception.vision.detection_pipeline import (
     arena_detections_from_vision_message,
@@ -12,14 +11,8 @@ from perception.vision.detection_pipeline import (
     corrected_bearing_deg,
     corrected_distance,
 )
-from perception.vision.apriltag_observations import (
-        apriltag_observations_by_source,
-    )
-from perception.vision.vision_calibration import (
-    get_vision_pnp_calibration,
-)
-from localisation.providers.vision.pose_apriltag_pnp import (
-    AprilTagPnPPoseProvider,
+from vision.apriltag.reconcile import (
+    reconcile_apriltag_markers,
 )
 
 # ==================================================
@@ -50,7 +43,7 @@ PRIMARY_CAMERA = "front"
 
 _FRAME_ORDER_BUFFER = []
 
-_APRILTAG_PNP_PROVIDER = AprilTagPnPPoseProvider()
+
 
 # ==================================================
 # Simple logger
@@ -123,6 +116,11 @@ class Perception:
     def __init__(self, io: IOMap):
         self.io = io
         self.objects = {"acidic": {}, "basic": {}}
+
+        # Canonical AprilTag observations from the latest frame.
+        # Localisation may consume these independently of object perception.
+        self.latest_apriltag_source_id: str | None = None
+        self.latest_apriltag_observations = []
 
 
 # ==================================================
@@ -242,30 +240,17 @@ def sense(
         vision_message
     )
 
+
     source_id, apriltag_observations = (
-        apriltag_observations_by_source(vision_message)
+        reconcile_apriltag_markers(
+            camera_name=camera_name,
+            timestamp=now,
+            markers=all_apriltag_markers,
+        )
     )
 
-    if source_id is not None:
-        vision_pnp_cal = get_vision_pnp_calibration(
-            source_id=source_id,
-            perception_camera_name=camera_name,
-        )
-
-        pnp_result = _APRILTAG_PNP_PROVIDER.estimate(
-            source_id=source_id,
-            apriltag_observations=apriltag_observations,
-            intrinsic_matrix=vision_pnp_cal.camera_matrix,
-            distortion_coefficients=vision_pnp_cal.distortion_coefficients,
-            camera_to_robot_transform=vision_pnp_cal.camera_to_robot_transform,
-        )
-
-        print(
-            f"[PNP_PROVIDER] "
-            f"source={pnp_result.source_id} "
-            f"tags={pnp_result.tag_count} "
-            f"valid={pnp_result.valid}"
-        )
+    perception.latest_apriltag_source_id = source_id
+    perception.latest_apriltag_observations = apriltag_observations
 
     # For now, keep object updates relative unless an external pose is provided elsewhere
     pose = None

@@ -77,20 +77,24 @@ class Controller:
         # Core subsystems
         # -------------------------
 
-        self.camera_manager = CameraProcessManager(
-            camera_names=list(CONFIG.cameras.keys()),
-            robot=self.robot,
-        )
+        if CONFIG.async_vision_enabled:
+            self.camera_manager = CameraProcessManager(
+                camera_names=list(CONFIG.cameras.keys()),
+                robot=self.robot,
+            )
+        else:
+            self.camera_manager = None
 
-        # IO layer (single source of hardware truth)
         self.io: IOMap = resolve_io(
             robot=robot,
-            hardware_profile=CONFIG.hardware_profile,
             camera_manager=self.camera_manager,
         )
 
-        self.camera_manager.start()
-        print("[CAMERA_PROCESS] manager started")
+        if self.camera_manager is not None:
+            self.camera_manager.start()
+            print("[CAMERA_PROCESS] manager started")
+        else:
+            print("[CAMERA_PROCESS] async vision disabled")
 
         # Level2 now consumes IO, not robot
         self.lvl2 = Level2(
@@ -123,7 +127,10 @@ class Controller:
 
         self.localisation = Localisation()
 
-        match_zone = self.io.usb["match_zone"]
+        if CONFIG.io.get("usb.match_zone") is not None:
+            match_zone = self.io.usb["match_zone"]
+        else:
+            match_zone = 0
 
         start_x, start_y, start_heading = get_start_pose(
             match_zone,
@@ -287,6 +294,12 @@ class Controller:
 
         pose_obs = self.localisation.estimate(
             arena_observations=arena_obs,
+            apriltag_source_id=(
+                self.perception.latest_apriltag_source_id
+            ),
+            apriltag_observations=(
+                self.perception.latest_apriltag_observations
+            ),
             now_s=now_s,
         )
 

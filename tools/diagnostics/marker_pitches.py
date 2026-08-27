@@ -93,7 +93,7 @@ def run(robot):
     print("\n=== MARKER PITCH DUMP DIAGNOSTIC (POSE-FREE) ===")
 
     # Core subsystems (same pattern as other diagnostics)
-    io = resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
+    io = resolve_io(robot=robot)
     lvl2 = Level2(io, max_power=CONFIG.max_motor_power)
     localisation = Localisation()  # NOT used for pose; only passed to InitEscape for compatibility
 

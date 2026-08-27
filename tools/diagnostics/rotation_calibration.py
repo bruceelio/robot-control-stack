@@ -56,7 +56,7 @@ def run(robot):
     print("\n=== ROTATION CALIBRATION DIAGNOSTIC ===")
 
     # --- Core subsystems (match Controller) ---
-    io = resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
+    io = resolve_io(robot=robot)
     lvl2 = Level2(io, max_power=CONFIG.max_motor_power)
     perception = Perception(io)
 

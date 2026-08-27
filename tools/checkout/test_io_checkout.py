@@ -19,7 +19,6 @@ def _io(robot):
 
     io = resolve_io(
         robot=robot,
-        hardware_profile=CONFIG.hardware_profile,
         camera_manager=camera_manager,
     )
 

@@ -13,9 +13,79 @@
 # ENVIRONMENT:
 # Selects whether the robot is running against real or simulated hardware.
 
-ROBOT_ID = "rob_bot"
-HARDWARE_PROFILE = "mega2560"
+ROBOT_ID = "rob_bot"            # rob_bot, bob_bot,
+
 ENVIRONMENT = "real"
+
+# One entry per semantic IO device.
+# The robot profile selects the backend only.
+# Pins, channels, ports, and API-specific addressing belong in the backend.
+#
+# None = this robot does not have that IO capability.
+#
+# Keep this list alphabetized by IO category, then IO name.
+
+IO = {
+    "audio.df_player":                    None,
+    "audio.piezo":                        None,
+
+    "bumper.front_left":                  None,
+    "bumper.front_right":                 None,
+
+    "button.start":                       None,
+
+    "camera.front":                       "mega2560",
+    "camera.rear":                        None,
+
+    "current.battery":                    None,
+    "current.gripper_right":              None,
+
+    "drive.front":                        "mega2560",
+    "drive.rear":                         None,
+
+    "encoder.deadwheel_parallel":         None,
+    "encoder.deadwheel_perpendicular":    None,
+    "encoder.drive_front_left":           None,
+    "encoder.drive_front_right":          None,
+    "encoder.shooter":                    None,
+
+    "imu.main":                           None,
+
+    "led.a":                              None,
+    "led.b":                              None,
+    "led.c":                              None,
+    "led.lisiparoi":                      None,
+
+    "limit.lift_high":                    None,
+    "limit.lift_low":                     None,
+
+    "motor.collector":                    None,
+    "motor.drive_front_left":             "mega2560",
+    "motor.drive_front_right":            "mega2560",
+    "motor.drive_rear_left":              None,
+    "motor.drive_rear_right":             None,
+    "motor.shooter":                      None,
+
+    "otos.main":                          None,
+
+    "reflectance.centre":                 None,
+    "reflectance.left":                   None,
+    "reflectance.right":                  None,
+
+    "selector.pi_arduino":                None,
+
+    "servo.gripper":                      "mega2560",
+    "servo.lift":                         "mega2560",
+    "servo.shooter_feed":                 None,
+
+    "ultrasonic.front_left":              None,
+    "ultrasonic.front_right":             None,
+
+    "usb.match_zone":                     "mega2560",
+
+    "voltage.battery":                    "mega2560",
+}
+
 
 # -------------------------
 # Drive / Motors Hardware
@@ -47,7 +117,6 @@ CAMERAS = {
 VISION_SOURCES = {
     "vision1": {
         "camera": "front",
-        "provider": "apriltag_pnp",
         "enabled": True,
     }
 }

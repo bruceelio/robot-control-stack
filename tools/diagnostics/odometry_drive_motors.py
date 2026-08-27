@@ -675,7 +675,6 @@ def run(robot=None) -> None:
 
     io = resolve_io(
         robot=robot,
-        hardware_profile=CONFIG.hardware_profile,
     )
 
     left_encoder = io.encoder[LEFT_ENCODER]

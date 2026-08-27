@@ -70,7 +70,7 @@ def config_uses_sr(config) -> bool:
 
     CURRENT RULE:
     - existing codebase uses CONFIG.hardware_profile
-    - if it is 'sr1', assume we need the SR API object
+    - if it is 'sr2026', assume we need the SR API object
 
     FUTURE RULE:
     - replace/extend this with per-subsystem backend inspection,
@@ -80,7 +80,7 @@ def config_uses_sr(config) -> bool:
           any camera backend == "sr"
     """
     hardware_profile = getattr(config, "hardware_profile", None)
-    return hardware_profile == "sr1"
+    return hardware_profile == "sr2026"
 
 
 def build_robot_if_needed(config):

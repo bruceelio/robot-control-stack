@@ -148,7 +148,6 @@ def run(robot=None) -> None:
 
     io = resolve_io(
         robot=robot,
-        hardware_profile=CONFIG.hardware_profile,
     )
 
     # Paired semantic drive device ensures left and right outputs are transmitted

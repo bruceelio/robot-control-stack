@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 def _io(robot):
-    return resolve_io(robot=robot, hardware_profile=CONFIG.hardware_profile)
+    return resolve_io(robot=robot)
 
 
 def _device_log(device: str, *, passed: bool, data=None, note: str = "") -> None:

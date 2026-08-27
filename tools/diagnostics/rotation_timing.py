@@ -154,7 +154,6 @@ def run(robot=None) -> None:
 
     io = resolve_io(
         robot=robot,
-        hardware_profile=CONFIG.hardware_profile,
     )
 
     # Named semantic devices are the final application-facing checkout boundary.

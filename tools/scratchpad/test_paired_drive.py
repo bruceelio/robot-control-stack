@@ -5,7 +5,6 @@ from hw_io.resolve import resolve_io
 def main() -> None:
     io = resolve_io(
         robot=None,
-        hardware_profile=CONFIG.hardware_profile,
     )
 
     try:

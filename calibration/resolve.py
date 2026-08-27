@@ -19,6 +19,7 @@ PROFILE_MAP = {
     "sim": "simulation",
     "simulation": "simulation",
     "sr1": "sr1",
+    "webots_robot": "webots_robot",
     "bob_bot": "bob_bot",
     "rob_bot": "rob_bot",
 }

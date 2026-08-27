@@ -1,9 +1,9 @@
-# config/profiles/sr1.py
+# config/profiles/hw_sr2026.py
 
-from .simulation import *  # noqa
+from .simulation_legacy import *  # noqa
 
 ROBOT_ID = "sr1"
-HARDWARE_PROFILE = "sr1"
+HARDWARE_PROFILE = "sr2026"
 ENVIRONMENT = "real"
 SURFACE = "tile"
 

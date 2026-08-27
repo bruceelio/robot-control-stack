@@ -14,7 +14,7 @@
 # Selects whether the robot is running against real or simulated hardware.
 
 ROBOT_ID = "bob_bot"
-HARDWARE_PROFILE = "mega2560"
+
 ENVIRONMENT = "real"
 
 # -------------------------
@@ -358,4 +358,63 @@ WALL_PARALLEL_TIMEOUT_S = 4.0
 
 GRAB_DISTANCE_MM = 0.0 # not currently in code?
 
+IO = {
+    "audio.df_player":                    None,
+    "audio.piezo":                        None,
 
+    "bumper.front_left":                  None,
+    "bumper.front_right":                 None,
+
+    "button.start":                       None,
+
+    "camera.front":                       "pi",
+    "camera.rear":                        None,
+
+    "current.battery":                    None,
+    "current.gripper_right":              None,
+
+    "drive.front":                        "mega2560",
+    "drive.rear":                         None,
+
+    "encoder.deadwheel_parallel":         None,
+    "encoder.deadwheel_perpendicular":    None,
+    "encoder.drive_front_left":           None,
+    "encoder.drive_front_right":          None,
+    "encoder.shooter":                    None,
+
+    "imu.main":                           None,
+
+    "led.a":                              None,
+    "led.b":                              None,
+    "led.c":                              None,
+    "led.lisiparoi":                      None,
+
+    "limit.lift_high":                    None,
+    "limit.lift_low":                     None,
+
+    "motor.collector":                    None,
+    "motor.drive_front_left":             "mega2560",
+    "motor.drive_front_right":            "mega2560",
+    "motor.drive_rear_left":              None,
+    "motor.drive_rear_right":             None,
+    "motor.shooter":                      None,
+
+    "otos.main":                          None,
+
+    "reflectance.centre":                 None,
+    "reflectance.left":                   None,
+    "reflectance.right":                  None,
+
+    "selector.pi_arduino":                None,
+
+    "servo.gripper":                      "mega2560",
+    "servo.lift":                         "mega2560",
+    "servo.shooter_feed":                 None,
+
+    "ultrasonic.front_left":              None,
+    "ultrasonic.front_right":             None,
+
+    "usb.match_zone":                     "pi",
+
+    "voltage.battery":                    "mega2560",
+}

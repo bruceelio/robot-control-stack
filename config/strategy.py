@@ -8,6 +8,7 @@ class RobotProfile(Enum):
     SR1 = "sr1"
     BOB_BOT = "bob_bot"
     ROB_BOT = "rob_bot"
+    WEBOTS_ROBOT = "webots_robot"
 
 
 class RunMode(Enum):
@@ -41,8 +42,8 @@ class MatchZoneSource(Enum):
 
 
 # ROBOT_PROFILE = RobotProfile.BOB_BOT
-ROBOT_PROFILE = RobotProfile.ROB_BOT
-# ROBOT_PROFILE = RobotProfile.SIMULATION         # Run this for WeBots
+# ROBOT_PROFILE = RobotProfile.ROB_BOT
+ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
@@ -52,10 +53,10 @@ RUN_MODE = RunMode.NORMAL
 # RUN_MODE = RunMode.DIAGNOSTICS
 
 
-# STARTUP_SCRIPT = StartupScript.NONE
+STARTUP_SCRIPT = StartupScript.NONE
 # STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
-STARTUP_SCRIPT = StartupScript.MOTION_TEST
+# STARTUP_SCRIPT = StartupScript.MOTION_TEST
 
 # CHALLENGE = Challenge.NONE
 # CHALLENGE = Challenge.VISION

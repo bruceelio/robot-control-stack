@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
+
+from vision.apriltag.observations import AprilTagObservation
 
 from localisation.providers.base import PoseObservation, PoseProvider
 
@@ -27,6 +29,22 @@ class VisionArbiter(PoseProvider):
         for provider in self.providers:
             if hasattr(provider, "set_detections"):
                 provider.set_detections(arena_detections)
+
+    def set_apriltag_observations(
+            self,
+            *,
+            source_id: str | None,
+            observations: Sequence[AprilTagObservation] | None,
+    ) -> None:
+        for provider in self.providers:
+            if hasattr(
+                    provider,
+                    "set_apriltag_observations",
+            ):
+                provider.set_apriltag_observations(
+                    source_id=source_id,
+                    observations=observations,
+                )
 
     def get_observation(self, now_s: float) -> Optional[PoseObservation]:
         candidates: list[PoseObservation] = []

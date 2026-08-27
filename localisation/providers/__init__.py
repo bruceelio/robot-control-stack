@@ -14,7 +14,7 @@ from .base import PoseObservation, PoseProvider
 
 # Vision providers
 from .vision.pose_cam1_markers2 import Cam1Markers2Provider
-# from .vision.pose_apriltag_pnp import AprilTagPnPPoseProvider
+from .vision.pose_apriltag_pnp import AprilTagPnPPoseProvider
 from .vision.vision_arbiter import VisionArbiter
 
 # Motion / fallback providers
@@ -29,6 +29,7 @@ def default_providers():
     vision_provider = VisionArbiter(
         providers=[
             Cam1Markers2Provider(),
+            AprilTagPnPPoseProvider(),
         ]
     )
 

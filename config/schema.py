@@ -20,12 +20,14 @@ VALID_WALL_ANGLE_BACKENDS = ("one_ultrasonic_scan", "two_ultrasonics")
 class Config:
     # Identity / mode
     robot_id: str
-    hardware_profile: str
     environment: str
     drive_motor_profile: str
     surface: str
     drive_layout: str
     wheel_type: str
+
+    io: dict[str, str | None]
+
     cameras: dict
     async_vision_enabled: bool
     vision_sources: dict
@@ -144,11 +146,19 @@ class Config:
     wall_parallel_step_deg: float
     wall_parallel_timeout_s: float
 
+    def has_io(self, category: str, name: str) -> bool:
+        key = f"{category}.{name}"
+
+        if key not in self.io:
+            raise KeyError(f"Unknown IO capability: {key}")
+
+        return self.io[key] is not None
 
     def dump(self):
         print("\n=== RESOLVED CONFIGURATION ===")
         pprint(asdict(self), sort_dicts=False)
         print("=== END CONFIGURATION ===\n")
+
 
 # --------------------------------------------------
 # Declarative resolve map
@@ -157,12 +167,14 @@ class Config:
 RESOLVE_MAP = {
     # Identity
     "robot_id": ("profile", "ROBOT_ID"),
-    "hardware_profile": ("profile", "HARDWARE_PROFILE"),
     "environment": ("profile", "ENVIRONMENT"),
     "drive_motor_profile": ("profile", "DRIVE_MOTOR_PROFILE"),
     "surface": ("profile", "SURFACE"),
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),
+
+    "io": ("profile", "IO"),
+
     "cameras": ("profile", "CAMERAS"),
     "vision_sources": ("profile", "VISION_SOURCES"),
     "async_vision_enabled": ("profile", "ASYNC_VISION_ENABLED"),

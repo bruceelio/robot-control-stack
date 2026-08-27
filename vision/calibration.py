@@ -1,4 +1,4 @@
-# perception/vision/vision_calibration.py
+# perception/vision/calibration.py
 
 from __future__ import annotations
 

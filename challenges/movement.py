@@ -31,6 +31,8 @@ def run(controller):
             + CALIBRATION.drive_b_long
         )
 
+    duration_s = duration_s * CONFIG.drive_factor
+
     dv = battery_voltage - CALIBRATION.voltage_reference
 
     if power <= CALIBRATION.drive_power_short:
@@ -102,6 +104,8 @@ def run(controller):
             CALIBRATION.rotate_m_large * angle_deg
             + CALIBRATION.rotate_b_large
         )
+
+    duration_s = duration_s * CONFIG.rotate_factor
 
     dv = battery_voltage - CALIBRATION.voltage_reference
 

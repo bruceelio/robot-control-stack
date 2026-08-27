@@ -7,8 +7,8 @@ from calibration.cameras.resolve import resolve_camera_calibration
 from config.arena_tags import resolve_tag_size_m
 
 from hw_io.cameras.sr_april import SRAprilCamera
-from hw_io.cameras.pi_libcamera_april import PiLibcameraAprilCamera
-from hw_io.cameras.opencv_usb import OpenCVUSBCamera
+
+
 
 
 def resolve_camera(*, camera_name: str, device=None, robot):
@@ -41,6 +41,8 @@ def resolve_camera(*, camera_name: str, device=None, robot):
         return SRAprilCamera(robot.camera)
 
     if backend == "pi_libcamera_april":
+        from hw_io.cameras.pi_libcamera_april import PiLibcameraAprilCamera
+
         calibration_profile = getattr(cam_cfg, "CALIBRATION_PROFILE", None)
         calibration = None
 
@@ -83,6 +85,8 @@ def resolve_camera(*, camera_name: str, device=None, robot):
         )
 
     if backend == "opencv_usb":
+        from hw_io.cameras.opencv_usb import OpenCVUSBCamera
+
         calibration_profile = getattr(cam_cfg, "CALIBRATION_PROFILE", None)
         calibration = None
 

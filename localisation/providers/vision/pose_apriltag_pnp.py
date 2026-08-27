@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
+
+from localisation.providers.base import PoseObservation, PoseProvider
+from vision.apriltag.observations import AprilTagObservation
+from vision.calibration import get_vision_pnp_calibration
+
 from config import CONFIG
 from config.arena import marker_poses
 
@@ -96,7 +101,7 @@ class AprilTagPnPPoseResult:
     valid: bool
 
 
-class AprilTagPnPPoseProvider:
+class AprilTagPnPPoseProvider(PoseProvider):
     """
     Generic AprilTag PnP pose provider.
 
@@ -106,6 +111,169 @@ class AprilTagPnPPoseProvider:
     Does not care whether the physical camera is named:
         front, rear, front_left, etc.
     """
+
+    def __init__(self):
+        super().__init__(
+            "apriltag_pnp",
+            base_weight=0.9,
+        )
+
+        self._source_id: str | None = None
+        self._apriltag_observations: list[AprilTagObservation] = []
+
+    def set_apriltag_observations(
+            self,
+            *,
+            source_id: str | None,
+            observations: Sequence[AprilTagObservation] | None,
+    ) -> None:
+        self._source_id = source_id
+        self._apriltag_observations = list(
+            observations or []
+        )
+
+    @staticmethod
+    def _observation_to_solver_dict(
+            observation: AprilTagObservation,
+    ) -> dict:
+        return {
+            "source_id": observation.source_id,
+            "camera": observation.camera,
+            "timestamp": observation.timestamp,
+
+            "tag_id": observation.tag_id,
+
+            "distance_mm": observation.distance_mm,
+            "horizontal_angle_rad":
+                observation.horizontal_angle_rad,
+            "vertical_angle_rad":
+                observation.vertical_angle_rad,
+
+            "yaw_rad": observation.yaw_rad,
+            "pitch_rad": observation.pitch_rad,
+            "roll_rad": observation.roll_rad,
+
+            "center_px": observation.center_px,
+            "corners_px": observation.corners_px,
+
+            "tag_size_m": observation.tag_size_m,
+            "decision_margin": observation.decision_margin,
+            "family": observation.family,
+
+            "x_m": observation.tag_x_m,
+            "y_m": observation.tag_y_m,
+            "z_m": observation.tag_z_m,
+
+            "pose_err": observation.pose_err,
+        }
+
+    def get_observation(
+            self,
+            now_s: float,
+    ) -> PoseObservation | None:
+
+        if self._source_id is None:
+            return None
+
+        if not self._apriltag_observations:
+            return None
+
+        # --------------------------------------------------
+        # Applicability check
+        # --------------------------------------------------
+        #
+        # PnP requires image-space tag corners and tag size.
+        #
+        # SR/Webots does not provide these, so PnP simply
+        # declines to produce an observation.
+        # --------------------------------------------------
+
+        usable = [
+            obs
+            for obs in self._apriltag_observations
+            if obs.corners_px is not None
+               and obs.tag_size_m is not None
+        ]
+
+        if not usable:
+            return None
+
+        camera_name = usable[0].camera
+
+        # --------------------------------------------------
+        # Camera calibration
+        # --------------------------------------------------
+
+        calibration = get_vision_pnp_calibration(
+            source_id=self._source_id,
+            perception_camera_name=camera_name,
+        )
+
+        # --------------------------------------------------
+        # Existing PnP solver
+        # --------------------------------------------------
+
+        solver_observations = [
+            self._observation_to_solver_dict(obs)
+            for obs in usable
+        ]
+
+        result = self.estimate(
+            source_id=self._source_id,
+            apriltag_observations=solver_observations,
+            intrinsic_matrix=calibration.camera_matrix,
+            distortion_coefficients=(
+                calibration.distortion_coefficients
+            ),
+            camera_to_robot_transform=(
+                calibration.camera_to_robot_transform
+            ),
+        )
+
+        if not result.valid:
+            return None
+
+        if (
+                result.pose_x_m is None
+                or result.pose_y_m is None
+        ):
+            return None
+
+        return PoseObservation(
+            x=float(result.pose_x_m) * 1000.0,
+            y=float(result.pose_y_m) * 1000.0,
+
+            heading=(
+                None
+                if result.pose_theta_rad is None
+                else float(result.pose_theta_rad)
+            ),
+
+            position_valid=True,
+
+            heading_valid=(
+                    result.pose_theta_rad is not None
+            ),
+
+            # Initial structural value.
+            # We will tune PnP confidence later using Bob data.
+            confidence=0.85,
+
+            source=self.name,
+            timestamp=float(now_s),
+            is_absolute=True,
+
+            quality="good",
+
+            diagnostics={
+                "source_id": result.source_id,
+                "tag_count": result.tag_count,
+                "ambiguity_score":
+                    result.ambiguity_score,
+                "reprojection_score":
+                    result.reprojection_score,
+            },
+        )
 
     def estimate(
         self,
@@ -455,3 +623,11 @@ class AprilTagPnPPoseProvider:
             timestamp_ms=timestamp_ms,
             valid=is_valid,
         )
+
+    def reseed(self, pose) -> None:
+        # PnP is an absolute provider.
+        return None
+
+    def invalidate(self) -> None:
+        self._source_id = None
+        self._apriltag_observations = []

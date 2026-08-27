@@ -8,6 +8,7 @@ from typing import List, Optional, Sequence
 from localisation.arbitration import Arbitrator
 from localisation.pose_types import Pose
 from localisation.providers.base import PoseProvider, PoseObservation
+from vision.apriltag.observations import AprilTagObservation
 
 
 class Localisation:
@@ -84,12 +85,14 @@ class Localisation:
             provider.reseed(self.pose)
 
     def estimate(
-        self,
-        *,
-        now_s: float,
-        io=None,
-        arena_detections: Sequence[dict] | None = None,
-        arena_observations: Sequence[dict] | None = None,
+            self,
+            *,
+            now_s: float,
+            io=None,
+            arena_detections: Sequence[dict] | None = None,
+            arena_observations: Sequence[dict] | None = None,
+            apriltag_source_id: str | None = None,
+            apriltag_observations: Sequence[AprilTagObservation] | None = None,
     ) -> PoseObservation | None:
         """
         Compatibility wrapper around provider-fed arbitration.
@@ -106,11 +109,28 @@ class Localisation:
             arena_detections = arena_observations
 
         arena_detections = list(arena_detections or [])
+        apriltag_observations = list(
+            apriltag_observations or []
+        )
 
-        # Feed fresh detections into providers that support it.
+        # Feed fresh observations into providers that support them.
         for provider in self.providers:
+
+            # Existing corrected range/bearing path.
             if hasattr(provider, "set_detections"):
-                provider.set_detections(arena_detections)
+                provider.set_detections(
+                    arena_detections
+                )
+
+            # Neutral AprilTag observation path.
+            if hasattr(
+                    provider,
+                    "set_apriltag_observations",
+            ):
+                provider.set_apriltag_observations(
+                    source_id=apriltag_source_id,
+                    observations=apriltag_observations,
+                )
 
         return self.arbitrator.estimate(now_s=now_s)
 
