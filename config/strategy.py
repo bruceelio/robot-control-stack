@@ -42,13 +42,13 @@ class MatchZoneSource(Enum):
 
 
 # ROBOT_PROFILE = RobotProfile.BOB_BOT
-# ROBOT_PROFILE = RobotProfile.ROB_BOT
-ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
+ROBOT_PROFILE = RobotProfile.ROB_BOT
+# ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
-RUN_MODE = RunMode.NORMAL
-# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.NORMAL
+RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
@@ -83,4 +83,4 @@ MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
 MATCH_ZONE_FIXED = 0
 USB_MATCH_ZONE_FILE = "zone.txt"
 
-START_SLOT = 3
+START_SLOT = 1  # 1: Simulation Start; 2:   ; 3: corner start diag run

@@ -13,10 +13,10 @@ def run(controller):
     print(f"Battery voltage for movement: {battery_voltage:.2f} V")
 
     # -------------------------
-    # Drive forward 1550 mm
+    # Drive forward x mm
     # -------------------------
 
-    distance_mm = 1550
+    distance_mm = 875
 
     if distance_mm < CALIBRATION.drive_switch_mm:
         power = CALIBRATION.drive_power_short
@@ -87,7 +87,7 @@ def run(controller):
 
 
     # -------------------------
-    # Rotate 135 degrees
+    # Rotate x degrees
     # -------------------------
 
     angle_deg = 180

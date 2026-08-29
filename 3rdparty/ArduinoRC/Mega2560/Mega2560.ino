@@ -89,7 +89,11 @@ static const uint8_t PIN_REFLECTANCE_RIGHT     = A7;
 static const uint8_t PIN_COLLECTOR_PWM         = 4;
 static const uint8_t PIN_SHOOTER_PWM           = 5;
 
-static const uint8_t PIN_DFPLAYER_SELECT_PWM   = 7;
+static const uint8_t PIN_DFPLAYER_SELECT_PWM = 6;
+
+static const uint8_t PIN_ALT_FRONT_RIGHT_PWM = 7;
+static const uint8_t PIN_ALT_FRONT_LEFT_PWM  = 8;
+
 static const uint8_t PIN_PIEZO_BUZZER          = 44;
 static const uint8_t PIN_LED_LISIPAROI_PWM     = 46;
 
@@ -136,6 +140,8 @@ static const uint8_t PIN_ULTRASONIC_FRONT_RIGHT_ECHO = 42;
 // ------------------------- MOTOR DIR ---------------------
 static const uint8_t PIN_SHOOTER_DIR            = 39;
 static const uint8_t PIN_COLLECTOR_DIR          = 41;
+static const uint8_t PIN_ALT_FRONT_LEFT_DIR     = 43;
+static const uint8_t PIN_ALT_FRONT_RIGHT_DIR    = 45;
 
 
 // ------------------------- LOGICAL LINK MAPPING ----------
@@ -158,15 +164,37 @@ static const uint8_t CH_DRIVE_STRAFE   = 1; // right stick left/right
 static const uint8_t CH_DRIVE_THROTTLE = 2; // right stick up/down
 static const uint8_t CH_DRIVE_ROTATE   = 4; // left stick left/right
 
+// Teleop drive scaling.
+//
+// Mecanum rotation depends on the chassis geometry term (L + W), where:
+//   L = centre-to-front/rear wheel centreline distance
+//   W = centre-to-left/right wheel centreline distance
+//
+// A square chassis has W = L, giving a reference rotation term of 2L.
+// For a rectangular chassis, the geometry correction relative to square is:
+//
+//   TURN_GEOMETRY_FACTOR = (L + W) / (2L)
+//                        = (1 + W/L) / 2
+//
+// Example: if W = 0.8L:
+//   TURN_GEOMETRY_FACTOR = (1 + 0.8) / 2 = 0.90
+//
+// TELEOP_TURN_SCALE therefore includes this chassis geometry correction.
+// Final value may still be adjusted experimentally for preferred handling.
+
 static const float TELEOP_DRIVE_SCALE  = 0.80f;
 static const float TELEOP_STRAFE_SCALE = 0.80f;
-static const float TELEOP_TURN_SCALE   = 0.80f;
+
+static const float TURN_GEOMETRY_FACTOR = 0.90f;   // Example: W = 0.8L
+static const float TELEOP_TURN_SCALE =
+    TELEOP_DRIVE_SCALE * TURN_GEOMETRY_FACTOR;     // 0.80 * 0.90 = 0.72
 
 static const uint8_t CH_GRIP = 5; // currently assigned gripper control
 static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
 static const float TELEOP_SHOOTER_SCALE = 0.8f; // CH_LIFT also controls shooter power
 
 static const uint8_t CH_SHOOTER_FEED = 7; // SWA, pulse shooter feed servos
+
 static const unsigned long SHOOTER_FEED_PULSE_MS = 700;
 static const int SHOOTER_FEED_STOP_US = 1500;
 static const int SHOOTER_FEED_LEFT_RUN_US = 1700;
@@ -197,6 +225,16 @@ static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (5
 // =========================================================
 // STATE
 // =========================================================
+
+// Front-drive hardware routing
+enum FrontDriveRoute {
+  FRONT_DRIVE_ROBOCLAW,
+  FRONT_DRIVE_MDD20A
+};
+
+FrontDriveRoute frontDriveRoute = FRONT_DRIVE_MDD20A;
+
+// Pi / AUTO state
 
 bool piAutoRequested = false;
 unsigned long piLastHeartbeatMs = 0;
@@ -402,12 +440,40 @@ void writeRoboClawM2(HardwareSerial &port, uint8_t addr, float pwr) {
   else sendRoboClaw(port, addr, 0x05, (uint8_t)(-speed));
 }
 
+void writePwmDirMotor(uint8_t pwmPin, uint8_t dirPin, float value);
+
 void writeDriveFrontLeft(float pwr) {
-  writeRoboClawM1(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, pwr);
+  if (frontDriveRoute == FRONT_DRIVE_MDD20A) {
+    writePwmDirMotor(
+      PIN_ALT_FRONT_LEFT_PWM,
+      PIN_ALT_FRONT_LEFT_DIR,
+      pwr
+    );
+    return;
+  }
+
+  writeRoboClawM1(
+    ROBOCLAW_A_SERIAL,
+    ROBOCLAW_ADDR_A,
+    pwr
+  );
 }
 
 void writeDriveFrontRight(float pwr) {
-  writeRoboClawM2(ROBOCLAW_A_SERIAL, ROBOCLAW_ADDR_A, pwr);
+  if (frontDriveRoute == FRONT_DRIVE_MDD20A) {
+    writePwmDirMotor(
+      PIN_ALT_FRONT_RIGHT_PWM,
+      PIN_ALT_FRONT_RIGHT_DIR,
+      pwr
+    );
+    return;
+  }
+
+  writeRoboClawM2(
+    ROBOCLAW_A_SERIAL,
+    ROBOCLAW_ADDR_A,
+    pwr
+  );
 }
 
 void writeDriveRearLeft(float pwr) {
@@ -419,8 +485,31 @@ void writeDriveRearRight(float pwr) {
 }
 
 void stopDrive() {
-  writeDriveFrontLeft(0.0f);
-  writeDriveFrontRight(0.0f);
+  // Normal front RoboClaw
+  writeRoboClawM1(
+    ROBOCLAW_A_SERIAL,
+    ROBOCLAW_ADDR_A,
+    0.0f
+  );
+  writeRoboClawM2(
+    ROBOCLAW_A_SERIAL,
+    ROBOCLAW_ADDR_A,
+    0.0f
+  );
+
+  // Alternate front MDD20A
+  writePwmDirMotor(
+    PIN_ALT_FRONT_LEFT_PWM,
+    PIN_ALT_FRONT_LEFT_DIR,
+    0.0f
+  );
+  writePwmDirMotor(
+    PIN_ALT_FRONT_RIGHT_PWM,
+    PIN_ALT_FRONT_RIGHT_DIR,
+    0.0f
+  );
+
+  // Rear drive
   writeDriveRearLeft(0.0f);
   writeDriveRearRight(0.0f);
 }
@@ -676,6 +765,40 @@ void handlePiCommand(char *line) {
     PI_SERIAL.println("OK MODE TELEOP");
     return;
   }
+
+
+if (strncmp(line, "FRONT_ROUTE ", 12) == 0) {
+  const char *routeName = line + 12;
+
+  if (strcmp(routeName, "ROBOCLAW") == 0) {
+    if (frontDriveRoute != FRONT_DRIVE_ROBOCLAW) {
+      stopDrive();
+      motorDriveFrontLeftPower = 0.0f;
+      motorDriveFrontRightPower = 0.0f;
+      frontDriveRoute = FRONT_DRIVE_ROBOCLAW;
+    }
+
+    PI_SERIAL.println("OK FRONT_ROUTE ROBOCLAW");
+    return;
+  }
+
+  if (strcmp(routeName, "MDD20A") == 0) {
+    if (frontDriveRoute != FRONT_DRIVE_MDD20A) {
+      stopDrive();
+      motorDriveFrontLeftPower = 0.0f;
+      motorDriveFrontRightPower = 0.0f;
+      frontDriveRoute = FRONT_DRIVE_MDD20A;
+    }
+
+    PI_SERIAL.println("OK FRONT_ROUTE MDD20A");
+    return;
+  }
+
+  PI_SERIAL.print("ERR FRONT_ROUTE ");
+  PI_SERIAL.println(routeName);
+  return;
+}
+
 
   if (strcmp(line, "STOP") == 0) {
     motorDriveFrontLeftPower = 0.0f;
@@ -1180,6 +1303,13 @@ void setup() {
   pinMode(PIN_COLLECTOR_PWM, OUTPUT);
   pinMode(PIN_COLLECTOR_DIR, OUTPUT);
 
+  // Alternate front-drive MDD20A
+  pinMode(PIN_ALT_FRONT_LEFT_PWM, OUTPUT);
+  pinMode(PIN_ALT_FRONT_LEFT_DIR, OUTPUT);
+
+  pinMode(PIN_ALT_FRONT_RIGHT_PWM, OUTPUT);
+  pinMode(PIN_ALT_FRONT_RIGHT_DIR, OUTPUT);
+
   // Ultrasonic pins
   pinMode(PIN_ULTRASONIC_FRONT_LEFT_TRIG, OUTPUT);
   pinMode(PIN_ULTRASONIC_FRONT_LEFT_ECHO, INPUT);
@@ -1273,6 +1403,10 @@ void loop() {
     shooterFeedPulseActive = false;
     return;
   }
+
+  // Select front motor controller from FlySky.
+  // Route changes are accepted only while drive controls are neutral.
+
 
   // 4WD mecanum drive from FlySky.
   // CH2 = forward/reverse, CH1 = strafe, CH4 = rotate.

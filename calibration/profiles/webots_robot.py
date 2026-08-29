@@ -29,7 +29,7 @@ CAMERAS = {
         # Optical / perception correction
         # ------------------------------------------
         "optical": {
-            "distance_scale": 0.50,
+            "distance_scale": 1.0,
             "bearing_sign": 1.0,
             "bearing_offset_deg": 0.0,
         },

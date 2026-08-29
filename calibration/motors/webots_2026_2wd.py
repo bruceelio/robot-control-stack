@@ -21,8 +21,8 @@ DRIVE_POWER_LONG = 0.85
 DRIVE_M_SHORT = 0.00133
 DRIVE_B_SHORT = 0.06
 
-DRIVE_M_LONG = 0.00112
-DRIVE_B_LONG = 0.09
+DRIVE_M_LONG = 0.00092
+DRIVE_B_LONG = 0.06
 
 
 # --------------------------------------------------
@@ -35,12 +35,12 @@ ROTATE_SWITCH_DEG = 30
 # Use the same model on both sides of the divider for now.
 
 ROTATE_POWER_SMALL = 0.55
-ROTATE_M_SMALL = 0.0056
-ROTATE_B_SMALL = 0.18
+ROTATE_M_SMALL = 0.00385
+ROTATE_B_SMALL = 0.126
 
 ROTATE_POWER_LARGE = 0.55
-ROTATE_M_LARGE = 0.0056
-ROTATE_B_LARGE = 0.18
+ROTATE_M_LARGE = 0.00385
+ROTATE_B_LARGE = 0.126
 
 
 # --------------------------------------------------

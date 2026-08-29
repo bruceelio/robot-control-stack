@@ -34,13 +34,13 @@ IO = {
 
     "button.start":                       None,
 
-    "camera.front":                       "mega2560",
+    "camera.front":                       "mega2560alt",
     "camera.rear":                        None,
 
     "current.battery":                    None,
     "current.gripper_right":              None,
 
-    "drive.front":                        "mega2560",
+    "drive.front":                        "mega2560alt",
     "drive.rear":                         None,
 
     "encoder.deadwheel_parallel":         None,
@@ -60,8 +60,8 @@ IO = {
     "limit.lift_low":                     None,
 
     "motor.collector":                    None,
-    "motor.drive_front_left":             "mega2560",
-    "motor.drive_front_right":            "mega2560",
+    "motor.drive_front_left":             "mega2560alt",
+    "motor.drive_front_right":            "mega2560alt",
     "motor.drive_rear_left":              None,
     "motor.drive_rear_right":             None,
     "motor.shooter":                      None,
@@ -74,16 +74,16 @@ IO = {
 
     "selector.pi_arduino":                None,
 
-    "servo.gripper":                      "mega2560",
-    "servo.lift":                         "mega2560",
+    "servo.gripper":                      "mega2560alt",
+    "servo.lift":                         "mega2560alt",
     "servo.shooter_feed":                 None,
 
     "ultrasonic.front_left":              None,
     "ultrasonic.front_right":             None,
 
-    "usb.match_zone":                     "mega2560",
+    "usb.match_zone":                     "mega2560alt",
 
-    "voltage.battery":                    "mega2560",
+    "voltage.battery":                    "mega2560alt",
 }
 
 

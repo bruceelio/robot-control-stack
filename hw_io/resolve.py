@@ -38,6 +38,13 @@ def resolve_io(*, robot, camera_manager=None) -> IOMap:
             camera_manager=camera_manager,
         )
 
+    if backend == "mega2560alt":
+        from hw_io.hw_mega2560alt import Mega2560AltIO
+        return Mega2560AltIO(
+            robot,
+            camera_manager=camera_manager,
+        )
+
     raise RuntimeError(
         f"No IOMap implementation for backend={backend!r}"
     )
