@@ -8,15 +8,6 @@ from typing import Dict, Tuple
 # Camera calibration schema
 # --------------------------------------------------
 
-@dataclass(frozen=True)
-class CameraMount:
-    """
-    Physical placement of the camera in the robot frame.
-    """
-    yaw_offset_deg: float
-    x_offset_mm: float
-    y_offset_mm: float
-
 
 @dataclass(frozen=True)
 class CameraOptical:
@@ -40,10 +31,6 @@ class CameraMeta:
 
 @dataclass(frozen=True)
 class CameraCalibration:
-    """
-    Complete calibration for a single camera.
-    """
-    mount: CameraMount
     optical: CameraOptical
     meta: CameraMeta
 

@@ -3,26 +3,65 @@
 from importlib import import_module
 from typing import Dict
 
+from calibration.cameras.resolve import resolve_camera_calibration
+
 from calibration.schema import (
     Calibration,
     CameraCalibration,
-    CameraMount,
     CameraOptical,
     CameraMeta,
 )
 
+
 # --------------------------------------------------
-# Robot → calibration profile mapping
+# Helpers
 # --------------------------------------------------
 
-PROFILE_MAP = {
-    "sim": "simulation",
-    "simulation": "simulation",
-    "sr1": "sr1",
-    "webots_robot": "webots_robot",
-    "bob_bot": "bob_bot",
-    "rob_bot": "rob_bot",
-}
+def _camera_calibration_name(camera_name: str, camera_config) -> str:
+    """
+    Return the calibration profile name for one configured camera.
+
+    Normal physical cameras usually use the same name for the camera
+    backend profile and calibration profile.
+
+    Example:
+        {
+            "profile": "arducam_fullfov_640_400",
+            "device": "/dev/video0",
+        }
+
+    Simulation / SR cameras may use a different backend and calibration:
+
+        {
+            "profile": "sr",
+            "calibration": "webots_2026_cam",
+            "device": None,
+        }
+    """
+
+    # Older/simple format:
+    #
+    # CAMERAS = {
+    #     "front": "pi3_fullfov_640_360",
+    # }
+    if isinstance(camera_config, str):
+        return camera_config
+
+    if isinstance(camera_config, dict):
+        calibration_name = camera_config.get("calibration")
+
+        if calibration_name:
+            return calibration_name
+
+        profile_name = camera_config.get("profile")
+
+        if profile_name:
+            return profile_name
+
+    raise RuntimeError(
+        f"Camera '{camera_name}' does not specify a usable "
+        f"camera calibration profile."
+    )
 
 
 # --------------------------------------------------
@@ -31,64 +70,90 @@ PROFILE_MAP = {
 
 def resolve(*, config) -> Calibration:
     """
-    Resolve the physical calibration profile for the selected robot.
+    Resolve calibration for the selected robot configuration.
 
-    This loads immutable, real-world calibration data:
-    - Drive timing
-    - Rotation timing
-    - Camera mounting & optical corrections
+    Motor calibration is selected by:
+        config.drive_motor_profile
+
+    Camera calibration is selected by:
+        config.cameras
+
+    Robot-level calibration profiles are no longer used.
     """
 
-    try:
-        profile_name = PROFILE_MAP[config.robot_id]
-    except KeyError:
-        raise RuntimeError(
-            f"No calibration profile for robot_id='{config.robot_id}'. "
-            f"Known robots: {sorted(PROFILE_MAP.keys())}"
-        )
+    # --------------------------------------------------
+    # Resolve motor calibration
+    # --------------------------------------------------
 
-    module_path = f"calibration.profiles.{profile_name}"
-    profile = import_module(module_path)
+    motor_module_path = (
+        f"calibration.motors.{config.drive_motor_profile}"
+    )
 
-    motor_module_path = f"calibration.motors.{config.drive_motor_profile}"
     motor = import_module(motor_module_path)
 
     # --------------------------------------------------
-    # Resolve cameras (structured, optional)
+    # Resolve cameras
     # --------------------------------------------------
 
     cameras: Dict[str, CameraCalibration] = {}
 
-    if hasattr(profile, "CAMERAS"):
-        for name, cam in profile.CAMERAS.items():
-            try:
-                mount = cam["mount"]
-                optical = cam["optical"]
-                meta = cam.get("meta", {})
+    for camera_name, camera_config in config.cameras.items():
 
-                cameras[name] = CameraCalibration(
-                    mount=CameraMount(
-                        yaw_offset_deg=mount["yaw_offset_deg"],
-                        x_offset_mm=mount["x_offset_mm"],
-                        y_offset_mm=mount["y_offset_mm"],
-                    ),
-                    optical=CameraOptical(
-                        distance_scale=optical["distance_scale"],
-                        bearing_sign=optical["bearing_sign"],
-                        bearing_offset_deg=optical["bearing_offset_deg"],
-                    ),
-                    meta=CameraMeta(
-                        resolution=tuple(meta.get("resolution", (0, 0))),
-                        fov_deg=meta.get("fov_deg", 0.0),
-                        description=meta.get("description", ""),
-                    ),
+        calibration_name = _camera_calibration_name(
+            camera_name,
+            camera_config,
+        )
+
+        camera = resolve_camera_calibration(
+            calibration_name
+        )
+
+        # Camera mount geometry is owned by the robot profile
+        # and resolved through CONFIG.camera_mounts..
+
+
+        optical = CameraOptical(
+            distance_scale=getattr(
+                camera,
+                "DISTANCE_SCALE",
+                1.0,
+            ),
+            bearing_sign=getattr(
+                camera,
+                "BEARING_SIGN",
+                1.0,
+            ),
+            bearing_offset_deg=getattr(
+                camera,
+                "BEARING_OFFSET_DEG",
+                0.0,
+            ),
+        )
+
+        meta = CameraMeta(
+            resolution=tuple(
+                getattr(
+                    camera,
+                    "RESOLUTION",
+                    (0, 0),
                 )
+            ),
+            fov_deg=getattr(
+                camera,
+                "FOV_DEG",
+                0.0,
+            ),
+            description=getattr(
+                camera,
+                "DESCRIPTION",
+                "",
+            ),
+        )
 
-            except KeyError as e:
-                raise RuntimeError(
-                    f"Camera '{name}' in calibration profile '{profile_name}' "
-                    f"is missing required field: {e}"
-                ) from e
+        cameras[camera_name] = CameraCalibration(
+            optical=optical,
+            meta=meta,
+        )
 
     # --------------------------------------------------
     # Build final immutable calibration object
@@ -120,11 +185,19 @@ def resolve(*, config) -> Calibration:
 
         voltage_low_model=motor.VOLTAGE_LOW_MODEL,
         voltage_low_a=motor.VOLTAGE_LOW_A,
-        voltage_low_b=getattr(motor, "VOLTAGE_LOW_B", None),
+        voltage_low_b=getattr(
+            motor,
+            "VOLTAGE_LOW_B",
+            None,
+        ),
 
         voltage_high_model=motor.VOLTAGE_HIGH_MODEL,
         voltage_high_a=motor.VOLTAGE_HIGH_A,
-        voltage_high_b=getattr(motor, "VOLTAGE_HIGH_B", None),
+        voltage_high_b=getattr(
+            motor,
+            "VOLTAGE_HIGH_B",
+            None,
+        ),
 
         # Cameras
         cameras=cameras,

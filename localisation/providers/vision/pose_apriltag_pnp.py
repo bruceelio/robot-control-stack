@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Sequence
+from itertools import combinations
 
 from localisation.providers.base import PoseObservation, PoseProvider
 from vision.apriltag.observations import AprilTagObservation
@@ -27,7 +28,7 @@ def build_pnp_points(
 
         tag_id = int(obs.get("tag_id", -1))
 
-        if tag_id in (18, 19):
+        if tag_id in (0, 18, 19):
             print(f"[PNP_CORNERS] tag={tag_id} corners_px={corners_px}")
 
         if not corners_px or tag_size_m is None:
@@ -51,10 +52,10 @@ def build_pnp_points(
         tangent_y = normal_x
 
         local_corners = [
-            (-half, -half),  # bottom-left
-            (+half, -half),  # bottom-right
-            (+half, +half),  # top-right
-            (-half, +half),  # top-left
+            (-half, -half),  # corner 0: bottom-left
+            (+half, -half),  # corner 1: bottom-right
+            (+half, +half),  # corner 2: top-right
+            (-half, +half),  # corner 3: top-left
         ]
 
         tag_object_points = []
@@ -319,8 +320,10 @@ class AprilTagPnPPoseProvider(PoseProvider):
         ]
 
         debug_tag_sets = [
+            {0},
             {18},
             {19},
+            {0, 19},
             {18, 19},
         ]
 
@@ -344,7 +347,8 @@ class AprilTagPnPPoseProvider(PoseProvider):
                 debug_image_points,
                 np.array(intrinsic_matrix, dtype=np.float64),
                 np.array(distortion_coefficients, dtype=np.float64),
-                flags=cv2.SOLVEPNP_SQPNP if len(debug_object_points) > 4 else cv2.SOLVEPNP_IPPE_SQUARE,
+                flags=cv2.SOLVEPNP_SQPNP,
+            #   flags=cv2.SOLVEPNP_SQPNP if len(debug_object_points) > 4 else cv2.SOLVEPNP_IPPE_SQUARE,
             )
 
             if not debug_success:
@@ -419,11 +423,16 @@ class AprilTagPnPPoseProvider(PoseProvider):
         dist_coeffs = np.array(distortion_coefficients, dtype=np.float64)
 
         # FIXED: Upgraded flag for cleaner square/multi-target math matrices
+
+        pnp_flag = cv2.SOLVEPNP_SQPNP
+
+        '''
         pnp_flag = (
             cv2.SOLVEPNP_SQPNP
             if point_count > 4
             else cv2.SOLVEPNP_IPPE_SQUARE
         )
+        '''
 
         success, rvec, tvec = cv2.solvePnP(
             object_points,
@@ -505,9 +514,6 @@ class AprilTagPnPPoseProvider(PoseProvider):
         pnp_y_m = float(camera_position_world[1])
         pnp_z_m = float(camera_position_world[2])
 
-        pnp_x_m = float(tvec[0][0])
-        pnp_y_m = float(tvec[1][0])
-        pnp_z_m = float(tvec[2][0])
 
         print(
             f"[PNP_DIRECT_TVEC] "
@@ -525,15 +531,43 @@ class AprilTagPnPPoseProvider(PoseProvider):
             mount_y_m = float(getattr(camera_to_robot_transform, "y_mm", 0.0)) / 1000.0
             mount_yaw_rad = float(getattr(camera_to_robot_transform, "yaw_rad", 0.0))
 
-        # FIXED FOR PITCH: Transpose to extract the Camera-to-World matrix
+        # Convert OpenCV world-to-camera rotation into camera-to-world.
         R_c2w = rotation_matrix.T
 
-        # FIXED FOR PITCH: Calculate yaw using the camera's sideways X-axis vector.
-        # This keeps the yaw calculation stable even when the camera tilts down.
-        cam_yaw_rad = float(np.arctan2(R_c2w[0, 1], R_c2w[0, 0]))
+        # OpenCV camera coordinates:
+        #   +X = right
+        #   +Y = down
+        #   +Z = forward
+        #
+        # Transform the camera's forward (+Z) axis into world coordinates,
+        # then use its XY projection to determine field heading.
+        camera_forward_world = R_c2w @ np.array(
+            [0.0, 0.0, 1.0],
+            dtype=np.float64,
+        )
 
-        # Calculate the final robot chassis heading relative to the world
+        cam_yaw_rad = float(np.arctan2(
+            camera_forward_world[1],
+            camera_forward_world[0],
+        ))
+
+        cam_pitch_rad = float(np.arctan2(
+            camera_forward_world[2],
+            np.hypot(
+                camera_forward_world[0],
+                camera_forward_world[1],
+            ),
+        ))
+
+        # Camera mount yaw is relative to the robot chassis.
         robot_pose_yaw = cam_yaw_rad - mount_yaw_rad
+
+        print(
+            f"[PNP_HEADING] "
+            f"camera_deg={np.degrees(cam_yaw_rad):.1f} "
+            f"robot_deg={np.degrees(robot_pose_yaw):.1f} "
+            f"camera_pitch_deg={np.degrees(cam_pitch_rad):.1f}"
+        )
 
         # Rotate the mounting offsets into the field grid using the robot's heading
         cos_theta = np.cos(robot_pose_yaw)

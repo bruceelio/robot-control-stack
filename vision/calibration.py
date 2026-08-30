@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
 
-from calibration import CALIBRATION
 from config import CONFIG
 
 
@@ -69,12 +68,14 @@ def get_vision_pnp_calibration(
         )
     )
 
-    robot_camera_cal = CALIBRATION.cameras[camera_name]
-
     return VisionPnPCalibration(
         source_id=source_id,
         camera_name=camera_name,
         camera_matrix=camera_matrix,
         distortion_coefficients=distortion_coefficients,
-        camera_to_robot_transform=robot_camera_cal.mount,
+        camera_to_robot_transform={
+            "x_mm": 0.0,
+            "y_mm": 0.0,
+            "yaw_rad": 0.0,
+        },
     )

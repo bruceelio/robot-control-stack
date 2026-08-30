@@ -80,23 +80,27 @@ def marker_locations(arena_size: int):
     return markers
 
 MARKER_POSE_ADJUSTMENTS_M = {
-    # tag_id: {
-    #     "dx_m": 0.0,
-    #     "dy_m": 0.0,
-    #     "dz_m": 0.0,
-    #     "dyaw_rad": 0.0,
-    # }
+    0: {
+        "dx_m": -0.0125,
+     "dy_m": 0.0,
+        "dz_m": -0.015,
+        "dyaw_rad": 0.0,
+    },
 
-    # Example: tag 18 sticks 60 mm inward/outward.
-    # Adjust sign after testing.
     18: {
-        "dx_m": 0.060,
-        "dy_m": 0.0,
+        "dx_m": 0.070,
+        "dy_m": -0.079,
+        "dz_m": 0.015,
+        "dyaw_rad": 0.0,
+    },
+
+    19: {
+        "dx_m": 0.0,
+        "dy_m": -0.0025,
         "dz_m": 0.0,
         "dyaw_rad": 0.0,
     },
 }
-
 
 
 def marker_poses(arena_size: int):

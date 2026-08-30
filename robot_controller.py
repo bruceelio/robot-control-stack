@@ -37,9 +37,6 @@ from hw_io.buzzer_patterns import BuzzerCue
 from hw_io.cameras.camera_process import CameraProcessManager
 from perf_monitor import PerformanceMonitor
 
-print("\n=== CALIBRATION CAMERA CHECK ===")
-print("Calibration cameras:", CALIBRATION.cameras.keys())
-print("=== END CALIBRATION CHECK ===\n")
 
 try:
     from tools.tests.runner import run_tests

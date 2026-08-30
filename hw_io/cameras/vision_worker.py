@@ -38,6 +38,10 @@ def run_vision_worker(
     try:
         cam_cal = CALIBRATION.cameras[camera_name]
 
+        camera_yaw_deg = float(
+            CONFIG.camera_mounts[camera_name]["yaw_deg"]
+        )
+
         # Important: resolve/open camera inside this worker process.
         camera_config = CONFIG.cameras[camera_name]
 
@@ -89,6 +93,7 @@ def run_vision_worker(
                     timestamp=timestamp,
                     markers=markers,
                     cam_cal=cam_cal,
+                    camera_yaw_deg=camera_yaw_deg,
                     status="ok",
                 )
 

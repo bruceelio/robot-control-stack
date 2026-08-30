@@ -93,6 +93,7 @@ DRIVE_MOTOR_PROFILE = "webots_2026_2wd"
 CAMERAS = {
     "front": {
         "profile": "sr",
+        "calibration": "webots_2026_cam",
         "device": None,
     }
 }
