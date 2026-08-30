@@ -240,6 +240,13 @@ class AprilTagPnPPoseProvider(PoseProvider):
         ):
             return None
 
+        if result.tag_count >= 3:
+            confidence = 0.90
+        elif result.tag_count == 2:
+            confidence = 0.85
+        else:
+            confidence = 0.60
+
         return PoseObservation(
             x=float(result.pose_x_m) * 1000.0,
             y=float(result.pose_y_m) * 1000.0,
@@ -258,7 +265,7 @@ class AprilTagPnPPoseProvider(PoseProvider):
 
             # Initial structural value.
             # We will tune PnP confidence later using Bob data.
-            confidence=0.85,
+            confidence=confidence,
 
             source=self.name,
             timestamp=float(now_s),
@@ -319,86 +326,217 @@ class AprilTagPnPPoseProvider(PoseProvider):
             for obs, _field_pose in usable_observations
         ]
 
-        debug_tag_sets = [
-            {0},
-            {18},
-            {19},
-            {0, 19},
-            {18, 19},
-        ]
+        # --------------------------------------------------
+        # PnP candidate selection
+        #
+        # Policy:
+        #   3 tags: prefer when geometrically consistent
+        #   2 tags: strong solution; choose best pair
+        #   1 tag : fallback only, with tighter quality and
+        #           physical-plausibility checks
+        #
+        # More tags are not automatically better. A poor
+        # 3-tag solution may be rejected in favour of a
+        # substantially cleaner 2-tag solution.
+        # --------------------------------------------------
 
-        for debug_tags in debug_tag_sets:
-            if not debug_tags.issubset(set(usable_tag_ids)):
-                continue
+        unique_tag_ids = sorted(set(usable_tag_ids))
+        arena_half_m = float(CONFIG.arena_size) / 2000.0
 
-            debug_observations = filter_observations_by_tag_ids(
-                usable_observations,
-                debug_tags,
-            )
+        candidates = []
 
-            debug_object_points, debug_image_points = build_pnp_points(debug_observations)
+        # Deliberately evaluate at most 3 tags at a time.
+        max_candidate_tags = min(3, len(unique_tag_ids))
 
-            if len(debug_object_points) < 4:
-                continue
+        for candidate_count in range(max_candidate_tags, 0, -1):
 
-            # FIXED: Uses SQPNP for multi-point clouds to filter noise
-            debug_success, debug_rvec, debug_tvec = cv2.solvePnP(
-                debug_object_points,
-                debug_image_points,
-                np.array(intrinsic_matrix, dtype=np.float64),
-                np.array(distortion_coefficients, dtype=np.float64),
-                flags=cv2.SOLVEPNP_SQPNP,
-            #   flags=cv2.SOLVEPNP_SQPNP if len(debug_object_points) > 4 else cv2.SOLVEPNP_IPPE_SQUARE,
-            )
+            for combo in combinations(
+                    unique_tag_ids,
+                    candidate_count,
+            ):
+                candidate_tags = set(combo)
 
-            if not debug_success:
-                continue
+                candidate_observations = (
+                    filter_observations_by_tag_ids(
+                        usable_observations,
+                        candidate_tags,
+                    )
+                )
 
-            debug_projected, _ = cv2.projectPoints(
-                debug_object_points,
-                debug_rvec,
-                debug_tvec,
-                np.array(intrinsic_matrix, dtype=np.float64),
-                np.array(distortion_coefficients, dtype=np.float64),
-            )
+                candidate_object_points, candidate_image_points = (
+                    build_pnp_points(candidate_observations)
+                )
 
-            debug_projected = debug_projected.reshape(-1, 2)
-            debug_errors = np.linalg.norm(debug_projected - debug_image_points, axis=1)
-            debug_reproj = float(np.mean(debug_errors))
+                if len(candidate_object_points) < 4:
+                    continue
 
-            debug_rotation_matrix, _ = cv2.Rodrigues(debug_rvec)
+                candidate_success, candidate_rvec, candidate_tvec = (
+                    cv2.solvePnP(
+                        candidate_object_points,
+                        candidate_image_points,
+                        np.array(
+                            intrinsic_matrix,
+                            dtype=np.float64,
+                        ),
+                        np.array(
+                            distortion_coefficients,
+                            dtype=np.float64,
+                        ),
+                        flags=cv2.SOLVEPNP_SQPNP,
+                    )
+                )
 
-            debug_camera_position_world = -debug_rotation_matrix.T @ debug_tvec
-            debug_camera_position_world = debug_camera_position_world.reshape(3)
+                if not candidate_success:
+                    continue
 
-            debug_obs, debug_field_pose = debug_observations[0]
+                candidate_projected, _ = cv2.projectPoints(
+                    candidate_object_points,
+                    candidate_rvec,
+                    candidate_tvec,
+                    np.array(
+                        intrinsic_matrix,
+                        dtype=np.float64,
+                    ),
+                    np.array(
+                        distortion_coefficients,
+                        dtype=np.float64,
+                    ),
+                )
 
-            tag_x = float(debug_field_pose["x_m"])
-            tag_y = float(debug_field_pose["y_m"])
+                candidate_projected = (
+                    candidate_projected.reshape(-1, 2)
+                )
 
-            print(
-                f"[PNP_LEFT_WALL_DIAG] "
-                f"tag={debug_obs['tag_id']} "
-                f"cam_x_plus_z={tag_x + float(debug_tvec[2][0]):.3f} "
-                f"cam_y_minus_x={tag_y - float(debug_tvec[0][0]):.3f} "
-                f"cam_y_plus_x={tag_y + float(debug_tvec[0][0]):.3f}"
-            )
+                candidate_errors = np.linalg.norm(
+                    candidate_projected
+                    - candidate_image_points,
+                    axis=1,
+                )
 
-            print(
-                f"[PNP_COMPARE] "
-                f"source={source_id} "
-                f"tag_ids={sorted(debug_tags)} "
-                f"reproj={debug_reproj:.2f}px "
-                f"x_m={float(debug_camera_position_world[0]):.3f} "
-                f"y_m={float(debug_camera_position_world[1]):.3f} "
-                f"z_m={float(debug_camera_position_world[2]):.3f}"
-            )
+                candidate_reproj = float(
+                    np.mean(candidate_errors)
+                )
 
-        object_points, image_points = build_pnp_points(usable_observations)
+                candidate_R, _ = cv2.Rodrigues(
+                    candidate_rvec
+                )
 
-        point_count = len(object_points)
+                candidate_camera_position = (
+                    -candidate_R.T @ candidate_tvec
+                ).reshape(3)
 
-        if point_count < 4:
+                candidate_x = float(
+                    candidate_camera_position[0]
+                )
+                candidate_y = float(
+                    candidate_camera_position[1]
+                )
+                candidate_z = float(
+                    candidate_camera_position[2]
+                )
+
+                # ------------------------------------------
+                # Quality gates
+                # ------------------------------------------
+
+                if candidate_count >= 2:
+                    reproj_limit = 2.0
+                    physically_plausible = True
+
+                else:
+                    reproj_limit = 0.75
+
+                    physically_plausible = (
+                        -arena_half_m <= candidate_x <= arena_half_m
+                        and -arena_half_m <= candidate_y <= arena_half_m
+                        and 0.05 <= candidate_z <= 0.50
+                    )
+
+                accepted = (
+                    candidate_reproj <= reproj_limit
+                    and physically_plausible
+                )
+
+                print(
+                    f"[PNP_CANDIDATE_SET] "
+                    f"tags={sorted(candidate_tags)} "
+                    f"count={candidate_count} "
+                    f"reproj={candidate_reproj:.2f}px "
+                    f"x_m={candidate_x:.3f} "
+                    f"y_m={candidate_y:.3f} "
+                    f"z_m={candidate_z:.3f} "
+                    f"accepted={accepted}"
+                )
+
+                if not accepted:
+                    continue
+
+                candidates.append({
+                    "tag_ids": sorted(candidate_tags),
+                    "tag_count": candidate_count,
+                    "reproj": candidate_reproj,
+                    "rvec": candidate_rvec,
+                    "tvec": candidate_tvec,
+                    "object_points":
+                        candidate_object_points,
+                    "image_points":
+                        candidate_image_points,
+                })
+
+        # --------------------------------------------------
+        # Choose best accepted candidate
+        # --------------------------------------------------
+
+        best_3 = min(
+            (
+                c for c in candidates
+                if c["tag_count"] >= 3
+            ),
+            key=lambda c: c["reproj"],
+            default=None,
+        )
+
+        best_2 = min(
+            (
+                c for c in candidates
+                if c["tag_count"] == 2
+            ),
+            key=lambda c: c["reproj"],
+            default=None,
+        )
+
+        best_1 = min(
+            (
+                c for c in candidates
+                if c["tag_count"] == 1
+            ),
+            key=lambda c: c["reproj"],
+            default=None,
+        )
+
+        selected = None
+
+        if best_3 is not None:
+
+            # A very clean pair may beat a mediocre
+            # three-tag solution.
+            if (
+                    best_2 is not None
+                    and best_3["reproj"] > 1.0
+                    and best_2["reproj"]
+                    < (0.5 * best_3["reproj"])
+            ):
+                selected = best_2
+            else:
+                selected = best_3
+
+        elif best_2 is not None:
+            selected = best_2
+
+        elif best_1 is not None:
+            selected = best_1
+
+        if selected is None:
             return AprilTagPnPPoseResult(
                 source_id=source_id,
                 pose_x_m=None,
@@ -412,35 +550,38 @@ class AprilTagPnPPoseProvider(PoseProvider):
             )
 
         print(
-            f"[PNP_POINTS] "
-            f"source={source_id} "
-            f"tag_ids={usable_tag_ids} "
-            f"usable_tags={usable_tag_count} "
-            f"points={point_count}"
+            f"[PNP_SELECT] "
+            f"tags={selected['tag_ids']} "
+            f"count={selected['tag_count']} "
+            f"reproj={selected['reproj']:.2f}px"
         )
 
-        camera_matrix = np.array(intrinsic_matrix, dtype=np.float64)
-        dist_coeffs = np.array(distortion_coefficients, dtype=np.float64)
+        # From here onward, the existing pose calculation
+        # operates on the selected candidate only.
 
-        # FIXED: Upgraded flag for cleaner square/multi-target math matrices
+        usable_tag_ids = selected["tag_ids"]
+        usable_tag_count = selected["tag_count"]
+
+        object_points = selected["object_points"]
+        image_points = selected["image_points"]
+
+        point_count = len(object_points)
+
+        camera_matrix = np.array(
+            intrinsic_matrix,
+            dtype=np.float64,
+        )
+
+        dist_coeffs = np.array(
+            distortion_coefficients,
+            dtype=np.float64,
+        )
 
         pnp_flag = cv2.SOLVEPNP_SQPNP
 
-        '''
-        pnp_flag = (
-            cv2.SOLVEPNP_SQPNP
-            if point_count > 4
-            else cv2.SOLVEPNP_IPPE_SQUARE
-        )
-        '''
-
-        success, rvec, tvec = cv2.solvePnP(
-            object_points,
-            image_points,
-            camera_matrix,
-            dist_coeffs,
-            flags=pnp_flag,
-        )
+        success = True
+        rvec = selected["rvec"]
+        tvec = selected["tvec"]
 
         # ---------------------------------------------------------
         # DEBUG: Dump all candidate solutions
@@ -473,7 +614,7 @@ class AprilTagPnPPoseProvider(PoseProvider):
                     f"z_m={cand_cam_pos[2]:.3f}"
                 )
 
-        is_valid = bool(success) and usable_tag_count >= 2
+        is_valid = bool(success)
 
         projected_points, _ = cv2.projectPoints(
             object_points,
