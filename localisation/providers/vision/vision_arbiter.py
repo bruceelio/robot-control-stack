@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Iterable, Optional, Sequence
 
 from vision.apriltag.observations import AprilTagObservation
-
+from vision.apriltag.reconcile import reconcile_apriltag_markers
 from localisation.providers.base import PoseObservation, PoseProvider
 
 
@@ -24,6 +24,66 @@ class VisionArbiter(PoseProvider):
     def __init__(self, providers: Iterable[PoseProvider]):
         super().__init__("vision", base_weight=0.9)
         self.providers = list(providers)
+        self._selected_source: str | None = None
+
+    def set_vision_message(
+            self,
+            vision_message: dict | None,
+    ) -> None:
+
+        # No current vision result: clear vision-provider inputs.
+        if vision_message is None:
+            self.set_detections([])
+
+            self.set_apriltag_observations(
+                source_id=None,
+                observations=[],
+            )
+            return
+
+        camera_name = str(
+            vision_message.get("camera", "unknown")
+        )
+
+        measurement_timestamp = float(
+            vision_message.get("timestamp", 0.0)
+        )
+
+        # ----------------------------------
+        # Range/bearing arena observations
+        # -> cam1_markers2
+        # ----------------------------------
+
+        arena_detections = [
+            {
+                **detection,
+                "timestamp": measurement_timestamp,
+            }
+            for detection
+            in vision_message.get("detections", [])
+        ]
+
+        self.set_detections(arena_detections)
+
+        # ----------------------------------
+        # Neutral AprilTag observations
+        # -> PnP
+        # ----------------------------------
+
+        source_id, apriltag_observations = (
+            reconcile_apriltag_markers(
+                camera_name=camera_name,
+                timestamp=measurement_timestamp,
+                markers=list(
+                    vision_message.get("markers", [])
+                ),
+            )
+        )
+
+        self.set_apriltag_observations(
+            source_id=source_id,
+            observations=apriltag_observations,
+        )
 
     def set_detections(self, arena_detections) -> None:
         for provider in self.providers:
@@ -58,6 +118,13 @@ class VisionArbiter(PoseProvider):
             candidates.append(obs)
 
         if not candidates:
+            if self._selected_source is not None:
+                print(
+                    f"[VISION_ARBITER][SOURCE] "
+                    f"{self._selected_source} -> None"
+                )
+                self._selected_source = None
+
             return None
 
         print("[VISION_ARBITER] candidates:")
@@ -65,7 +132,7 @@ class VisionArbiter(PoseProvider):
             print(
                 f"  source={obs.source} "
                 f"conf={obs.confidence:.3f} "
-                f"quality={obs.quality} "
+                f"age={obs.age(now_s):.3f}s "
                 f"heading_valid={obs.heading_valid}"
             )
 
@@ -77,6 +144,15 @@ class VisionArbiter(PoseProvider):
             ),
         )
 
+        if best.source != self._selected_source:
+            print(
+                f"[VISION_ARBITER][SOURCE] "
+                f"{self._selected_source} -> {best.source} "
+                f"confidence={best.confidence:.3f}"
+            )
+
+            self._selected_source = best.source
+
         return PoseObservation(
             x=best.x,
             y=best.y,
@@ -84,18 +160,16 @@ class VisionArbiter(PoseProvider):
             position_valid=best.position_valid,
             heading_valid=best.heading_valid,
             confidence=best.confidence,
-            source=f"vision:{best.source}",
+            source=best.source,
             timestamp=best.timestamp,
             is_absolute=best.is_absolute,
-            quality=best.quality,
             diagnostics={
                 "vision_provider": best.source,
                 "vision_candidates": [
                     {
                         "source": obs.source,
                         "confidence": obs.confidence,
-                        "quality": obs.quality,
-                        "heading_valid": obs.heading_valid,
+                         "heading_valid": obs.heading_valid,
                     }
                     for obs in candidates
                 ],

@@ -42,8 +42,8 @@ class MatchZoneSource(Enum):
 
 
 # ROBOT_PROFILE = RobotProfile.BOB_BOT
-ROBOT_PROFILE = RobotProfile.ROB_BOT
-# ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
+# ROBOT_PROFILE = RobotProfile.ROB_BOT
+ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 
@@ -68,8 +68,8 @@ CHALLENGE = Challenge.MOVEMENT
 # CHALLENGE = Challenge.STOPPING
 
 
-DEFAULT_TARGET_KIND = "acidic"
-# DEFAULT_TARGET_KIND = "basic"
+# DEFAULT_TARGET_KIND = "acidic"
+DEFAULT_TARGET_KIND = "basic"
 
 # =========================
 # Match / Starting Zone

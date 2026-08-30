@@ -188,8 +188,8 @@ CAMERA_FRESH_OBS_MAX_AGE_S = 0.12
 MARKER_HEIGHT_MAX_DISTANCE_MM = 2000
 
 # These are actual radians (so AI doesn't implode on itself)
-MARKER_PITCH_HIGH_DEG = 0.052                # 0.0523598776 is 3 degrees
-MARKER_PITCH_LOW_DEG = 0.02
+MARKER_PITCH_HIGH_DEG = -0.052                # 0.0523598776 is 3 degrees
+MARKER_PITCH_LOW_DEG = -0.02
 HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low are will never commit
 MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 

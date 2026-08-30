@@ -194,13 +194,6 @@ class CommandedMotionProvider(PoseProvider):
             - 0.02 * age_s,
         )
 
-        if confidence <= 0.05:
-            quality = "bad"
-        elif confidence <= 0.25:
-            quality = "poor"
-        else:
-            quality = "good"
-
         print(
             f"[CMD_MOTION][OBS] pos_valid={self._position_valid} "
             f"heading_valid={self._heading_valid} x={self._x:.1f} y={self._y:.1f} "
@@ -214,7 +207,6 @@ class CommandedMotionProvider(PoseProvider):
             position_valid=self._position_valid,
             heading_valid=self._heading_valid,
             confidence=confidence,
-            quality=quality,
             source=self.name,
             timestamp=now_s,
             is_absolute=False,

@@ -163,20 +163,43 @@ class Cam1Markers2Provider(PoseProvider):
         candidate_count = len(positions)
 
         if candidate_count >= 6:
-            quality = "good"
-            confidence = min(1.0, 0.9 + min(0.08, 0.01 * candidate_count))
+            confidence = min(
+                1.0,
+                0.9 + min(0.08, 0.01 * candidate_count),
+            )
         elif candidate_count >= 2:
-            quality = "poor"
-            confidence = 0.7
+            confidence = 0.70
         elif candidate_count == 1:
-            # Common case for exactly 2 visible arena tags:
-            # one pair -> two mathematical intersections -> one inside arena.
-            # Treat as usable and stronger than timed motion.
-            quality = "poor"
             confidence = 0.65
         else:
-            quality = "bad"
             confidence = 0.0
+
+        camera_name = str(
+            detections[0].get("camera", "unknown")
+        )
+
+        measurement_timestamp_s = float(
+            detections[0].get("timestamp", now_s)
+        )
+
+        if measurement_timestamp_s <= 0.0:
+            measurement_timestamp_s = float(now_s)
+
+        used_marker_ids = sorted({
+            marker_id
+            for pair in pairs_used
+            for marker_id in pair
+        })
+
+        tag_count = len(used_marker_ids)
+
+        tag_word = "tag" if tag_count == 1 else "tags"
+
+        observation_source = (
+            f"{camera_name}:"
+            f"markers2:"
+            f"{tag_count}{tag_word}"
+        )
 
         diagnostics: Dict[str, Any] = {
             "camera": detections[0].get("camera", "unknown"),
@@ -184,7 +207,7 @@ class Cam1Markers2Provider(PoseProvider):
             "pairs_used": pairs_used,
             "candidate_count": candidate_count,
             "arena_size_mm": self.arena_size_mm,
-            "quality_reason": "multi_marker_triangulation",
+            "confidence_reason": "multi_marker_triangulation",
         }
 
         diagnostics["base_link_correction"] = {
@@ -205,10 +228,9 @@ class Cam1Markers2Provider(PoseProvider):
             position_valid=True,
             heading_valid=heading is not None,
             confidence=float(confidence),
-            source=self.name,
-            timestamp=float(now_s),
+            source=observation_source,
+            timestamp=measurement_timestamp_s,
             is_absolute=True,
-            quality=quality,
             diagnostics=diagnostics,
         )
 
@@ -237,6 +259,9 @@ class Cam1Markers2Provider(PoseProvider):
                     "distance_mm": distance_mm,
                     "bearing_deg": float(detection.get("bearing_deg", 0.0)),
                     "camera": detection.get("camera", "unknown"),
+                    "timestamp": float(
+                        detection.get("timestamp", 0.0)
+                    ),
                 }
             )
 

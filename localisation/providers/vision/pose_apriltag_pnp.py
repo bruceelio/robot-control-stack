@@ -242,10 +242,44 @@ class AprilTagPnPPoseProvider(PoseProvider):
 
         if result.tag_count >= 3:
             confidence = 0.90
+
         elif result.tag_count == 2:
             confidence = 0.85
+
         else:
-            confidence = 0.60
+            # A one-tag solve is always passed upward if PnP
+            # successfully produced a pose. Reprojection error
+            # affects confidence, not validity.
+            reproj = (
+                float(result.reprojection_score)
+                if result.reprojection_score is not None
+                else float("inf")
+            )
+
+            if reproj <= 0.25:
+                confidence = 0.60
+            elif reproj <= 0.50:
+                confidence = 0.55
+            elif reproj <= 0.75:
+                confidence = 0.50
+            elif reproj <= 1.50:
+                confidence = 0.40
+            elif reproj <= 3.00:
+                confidence = 0.25
+            else:
+                confidence = 0.10
+
+        tag_word = "tag" if result.tag_count == 1 else "tags"
+
+        observation_source = (
+            f"{camera_name}:"
+            f"pnp:"
+            f"{result.tag_count}{tag_word}"
+        )
+
+        measurement_timestamp_s = (
+                float(result.timestamp_ms) / 1000.0
+        )
 
         return PoseObservation(
             x=float(result.pose_x_m) * 1000.0,
@@ -267,11 +301,9 @@ class AprilTagPnPPoseProvider(PoseProvider):
             # We will tune PnP confidence later using Bob data.
             confidence=confidence,
 
-            source=self.name,
-            timestamp=float(now_s),
+            source=observation_source,
+            timestamp=measurement_timestamp_s,
             is_absolute=True,
-
-            quality="good",
 
             diagnostics={
                 "source_id": result.source_id,
@@ -332,8 +364,8 @@ class AprilTagPnPPoseProvider(PoseProvider):
         # Policy:
         #   3 tags: prefer when geometrically consistent
         #   2 tags: strong solution; choose best pair
-        #   1 tag : fallback only, with tighter quality and
-        #           physical-plausibility checks
+        #   1 tag : fallback evidence; confidence reflects
+        #           the strength of the solution
         #
         # More tags are not automatically better. A poor
         # 3-tag solution may be rejected in favour of a
@@ -341,7 +373,7 @@ class AprilTagPnPPoseProvider(PoseProvider):
         # --------------------------------------------------
 
         unique_tag_ids = sorted(set(usable_tag_ids))
-        arena_half_m = float(CONFIG.arena_size) / 2000.0
+
 
         candidates = []
 
@@ -436,26 +468,16 @@ class AprilTagPnPPoseProvider(PoseProvider):
                 )
 
                 # ------------------------------------------
-                # Quality gates
+                # Candidate acceptance
                 # ------------------------------------------
 
                 if candidate_count >= 2:
-                    reproj_limit = 2.0
-                    physically_plausible = True
+                    accepted = candidate_reproj <= 2.0
 
                 else:
-                    reproj_limit = 0.75
-
-                    physically_plausible = (
-                        -arena_half_m <= candidate_x <= arena_half_m
-                        and -arena_half_m <= candidate_y <= arena_half_m
-                        and 0.05 <= candidate_z <= 0.50
-                    )
-
-                accepted = (
-                    candidate_reproj <= reproj_limit
-                    and physically_plausible
-                )
+                    # A successful single-tag solve remains valid evidence.
+                    # Its strength is represented by confidence later.
+                    accepted = True
 
                 print(
                     f"[PNP_CANDIDATE_SET] "
@@ -740,8 +762,6 @@ class AprilTagPnPPoseProvider(PoseProvider):
             f"min_y={float(np.min(image_points[:, 1])):.1f} "
             f"max_y={float(np.max(image_points[:, 1])):.1f}"
         )
-
-        is_valid = is_valid and reprojection_score <= 10.0
 
         print(
             f"[PNP_SOLVE] "

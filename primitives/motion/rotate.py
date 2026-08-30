@@ -1,6 +1,7 @@
 # primitives/motion/rotate.py
 
 from primitives.base import Primitive, PrimitiveStatus
+import time
 
 
 class Rotate(Primitive):
@@ -16,9 +17,9 @@ class Rotate(Primitive):
 
         if duration_s > 0.0:
             localisation = getattr(motion_backend, "localisation", None)
-            now_s = getattr(motion_backend, "now_s", None)
+            now_s = time.time()
 
-            if localisation is not None and now_s is not None:
+            if localisation is not None:
                 localisation.begin_commanded_rotate(
                     angle_deg=angle_deg,
                     duration_s=duration_s,

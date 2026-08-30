@@ -1,3 +1,5 @@
+# localisation/providers/base.py
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -35,7 +37,6 @@ class PoseObservation:
     # True = absolute reference (e.g. vision, startup)
     # False = relative/integrated (e.g. odometry, motion, OTOS)
     is_absolute: bool = False
-    quality: str = "poor"  # "good" | "poor" | "bad"
 
     # --- diagnostics ---
     diagnostics: Dict[str, Any] = field(default_factory=dict)
@@ -69,10 +70,7 @@ class PoseObservation:
         """
         True if this observation contributes anything useful.
         """
-        return (
-                (self.position_valid or self.heading_valid)
-                and self.quality != "bad"
-        )
+        return self.position_valid or self.heading_valid
 
     def age(self, now_s: float) -> float:
         """
@@ -86,7 +84,6 @@ class PoseObservation:
         """
         parts = [
             f"src={self.source}",
-            f"q={self.quality}",
             f"conf={self.confidence:.2f}",
         ]
 

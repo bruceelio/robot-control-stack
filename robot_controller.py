@@ -27,6 +27,7 @@ from config.strategy import START_SLOT
 
 from calibration import CALIBRATION
 from calibration.resolve import resolve
+from perception.vision.detection_pipeline import build_vision_message
 
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
@@ -186,6 +187,41 @@ class Controller:
 
         self.behavior = None
 
+    def _get_vision_message(
+            self,
+            *,
+            camera_name: str,
+            now_s: float,
+    ) -> dict | None:
+
+        # Asynchronous physical-camera path.
+        if self.camera_manager is not None:
+            return self.camera_manager.get_latest(camera_name)
+
+        # Synchronous path, e.g. SR/Webots.
+        camera = self.io.cameras().get(camera_name)
+
+        if camera is None:
+            return None
+
+        markers = list(camera.see())
+
+        cam_cal = CALIBRATION.cameras[camera_name]
+
+        vision_message = build_vision_message(
+            camera_name=camera_name,
+            timestamp=now_s,
+            markers=markers,
+            cam_cal=cam_cal,
+            camera_yaw_deg=float(
+                CONFIG.camera_mounts[camera_name]["yaw_deg"]
+            ),
+        )
+
+        vision_message["markers"] = markers
+
+        return vision_message
+
     # --------------------------------------------------
     # Main loop
     # --------------------------------------------------
@@ -286,18 +322,35 @@ class Controller:
         self.motion_backend.localisation = self.localisation
         self.motion_backend.now_s = now_s
 
-        # Always sense first
-        arena_obs, objects = sense(self.io, self.perception)
+        # ----------------------------------
+        # Vision
+        # ----------------------------------
+
+        vision_message = self._get_vision_message(
+            camera_name="front",
+            now_s=now_s,
+        )
+
+        # ----------------------------------
+        # Perception consumes Vision
+        # ----------------------------------
+
+        _, objects = sense(
+            self.io,
+            self.perception,
+            latest_vision_message=vision_message,
+        )
+
+
+        # ----------------------------------
+        # Localisation independently consumes Vision
+        # ----------------------------------
+
+        localisation_now_s = time.time()
 
         pose_obs = self.localisation.estimate(
-            arena_observations=arena_obs,
-            apriltag_source_id=(
-                self.perception.latest_apriltag_source_id
-            ),
-            apriltag_observations=(
-                self.perception.latest_apriltag_observations
-            ),
-            now_s=now_s,
+            vision_message=vision_message,
+            now_s=localisation_now_s,
         )
 
         if pose_obs is not None:

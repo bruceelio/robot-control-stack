@@ -91,6 +91,7 @@ class Localisation:
             io=None,
             arena_detections: Sequence[dict] | None = None,
             arena_observations: Sequence[dict] | None = None,
+            vision_message: dict | None = None,
             apriltag_source_id: str | None = None,
             apriltag_observations: Sequence[AprilTagObservation] | None = None,
     ) -> PoseObservation | None:
@@ -105,32 +106,48 @@ class Localisation:
         """
         del io  # currently unused in the provider-fed path
 
-        if arena_detections is None:
-            arena_detections = arena_observations
+        # --------------------------------------------------
+        # Canonical Vision path
+        # --------------------------------------------------
 
-        arena_detections = list(arena_detections or [])
-        apriltag_observations = list(
-            apriltag_observations or []
-        )
-
-        # Feed fresh observations into providers that support them.
         for provider in self.providers:
-
-            # Existing corrected range/bearing path.
-            if hasattr(provider, "set_detections"):
-                provider.set_detections(
-                    arena_detections
+            if hasattr(provider, "set_vision_message"):
+                provider.set_vision_message(
+                    vision_message
                 )
 
-            # Neutral AprilTag observation path.
-            if hasattr(
-                    provider,
-                    "set_apriltag_observations",
-            ):
-                provider.set_apriltag_observations(
-                    source_id=apriltag_source_id,
-                    observations=apriltag_observations,
-                )
+        # --------------------------------------------------
+        # Legacy direct-input compatibility
+        # --------------------------------------------------
+
+        if vision_message is None:
+
+            if arena_detections is None:
+                arena_detections = arena_observations
+
+            arena_detections = list(
+                arena_detections or []
+            )
+
+            apriltag_observations = list(
+                apriltag_observations or []
+            )
+
+            for provider in self.providers:
+
+                if hasattr(provider, "set_detections"):
+                    provider.set_detections(
+                        arena_detections
+                    )
+
+                if hasattr(
+                        provider,
+                        "set_apriltag_observations",
+                ):
+                    provider.set_apriltag_observations(
+                        source_id=apriltag_source_id,
+                        observations=apriltag_observations,
+                    )
 
         return self.arbitrator.estimate(now_s=now_s)
 
@@ -164,7 +181,8 @@ class Localisation:
         Heading is only replaced if the observation provides one.
         Otherwise, preserve the current heading if available.
 
-        Also reseeds all providers after accepting a new pose.
+        Absolute observations reseed providers so propagated pose estimates
+        continue from the corrected global pose.
         """
         prev_heading = self.pose.heading if self.pose is not None else None
         prev_heading_valid = self.pose.heading_valid if self.pose is not None else False
@@ -186,8 +204,11 @@ class Localisation:
             timestamp=obs.timestamp,
         )
 
-        for provider in self.providers:
-            provider.reseed(self.pose)
+        # Absolute observations correct/reseed propagated pose sources.
+        # Propagated observations must be allowed to continue accumulating motion.
+        if obs.is_absolute:
+            for provider in self.providers:
+                provider.reseed(self.pose)
 
     def invalidate(self) -> None:
         """

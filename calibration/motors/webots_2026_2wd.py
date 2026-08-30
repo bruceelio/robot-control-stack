@@ -29,18 +29,18 @@ DRIVE_B_LONG = 0.06
 # Timed Rotation Calibration
 # --------------------------------------------------
 
-ROTATE_SWITCH_DEG = 30
+ROTATE_SWITCH_DEG = 7.6
 
 # The former SR1 calibration used one rotation model.
 # Use the same model on both sides of the divider for now.
 
 ROTATE_POWER_SMALL = 0.55
-ROTATE_M_SMALL = 0.00385
-ROTATE_B_SMALL = 0.126
+ROTATE_M_SMALL = 0.00952
+ROTATE_B_SMALL = 0.0
 
 ROTATE_POWER_LARGE = 0.55
-ROTATE_M_LARGE = 0.00385
-ROTATE_B_LARGE = 0.126
+ROTATE_M_LARGE = 0.00552
+ROTATE_B_LARGE = 0.0
 
 
 # --------------------------------------------------
