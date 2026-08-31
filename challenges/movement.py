@@ -16,7 +16,7 @@ def run(controller):
     # Drive forward x mm
     # -------------------------
 
-    distance_mm = 875
+    distance_mm = 4000
 
     if distance_mm < CALIBRATION.drive_switch_mm:
         power = CALIBRATION.drive_power_short

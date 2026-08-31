@@ -36,7 +36,7 @@ from hw_io.encoder_manager import EncoderManager, make_signals
 from log_trace import next_tick
 from hw_io.buzzer_patterns import BuzzerCue
 from hw_io.cameras.camera_process import CameraProcessManager
-from perf_monitor import PerformanceMonitor
+from tools.perf_monitor import PerformanceMonitor
 
 
 try:

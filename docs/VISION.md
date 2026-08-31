@@ -1,3 +1,5 @@
+docs/VISION.md
+
 # Vision Architecture
 
 ## Purpose
