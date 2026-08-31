@@ -20,20 +20,20 @@ SURFACE = "simulation"
 
 IO = {
     "audio.df_player":                    None,
-    "audio.piezo":                        "sr2026",
+    "audio.piezo":                        "sr2026sim",
 
-    "bumper.front_left":                  "sr2026",
-    "bumper.front_right":                 "sr2026",
+    "bumper.front_left":                  "sr2026sim",
+    "bumper.front_right":                 "sr2026sim",
 
     "button.start":                       None,
 
-    "camera.front":                       "sr2026",
+    "camera.front":                       "sr2026sim",
     "camera.rear":                        None,
 
-    "current.battery":                    "sr2026",
+    "current.battery":                    "sr2026sim",
     "current.gripper_right":              None,
 
-    "drive.front":                        "sr2026",
+    "drive.front":                        "sr2026sim",
     "drive.rear":                         None,
 
     "encoder.deadwheel_parallel":         None,
@@ -44,9 +44,9 @@ IO = {
 
     "imu.main":                           None,
 
-    "led.a":                              "sr2026",
-    "led.b":                              "sr2026",
-    "led.c":                              "sr2026",
+    "led.a":                              "sr2026sim",
+    "led.b":                              "sr2026sim",
+    "led.c":                              "sr2026sim",
     "led.lisiparoi":                      None,
 
     "limit.lift_high":                    None,
@@ -55,28 +55,28 @@ IO = {
     "match_zone.main":                    None,
 
     "motor.collector":                    None,
-    "motor.drive_front_left":             "sr2026",
-    "motor.drive_front_right":            "sr2026",
+    "motor.drive_front_left":             "sr2026sim",
+    "motor.drive_front_right":            "sr2026sim",
     "motor.drive_rear_left":              None,
     "motor.drive_rear_right":             None,
     "motor.shooter":                      None,
 
     "otos.main":                          None,
 
-    "reflectance.centre":                 "sr2026",
-    "reflectance.left":                   "sr2026",
-    "reflectance.right":                  "sr2026",
+    "reflectance.centre":                 "sr2026sim",
+    "reflectance.left":                   "sr2026sim",
+    "reflectance.right":                  "sr2026sim",
 
     "selector.pi_arduino":                None,
 
-    "servo.gripper":                      "sr2026",
-    "servo.lift":                         "sr2026",
+    "servo.gripper":                      "sr2026sim",
+    "servo.lift":                         "sr2026sim",
     "servo.shooter_feed":                 None,
 
     "ultrasonic.front_left":              None,
     "ultrasonic.front_right":             None,
 
-    "voltage.battery":                    "sr2026",
+    "voltage.battery":                    "sr2026sim",
 }
 
 

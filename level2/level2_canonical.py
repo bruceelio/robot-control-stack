@@ -216,10 +216,13 @@ class Level2:
             print("[Level2] LIFT_DOWN: no servos available")
             return
 
-        # Assumption: lift is servo 0, SR-style -1..+1
         try:
             servos[0].position = -1
-            self.SLEEP(1.0)
+
+            t_end = time.time() + 1.0
+            while time.time() < t_end:
+                servos[0].position = -1
+                self.io.sleep(0.05)
         except Exception as e:
             print("[Level2] LIFT_DOWN failed:", e)
 
@@ -286,7 +289,7 @@ class Level2:
             print("[Level2] GRAB: no servos available")
             return
         try:
-            servos[1].position = -0.45  # or 0.0, depending on your open/closed convention
+            servos[1].position = -1.0  # or 0.0, depending on your open/closed convention
             self.SLEEP(1.0)
         except Exception as e:
             print("[Level2] GRAB failed:", e)

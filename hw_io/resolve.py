@@ -27,6 +27,13 @@ def resolve_io(*, robot, camera_manager=None) -> IOMap:
 
     backend = backends[0]
 
+    # Student Robotics 2026 Webots simulation.
+    # Uses the SR robot3 API, but has simulator-specific hardware mappings.
+    if backend == "sr2026sim":
+        from hw_io.hw_sr2026sim import SR2026SimIO
+        return SR2026SimIO(robot)
+
+    # Physical Student Robotics 2026 hardware.
     if backend == "sr2026":
         from hw_io.hw_sr2026 import SR2026IO
         return SR2026IO(robot)
