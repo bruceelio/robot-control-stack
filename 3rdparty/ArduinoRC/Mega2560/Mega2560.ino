@@ -54,6 +54,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+// Forward declarations for encoder module types.
+// Required so Arduino's automatic .ino function prototypes can see these types.
+struct EncoderState;
+struct EncoderSnapshot;
+
 // =========================================================
 // PIN / LINK ASSIGNMENT BLOCK
 // Edit this block first when reusing the sketch.
