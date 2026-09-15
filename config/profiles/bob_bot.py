@@ -157,6 +157,17 @@ GRIPPER_MOUNT = {
     "yaw_deg": 0.0,
 }
 """
+# -------------------------
+# Servoing
+# -------------------------
+
+# This robot/camera configuration supports closed-loop visual servoing.
+SERVOING_ENABLED = True
+
+# Maximum commanded velocities while servoing.
+# Limited to speeds at which perception remains sufficiently reliable.
+SERVOING_LINEAR_MAX_MM_S = 300.0
+SERVOING_ANGULAR_MAX_RAD_S = 0.8
 
 
 # -------------------------
@@ -165,13 +176,14 @@ GRIPPER_MOUNT = {
 
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"
+DRIVE_TRACK_WIDTH_MM = 380
 
 MOTOR_POLARITY = [1, 1]
 
 MOTION_BACKEND = "timed"
 
 ROTATION_SIGN = 1
-MAX_MOTOR_POWER = 1.0
+MOTOR_POWER_MAX = 0.8
 
 
 

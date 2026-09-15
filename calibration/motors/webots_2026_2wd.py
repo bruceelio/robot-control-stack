@@ -35,13 +35,28 @@ ROTATE_SWITCH_DEG = 7.6
 # Use the same model on both sides of the divider for now.
 
 ROTATE_POWER_SMALL = 0.55
-ROTATE_M_SMALL = 0.00952
+ROTATE_M_SMALL = 0.00375
 ROTATE_B_SMALL = 0.0
 
 ROTATE_POWER_LARGE = 0.55
-ROTATE_M_LARGE = 0.00552
+ROTATE_M_LARGE = 0.00375
 ROTATE_B_LARGE = 0.0
 
+# --------------------------------------------------
+# Drive velocity calibration
+# --------------------------------------------------
+
+# Steady-state drive velocity calibration:
+# (motor_power, velocity_mm_s)
+#
+# Currently derived from the existing timed-motion calibration.
+# Additional measured points can be added later without changing
+# the velocity backend interface.
+DRIVE_VELOCITY_CURVE = (
+    (0.0, 0.0),
+    (DRIVE_POWER_SHORT, 1.0 / DRIVE_M_SHORT),
+    (DRIVE_POWER_LONG,  1.0 / DRIVE_M_LONG),
+)
 
 # --------------------------------------------------
 # Voltage Compensation

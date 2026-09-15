@@ -161,11 +161,11 @@ def run(robot=None) -> None:
 
     drive = io.drive[DRIVE_GROUP]
 
-    max_power = float(getattr(CONFIG, "max_motor_power", 1.0))
+    max_power = float(getattr(CONFIG, "motor_power_max", 1.0))
 
     print(
         f"Maximum motor power: {max_power:.2f}\n"
-        f"Source: CONFIG.max_motor_power for "
+        f"Source: CONFIG.motor_power_max for "
         f"{getattr(CONFIG, 'robot_id', 'selected robot')}"
     )
 

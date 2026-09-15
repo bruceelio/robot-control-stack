@@ -25,7 +25,7 @@ def run(robot):
 
     # --- Core subsystems (match Controller) ---
     io = resolve_io(robot=robot)
-    lvl2 = Level2(io, max_power=CONFIG.max_motor_power)
+    lvl2 = Level2(io, max_power=CONFIG.motor_power_max)
     perception = Perception(io)
     localisation = Localisation()
 

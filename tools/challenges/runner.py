@@ -1,33 +1,39 @@
+# tools/challenges/runner.py
+
 from config.strategy import Challenge
 
 
 def run_challenge(challenge, controller):
     if challenge == Challenge.VISION:
-        from challenges.vision import run
+        from tools.challenges import run
         return run(controller)
 
     if challenge == Challenge.MOVEMENT:
-        from challenges.movement import run
+        from tools.challenges.sr2026.movement import run
         return run(controller)
 
     if challenge == Challenge.MECHANICS:
-        from challenges.mechanics import run
+        from tools.challenges.sr2026.mechanics import run
         return run(controller)
 
     if challenge == Challenge.SENSING:
-        from challenges.sensing import run
+        from tools.challenges import run
         return run(controller)
 
     if challenge == Challenge.SIMULATOR:
-        from challenges.simulator import run
+        from tools.challenges import run
         return run(controller)
 
     if challenge == Challenge.TRANSPORTATION:
-        from challenges.transportation import run
+        from tools.challenges import run
         return run(controller)
 
     if challenge == Challenge.STOPPING:
-        from challenges.stopping import run
+        from tools.challenges import run
+        return run(controller)
+
+    if challenge == Challenge.SERVOING:
+        from tools.challenges.servoing import run
         return run(controller)
 
     raise RuntimeError(f"Unsupported challenge: {challenge}")

@@ -682,7 +682,7 @@ def run(robot=None) -> None:
     left_motor = io.motor[LEFT_MOTOR]
     right_motor = io.motor[RIGHT_MOTOR]
 
-    max_power = float(getattr(CONFIG, "max_motor_power", 1.0))
+    max_power = float(getattr(CONFIG, "motor_power_max", 1.0))
 
     initial_left, initial_right = _read_pair(left_encoder, right_encoder)
     print("Initial encoder snapshots:")
@@ -692,7 +692,7 @@ def run(robot=None) -> None:
 
     print(
         f"\nMaximum motor power: {max_power:.2f}\n"
-        f"Source: CONFIG.max_motor_power for "
+        f"Source: CONFIG.motor_power_max for "
         f"{getattr(CONFIG, 'robot_id', 'selected robot')}"
     )
 

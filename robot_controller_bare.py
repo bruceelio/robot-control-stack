@@ -34,10 +34,7 @@ try:
 except ImportError:
     run_tests = None
 
-try:
-    from challenges.runner import run_challenge
-except ImportError:
-    run_challenge = None
+from tools.challenges.runner import run_challenge
 
 
 def safe_cue(lvl2, cue: BuzzerCue) -> None:
@@ -111,7 +108,7 @@ class Controller:
 
         self.lvl2 = Level2(
             self.io,
-            max_power=CONFIG.max_motor_power,
+            max_power=CONFIG.motor_power_max,
         )
 
         # --------------------------------------------------

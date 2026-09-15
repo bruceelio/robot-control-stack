@@ -226,6 +226,21 @@ GRIPPER_MOUNT = {
 }
 """
 
+# -------------------------
+# Servoing
+# -------------------------
+
+# This robot/camera configuration supports closed-loop visual servoing.
+SERVOING_ENABLED = True
+
+# Maximum commanded velocities while servoing.
+# Limited to speeds at which perception remains sufficiently reliable.
+
+# Arducam 300.0 works slowly, 500.0 is too fast
+SERVOING_LINEAR_MAX_MM_S = 400.0
+
+# Arducam 0.8 too fast; 0.4 works
+SERVOING_ANGULAR_MAX_RAD_S = 0.5
 
 # -------------------------
 # Motion Hardware Limits
@@ -233,13 +248,14 @@ GRIPPER_MOUNT = {
 
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"
+DRIVE_TRACK_WIDTH_MM = 365
 
 MOTOR_POLARITY = [1, 1]
 
 MOTION_BACKEND = "timed"
 
 ROTATION_SIGN = 1
-MAX_MOTOR_POWER = 1.0
+MOTOR_POWER_MAX = 0.8
 
 
 

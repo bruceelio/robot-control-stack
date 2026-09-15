@@ -1,4 +1,4 @@
-// 3rdparty/ArduinoRC/BobBot_Mega2560_4wd_mecanum.ino
+// 3rdparty/ArduinoRC/Mega2560/Mega2560.ino
 //
 // Full Pi-compatible BobBot firmware with 4WD mecanum FlySky teleop.
 // BobBot / Mega reusable control sketch
@@ -64,6 +64,20 @@
 #define ROBOCLAW_B_SERIAL Serial3   // pins 14/15
 #define ROBOCLAW_A_SERIAL Serial1   // pins 18/19
 #define IBUS_SERIAL Serial2         // FlySky iBus on Mega RX2 pin 17
+
+// =========================================================
+// OPTIONAL FEATURES
+// =========================================================
+
+#define ENABLE_ENCODERS            1
+#define ENABLE_DRIVE_ENCODERS      1
+#define ENABLE_DEADWHEEL_ENCODERS  0
+#define ENABLE_SHOOTER_ENCODER     0
+
+// =========================================================
+// PIN ASSIGNMENTS
+// =========================================================
+
 
 static const uint8_t PIN_USB_RX0 = 0;
 static const uint8_t PIN_USB_TX0 = 1;
@@ -649,14 +663,6 @@ long readAnalogSource(const char *name) {
   return analogRead(pin);
 }
 
-long readQuadPair(uint8_t pinA, uint8_t pinB) {
-  // Placeholder/simple snapshot. Replace with proper counter logic when encoder
-  // accumulation is added.
-  int a = digitalRead(pinA) ? 1 : 0;
-  int b = digitalRead(pinB) ? 1 : 0;
-  return (a << 1) | b;
-}
-
 long readRangePair(uint8_t trigPin, uint8_t echoPin) {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -746,6 +752,12 @@ void replyValue(const char *kind, long value) {
 
 void handlePiCommand(char *line) {
   while (*line == ' ') line++;
+
+#if ENABLE_ENCODERS
+  if (handleEncoderCommand(line)) {
+    return;
+  }
+#endif
 
   if (strcmp(line, "HELLO") == 0) {
     PI_SERIAL.print("ID ");
@@ -1223,10 +1235,12 @@ if (strncmp(line, "FRONT_ROUTE ", 12) == 0) {
       }
     }
 
-    if (strcmp(rkind, "QUAD") == 0 && count >= 3) {
-      replyValue("QUAD", readQuadPair((uint8_t)atoi(a1), (uint8_t)atoi(a2)));
-      return;
-    }
+    #if ENABLE_ENCODERS
+      if (strcmp(rkind, "QUAD") == 0 && count >= 3) {
+        replyValue("QUAD", readQuadPair((uint8_t)atoi(a1), (uint8_t)atoi(a2)));
+        return;
+      }
+    #endif
 
     if (strcmp(rkind, "RANGE") == 0 && count >= 3) {
       replyValue("RANGE", readRangePair((uint8_t)atoi(a1), (uint8_t)atoi(a2)));
@@ -1321,22 +1335,14 @@ void setup() {
   pinMode(PIN_PIEZO_BUZZER, OUTPUT);
   noTone(PIN_PIEZO_BUZZER);
 
-  // Limits / quadrature inputs
+  // Limits
   pinMode(PIN_LIMIT_LIFT_HIGH, INPUT_PULLUP);
   pinMode(PIN_LIMIT_LIFT_LOW, INPUT_PULLUP);
 
-  pinMode(PIN_ENC_DRIVE_FRONT_LEFT_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_DRIVE_FRONT_LEFT_B, INPUT_PULLUP);
-  pinMode(PIN_ENC_DRIVE_FRONT_RIGHT_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_DRIVE_FRONT_RIGHT_B, INPUT_PULLUP);
-
-  pinMode(PIN_ENC_DEADWHEEL_PARALLEL_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_DEADWHEEL_PARALLEL_B, INPUT_PULLUP);
-  pinMode(PIN_ENC_DEADWHEEL_PERPENDICULAR_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_DEADWHEEL_PERPENDICULAR_B, INPUT_PULLUP);
-
-  pinMode(PIN_ENC_SHOOTER_A, INPUT_PULLUP);
-  pinMode(PIN_ENC_SHOOTER_B, INPUT_PULLUP);
+  // Encoders
+  #if ENABLE_ENCODERS
+    setupEncoders();
+  #endif
 
   pinMode(PIN_BUTTON_START, INPUT_PULLUP);
 

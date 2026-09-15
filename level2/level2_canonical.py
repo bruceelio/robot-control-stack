@@ -58,13 +58,59 @@ class Level2:
     # DRIVE / ROTATE
     # -----------------------------
 
+    def DRIVE_POWER(
+            self,
+            left_power: float,
+            right_power: float,
+    ):
+        """
+        Set continuous drivetrain power.
+
+        Power remains applied until another DRIVE_POWER command
+        or DRIVE_STOP is issued.
+
+        Used by continuous-control motion such as servoing and
+        path tracking.
+        """
+        left_power = self._clip(left_power)
+        right_power = self._clip(right_power)
+
+        drive = getattr(self.io, "drive", None)
+        if drive is None:
+            raise RuntimeError(
+                "Level2.DRIVE_POWER: io.drive is not available"
+            )
+
+        front_drive = drive["front"]
+
+        front_drive.set_power(
+            left=left_power,
+            right=right_power,
+        )
+
+    def DRIVE_STOP(self):
+        """
+        Stop drivetrain output immediately.
+        """
+        self.DRIVE_POWER(
+            left_power=0.0,
+            right_power=0.0,
+        )
+
     def DRIVE(
             self,
             left_power: float,
             right_power: float,
             duration: Optional[float] = None,
     ):
-        """Drive robot: positive = forward, negative = backward."""
+        """
+        Timed/blocking drivetrain command.
+
+        Applies the requested power, waits for the requested duration,
+        then stops the drivetrain.
+
+        Continuous-control callers should use DRIVE_POWER instead.
+        """
         left_power = self._clip(left_power)
         right_power = self._clip(right_power)
 
@@ -73,26 +119,17 @@ class Level2:
             f"L={left_power} R={right_power} duration={duration}"
         )
 
-        drive = getattr(self.io, "drive", None)
-        if drive is None:
-            raise RuntimeError("Level2.DRIVE: io.drive is not available")
-
-        front_drive = drive["front"]
-
         try:
-            front_drive.set_power(
-                left=left_power,
-                right=right_power,
+            self.DRIVE_POWER(
+                left_power=left_power,
+                right_power=right_power,
             )
 
             if duration is not None:
                 self.SLEEP(duration)
 
         finally:
-            front_drive.set_power(
-                left=0.0,
-                right=0.0,
-            )
+            self.DRIVE_STOP()
 
     def ROTATE(self, angle_deg: float):
         """

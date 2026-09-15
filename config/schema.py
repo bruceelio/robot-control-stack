@@ -25,6 +25,7 @@ class Config:
     surface: str
     drive_layout: str
     wheel_type: str
+    drive_track_width_mm: float
 
     io: dict[str, str | None]
 
@@ -35,6 +36,11 @@ class Config:
     camera_mounts: dict
     gripper_mount: dict
     gripper_from_camera: dict
+
+    # Servoing
+    servoing_enabled: bool
+    servoing_linear_max_mm_s: float
+    servoing_angular_max_rad_s: float
 
     # Arena
     arena_size: int
@@ -77,7 +83,7 @@ class Config:
     min_drive_mm: float
     max_drive_mm: float
     max_rotate_deg: float
-    max_motor_power: float
+    motor_power_max: float
     battery_voltage_nominal: float
 
     # Vision / Seek & Collect
@@ -172,6 +178,7 @@ RESOLVE_MAP = {
     "surface": ("profile", "SURFACE"),
     "drive_layout": ("profile", "DRIVE_LAYOUT"),
     "wheel_type": ("profile", "WHEEL_TYPE"),
+    "drive_track_width_mm": ("profile", "DRIVE_TRACK_WIDTH_MM"),
 
     "io": ("profile", "IO"),
 
@@ -183,6 +190,10 @@ RESOLVE_MAP = {
     "gripper_mount": ("profile", "GRIPPER_MOUNT"),
     "gripper_from_camera": ("computed", "gripper_from_camera"),
 
+    # Servoing
+    "servoing_enabled": ("profile", "SERVOING_ENABLED"),
+    "servoing_linear_max_mm_s": ("profile", "SERVOING_LINEAR_MAX_MM_S"),
+    "servoing_angular_max_rad_s": ("profile", "SERVOING_ANGULAR_MAX_RAD_S"),
 
     # Arena
     "arena_size": ("arena", "ARENA_SIZE"),
@@ -208,7 +219,7 @@ RESOLVE_MAP = {
     "min_drive_mm": ("profile", "MIN_DRIVE_MM"),
     "max_rotate_deg": ("profile", "MAX_ROTATE_DEG"),
     "max_drive_mm": ("profile", "MAX_DRIVE_MM"),
-    "max_motor_power": ("profile", "MAX_MOTOR_POWER"),
+    "motor_power_max": ("profile", "MOTOR_POWER_MAX"),
     "battery_voltage_nominal": ("profile", "BATTERY_VOLTAGE_NOMINAL"),
 
     # InitEscape

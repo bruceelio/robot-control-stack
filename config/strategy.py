@@ -33,6 +33,7 @@ class Challenge(Enum):
     SIMULATOR = auto()
     TRANSPORTATION = auto()
     STOPPING = auto()
+    SERVOING = auto()
 
 class MatchZoneSource(Enum):
     AUTO = "auto"
@@ -53,8 +54,8 @@ ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # All run modes use the same normal controller startup.
 
 
-RUN_MODE = RunMode.NORMAL
-# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.NORMAL
+RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
@@ -66,16 +67,16 @@ STARTUP_SCRIPT = StartupScript.NONE
 
 # CHALLENGE = Challenge.NONE
 # CHALLENGE = Challenge.VISION
-CHALLENGE = Challenge.MOVEMENT
+# CHALLENGE = Challenge.MOVEMENT
 # CHALLENGE = Challenge.MECHANICS
 # CHALLENGE = Challenge.SENSING
 # CHALLENGE = Challenge.SIMULATOR
 # CHALLENGE = Challenge.TRANSPORTATION
 # CHALLENGE = Challenge.STOPPING
+CHALLENGE = Challenge.SERVOING
 
-
-# DEFAULT_TARGET_KIND = "acidic"
-DEFAULT_TARGET_KIND = "basic"
+DEFAULT_TARGET_KIND = "acidic"
+# DEFAULT_TARGET_KIND = "basic"
 
 # =========================
 # Match / Starting Zone

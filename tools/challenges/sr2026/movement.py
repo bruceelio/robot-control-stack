@@ -1,4 +1,4 @@
-# challenges/movement.py
+# tools/challenges/movement.py
 
 from config import CONFIG
 from calibration import CALIBRATION
@@ -68,7 +68,7 @@ def run(controller):
     )
 
     power = power * voltage_multiplier
-    power = min(power, CONFIG.max_motor_power)
+    power = min(power, CONFIG.motor_power_max)
 
     left_power = power * CONFIG.motor_polarity[0]
     right_power = power * CONFIG.motor_polarity[1]
@@ -142,7 +142,7 @@ def run(controller):
     )
 
     power = power * voltage_multiplier
-    power = min(power, CONFIG.max_motor_power)
+    power = min(power, CONFIG.motor_power_max)
 
     direction = CONFIG.rotation_sign
 

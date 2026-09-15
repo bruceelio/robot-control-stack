@@ -169,6 +169,11 @@ def resolve(*, config) -> Calibration:
         drive_m_long=motor.DRIVE_M_LONG,
         drive_b_long=motor.DRIVE_B_LONG,
 
+        drive_velocity_curve=tuple(
+            (float(power), float(velocity_mm_s))
+            for power, velocity_mm_s in motor.DRIVE_VELOCITY_CURVE
+        ),
+
         # Rotate
         rotate_switch_deg=motor.ROTATE_SWITCH_DEG,
 

@@ -44,6 +44,23 @@ ROTATE_B_LARGE = -0.0413
 # ROTATE_M = 0.0051
 # ROTATE_B = 0.15
 
+# --------------------------------------------------
+# Drive velocity calibration
+# --------------------------------------------------
+
+# Steady-state drive velocity calibration:
+# (motor_power, velocity_mm_s)
+#
+# Currently derived from the existing timed-motion calibration.
+# Additional measured points can be added later without changing
+# the velocity backend interface.
+DRIVE_VELOCITY_CURVE = (
+    (0.0, 0.0),
+    (DRIVE_POWER_SHORT, 1.0 / DRIVE_M_SHORT),
+    (DRIVE_POWER_LONG,  1.0 / DRIVE_M_LONG),
+)
+
+
 # =========================
 # Voltage Compensation
 # =========================

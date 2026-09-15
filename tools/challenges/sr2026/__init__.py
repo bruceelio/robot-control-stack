@@ -1,0 +1,1 @@
+# tools/challenges/sr2026/__init__.py

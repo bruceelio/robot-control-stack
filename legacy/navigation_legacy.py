@@ -1,4 +1,4 @@
-# navigation/legacy.py
+# navigation/navigation_legacy.py
 
 """
 LEGACY NAVIGATION MODULE

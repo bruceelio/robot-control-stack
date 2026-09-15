@@ -139,9 +139,24 @@ GRIPPER_MOUNT = {
     "yaw_deg": 0.0,
 }
 
+# -------------------------
+# Servoing
+# -------------------------
+
+# This robot/camera configuration supports closed-loop visual servoing.
+SERVOING_ENABLED = True
+
+# Maximum commanded velocities while servoing.
+# Limited to speeds at which perception remains sufficiently reliable.
+SERVOING_LINEAR_MAX_MM_S = 900.0        # 900: camera maintains (could be much higher)
+SERVOING_ANGULAR_MAX_RAD_S = 0.8
+
+
 # Drive hardware
 DRIVE_LAYOUT = "2WD"
 WHEEL_TYPE = "standard"
+DRIVE_TRACK_WIDTH_MM = 280      # estimated via sim protos
+
 MOTOR_POLARITY = [1, 1]
 MOTION_BACKEND = "timed"
 
@@ -180,7 +195,7 @@ MIN_ROTATE_DEG = 2.0
 MAX_ROTATE_DEG = 180.0
 MIN_DRIVE_MM = 5.0          # only for seek_and_collect
 MAX_DRIVE_MM = 2500.0
-MAX_MOTOR_POWER = 0.8
+MOTOR_POWER_MAX = 0.8
 
 # Vision / perception
 CAMERA_SETTLE_TIME = 0.5

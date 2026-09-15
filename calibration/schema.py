@@ -42,7 +42,7 @@ class CameraCalibration:
 @dataclass(frozen=True)
 class Calibration:
     # ----------------------------------------------
-    # Drive calibration (timed backend)
+    # Drive calibration
     # ----------------------------------------------
     drive_switch_mm: float
 
@@ -54,6 +54,8 @@ class Calibration:
 
     drive_m_long: float
     drive_b_long: float
+
+    drive_velocity_curve: Tuple[Tuple[float, float], ...]
 
     # ----------------------------------------------
     # Rotation calibration (timed backend)
