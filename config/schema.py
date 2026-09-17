@@ -33,6 +33,8 @@ class Config:
     async_vision_enabled: bool
     vision_sources: dict
     encoders: dict
+    encoder_sign: dict
+    encoder_wheel_diameter_mm: dict
     camera_mounts: dict
     gripper_mount: dict
     gripper_from_camera: dict
@@ -186,6 +188,8 @@ RESOLVE_MAP = {
     "vision_sources": ("profile", "VISION_SOURCES"),
     "async_vision_enabled": ("profile", "ASYNC_VISION_ENABLED"),
     "encoders": ("computed", "encoders"),
+    "encoder_sign": ("profile", "ENCODER_SIGN"),
+    "encoder_wheel_diameter_mm": ("profile", "ENCODER_WHEEL_DIAMETER_MM"),
     "camera_mounts": ("profile", "CAMERA_MOUNTS"),
     "gripper_mount": ("profile", "GRIPPER_MOUNT"),
     "gripper_from_camera": ("computed", "gripper_from_camera"),

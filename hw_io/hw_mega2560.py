@@ -105,6 +105,9 @@ class EncoderReading:
     def __init__(self, getter: Callable[[], Dict[str, Any]]):
         self._getter = getter
 
+    def read(self) -> Dict[str, Any]:
+        return self._getter()
+
     @property
     def count(self) -> Optional[int]:
         return self._getter().get("count")

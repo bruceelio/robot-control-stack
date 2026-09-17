@@ -42,9 +42,9 @@ class MatchZoneSource(Enum):
     FIXED = "fixed"
 
 
-# ROBOT_PROFILE = RobotProfile.BOB_BOT
+ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.ROB_BOT
-ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
+# ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 # ==================================================
@@ -54,8 +54,8 @@ ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # All run modes use the same normal controller startup.
 
 
-# RUN_MODE = RunMode.NORMAL
-RUN_MODE = RunMode.CHALLENGES
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 

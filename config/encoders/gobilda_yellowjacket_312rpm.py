@@ -3,13 +3,15 @@
 """
 goBILDA Yellow Jacket motor with encoder, 312 RPM variant.
 
-UNITS_PER_REV is expressed at the output shaft.
-Adjust if your project standardises this differently.
+COUNTS_PER_REV is expressed at the gearbox output shaft.
+Verified on the robot using the Mega encoder decoder.
 """
 
 ENCODER_TYPE = "quadrature"
 UNITS = "rev"
-COUNTS_PER_REV = 2150.4   # = 112 (quadrature) x 19.2 (gear ratio)
+
+COUNTS_PER_REV = 537.6   # = 28 counts/rev x 19.2 (gear ratio)
+
 UNITS_PER_REV = 1.0
 DEFAULT_INVERT = False
 ZERO_ON_START = True

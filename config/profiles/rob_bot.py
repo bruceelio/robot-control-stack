@@ -129,11 +129,16 @@ ASYNC_VISION_ENABLED = True
 # -------------------------
 
 ENCODERS = {
+#    "drive_front_left": "gobilda_yellowjacket_312rpm",
+#    "drive_front_right": "gobilda_yellowjacket_312rpm",
 #    "deadwheel_parallel": "gobilda_4bar_odometry_pod_32mm",
 #    "deadwheel_perpendicular": "gobilda_swingarm_odometry_pod_48mm",
 #    "shooter": "gobilda_yellowjacket_6000rpm",
 }
 
+ENCODER_SIGN = {}
+
+ENCODER_WHEEL_DIAMETER_MM = {}
 
 # -------------------------
 # Voltage / Battery

@@ -213,6 +213,9 @@ static const uint8_t CH_LIFT = 6; // knob to the right of gripper knob
 static const float TELEOP_SHOOTER_SCALE = 0.8f; // CH_LIFT also controls shooter power
 
 static const uint8_t CH_SHOOTER_FEED = 7; // SWA, pulse shooter feed servos
+static const uint8_t CH_COLLECTOR = 8;          // SWB 3-position
+static const float TELEOP_COLLECTOR_SCALE = 0.8f;
+
 
 static const unsigned long SHOOTER_FEED_PULSE_MS = 700;
 static const int SHOOTER_FEED_STOP_US = 1500;
@@ -559,6 +562,30 @@ void writeShooterMotor(float value) {
 
 void writeCollectorMotor(float value) {
   writePwmDirMotor(PIN_COLLECTOR_PWM, PIN_COLLECTOR_DIR, value);
+}
+
+// =========================================================
+// COLLECTOR
+// =========================================================
+
+void updateCollectorFromIbus() {
+  const uint8_t idx = CH_COLLECTOR - 1;
+  const uint16_t swUs = ibusMicros(idx);
+
+  // SWB is a 3-position switch:
+  // low  -> reverse
+  // mid  -> stop
+  // high -> forward
+
+  if (swUs < 1250) {
+    writeCollectorMotor(-TELEOP_COLLECTOR_SCALE);
+  }
+  else if (swUs > 1750) {
+    writeCollectorMotor(TELEOP_COLLECTOR_SCALE);
+  }
+  else {
+    writeCollectorMotor(0.0f);
+  }
 }
 
 // =========================================================
@@ -1406,7 +1433,8 @@ void loop() {
   }
 
     // Safety: if FlySky signal is lost, stop all teleop-controlled motion.
-  if (millis() - ibus_last_frame_ms > 200) {
+  if (ibus_last_frame_ms == 0 ||
+    millis() - ibus_last_frame_ms > 200) {
     stopDrive();
     writeShooterMotor(0.0f);
     writeCollectorMotor(0.0f);
@@ -1454,6 +1482,7 @@ void loop() {
   writeDriveRearRight(rearRight);
   updateGripFromIbus();
   updateLiftFromIbus();
+  updateCollectorFromIbus();
   updateShooterFeedFromIbus();
 
   delay(20);
