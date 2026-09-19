@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 
+from localisation.pose_types import PoseCovariance
+
+
+
 
 @dataclass(frozen=True)
 class PoseObservation:
@@ -35,8 +39,23 @@ class PoseObservation:
 
     # --- classification ---
     # True = absolute reference (e.g. vision, startup)
-    # False = relative/integrated (e.g. odometry, motion, OTOS)
+    # False = relative/integrated (e.g. odometry, dead_reckoning, OTOS)
     is_absolute: bool = False
+
+    # --- uncertainty ---
+    # Covariance for [x, y, heading].
+    #
+    # Units:
+    #   x, y        -> mm
+    #   heading     -> radians
+    #
+    # Therefore:
+    #   var(x), var(y)         -> mm^2
+    #   var(heading)           -> rad^2
+    #   cross terms            -> corresponding mixed units
+    #
+    # None means this provider does not yet supply covariance.
+    covariance: PoseCovariance | None = None
 
     # --- diagnostics ---
     diagnostics: Dict[str, Any] = field(default_factory=dict)
@@ -109,7 +128,7 @@ class PoseProvider(ABC):
     Base interface for localisation providers.
 
     Providers may be absolute (vision, startup, OTOS with map alignment)
-    or relative (deadwheel odometry, commanded motion, IMU-integrated heading).
+    or relative (deadwheel odometry, commanded dead_reckoning, IMU-integrated heading).
     """
 
     def __init__(self, name: str, *, base_weight: float = 1.0):

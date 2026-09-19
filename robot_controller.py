@@ -64,7 +64,10 @@ class Controller:
     def __init__(self, robot):
         self.robot = robot
         self.signals = make_signals()
-        self.encoder_manager = EncoderManager(CONFIG.encoders)
+        self.encoder_manager = EncoderManager(
+            CONFIG.encoders,
+            CONFIG.encoder_sign,
+        )
 
         self.perf = PerformanceMonitor("main", report_every_s=5.0)
 

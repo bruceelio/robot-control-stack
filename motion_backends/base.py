@@ -1,6 +1,6 @@
 class MotionBackend:
     """
-    Abstract motion backend.
+    Abstract dead_reckoning backend.
     """
 
     def start_drive(self, *, distance_mm, localisation):

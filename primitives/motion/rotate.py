@@ -1,4 +1,4 @@
-# primitives/motion/rotate.py
+# primitives/dead_reckoning/rotate.py
 
 from primitives.base import Primitive, PrimitiveStatus
 import time

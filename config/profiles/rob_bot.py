@@ -259,13 +259,13 @@ MOTOR_POLARITY = [1, 1]
 
 MOTION_BACKEND = "timed"
 
-ROTATION_SIGN = 1
+
 MOTOR_POWER_MAX = 0.8
 
 
 
 
-# Generic motion command limits
+# Generic dead_reckoning command limits
 
 MIN_ROTATE_DEG = 2.0
 MAX_ROTATE_DEG = 180.0

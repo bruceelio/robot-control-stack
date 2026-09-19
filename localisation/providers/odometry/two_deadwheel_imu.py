@@ -1,4 +1,4 @@
-# localisation/providers/twodeadwheelimu.py
+# localisation/providers/odometry/two_deadwheel_imu.py
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from localisation.providers.base import PoseProvider
 
 
 class TwoDeadwheelImuProvider(PoseProvider):
-    name = "twodeadwheelimu"
+    name = "odometry"
 
     def __init__(self, config) -> None:
         self.config = config
@@ -25,7 +25,7 @@ class TwoDeadwheelImuProvider(PoseProvider):
         arena_detections=None,
     ) -> PoseObservation | None:
         # Require hardware
-        if not hasattr(io, "deadwheels"):
+        if not hasattr(io, "odometry"):
             return None
         if not hasattr(io, "imu"):
             return None

@@ -15,7 +15,7 @@ from navigation.velocity_arbiter import VelocityCommand
 
 class VelocityMotionBackend:
     """
-    Executable velocity-motion backend.
+    Executable velocity-dead_reckoning backend.
 
     Accepts canonical robot velocity commands and sends the resulting
     conditioned motor powers to Level2.

@@ -1,7 +1,7 @@
 # calibration/motors/webots_2026_2wd.py
 
 """
-Timed motion calibration for the Webots 2026 2WD robot.
+Timed dead_reckoning calibration for the Webots 2026 2WD robot.
 
 Motion values migrated from the former SR1 calibration profile.
 """
@@ -49,7 +49,7 @@ ROTATE_B_LARGE = 0.0
 # Steady-state drive velocity calibration:
 # (motor_power, velocity_mm_s)
 #
-# Currently derived from the existing timed-motion calibration.
+# Currently derived from the existing timed-dead_reckoning calibration.
 # Additional measured points can be added later without changing
 # the velocity backend interface.
 DRIVE_VELOCITY_CURVE = (
@@ -62,7 +62,7 @@ DRIVE_VELOCITY_CURVE = (
 # Voltage Compensation
 # --------------------------------------------------
 
-# Webots motion does not require battery-voltage compensation.
+# Webots dead_reckoning does not require battery-voltage compensation.
 # These neutral values preserve the current calibration interface
 # without changing commanded motor power.
 

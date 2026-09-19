@@ -1,4 +1,4 @@
-# localisation/providers/motion/commanded_motion.py
+# localisation/providers/dead_reckoning/commanded_motion.py
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from localisation.providers.base import PoseProvider, PoseObservation
 MIN_EFFECTIVE_ROTATE_DEG = 7.5
 
 # Motion-frame calibration for synthetic pose propagation
-ROTATE_SIGN = -1.0          # set to -1.0 if commanded +rotate is physically opposite
 DRIVE_HEADING_OFFSET_RAD = 0.0   # use +/- math.pi/2 if heading zero-axis is off by 90°
 DRIVE_Y_SIGN = 1.0         # set to -1.0 if Y is inverted in the arena frame
 
@@ -150,11 +149,11 @@ class CommandedMotionProvider(PoseProvider):
         seg.applied_drive_mm = target_drive
         seg.applied_rotate_deg = target_rotate
 
-        # Apply segment-specific motion
+        # Apply segment-specific dead_reckoning
         if seg.kind == "rotate":
             if self._heading is not None and abs(delta_rotate) > 0.0:
                 self._heading = self._wrap(
-                    self._heading + ROTATE_SIGN * math.radians(delta_rotate)
+                    self._heading + math.radians(delta_rotate)
                 )
                 self._rotation_since_reseed_deg += abs(delta_rotate)
 

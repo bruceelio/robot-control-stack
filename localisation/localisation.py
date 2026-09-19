@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import math
 from typing import List, Optional, Sequence
 
-from localisation.arbitration import Arbitrator
+
 from localisation.pose_types import Pose
 from localisation.providers.base import PoseProvider, PoseObservation
 from vision.apriltag.observations import AprilTagObservation
 
+from localisation.fusion import (
+    PoseEstimator,
+    create_default_estimator,
+)
 
 class Localisation:
     """
@@ -22,14 +28,27 @@ class Localisation:
       (used as a temporary estimate between vision updates)
     """
 
-    def __init__(self, providers: Optional[List[PoseProvider]] = None):
+    def __init__(
+            self,
+            providers: Optional[List[PoseProvider]] = None,
+            *,
+            estimator: PoseEstimator | None = None,
+    ):
         if providers is None:
             # Import here to avoid circular imports at module import time
             from localisation.providers import default_providers
             providers = default_providers()
 
         self.providers = providers
-        self.arbitrator = Arbitrator(providers)
+
+        if estimator is None:
+            estimator = create_default_estimator(providers)
+
+        self.estimator: PoseEstimator = estimator
+
+        # Compatibility alias for existing callers.
+        self.arbitrator = self.estimator
+
         self.pose: Optional[Pose] = None
 
     def has_position(self) -> bool:
@@ -69,6 +88,7 @@ class Localisation:
             *,
             source: str = "manual",
             timestamp: float = 0.0,
+            covariance=None,
     ) -> None:
         x, y = position
         self.pose = Pose(
@@ -79,6 +99,7 @@ class Localisation:
             heading_valid=(heading is not None),
             source=source,
             timestamp=float(timestamp),
+            covariance=covariance,
         )
 
         for provider in self.providers:
@@ -104,7 +125,10 @@ class Localisation:
 
         Also supports older callers which do not pass io.
         """
-        del io  # currently unused in the provider-fed path
+        # Supply semantic IO to providers which need it.
+        for provider in self.providers:
+            if hasattr(provider, "set_io"):
+                provider.set_io(io)
 
         # --------------------------------------------------
         # Canonical Vision path
@@ -149,7 +173,7 @@ class Localisation:
                         observations=apriltag_observations,
                     )
 
-        return self.arbitrator.estimate(now_s=now_s)
+        return self.estimator.estimate(now_s=now_s)
 
     def update_from_vision(
         self,
@@ -194,6 +218,17 @@ class Localisation:
             heading = prev_heading
             heading_valid = prev_heading_valid and (heading is not None)
 
+        # The observation covariance can describe the stored pose directly
+        # only when the observation supplies the complete pose used here.
+        #
+        # If heading is being preserved from the previous pose, combining
+        # the old heading uncertainty with the new position uncertainty
+        # requires a proper fusion/update step. Do not invent that here.
+        if obs.heading_valid and obs.heading is not None:
+            covariance = obs.covariance
+        else:
+            covariance = None
+
         self.pose = Pose(
             x=obs.x if obs.x is not None else 0.0,
             y=obs.y if obs.y is not None else 0.0,
@@ -202,10 +237,11 @@ class Localisation:
             heading_valid=heading_valid,
             source=obs.source,
             timestamp=obs.timestamp,
+            covariance=covariance,
         )
 
         # Absolute observations correct/reseed propagated pose sources.
-        # Propagated observations must be allowed to continue accumulating motion.
+        # Propagated observations must be allowed to continue accumulating dead_reckoning.
         if obs.is_absolute:
             for provider in self.providers:
                 provider.reseed(self.pose)
@@ -226,14 +262,10 @@ class Localisation:
             )
             return
 
-        self.pose = Pose(
-            x=self.pose.x,
-            y=self.pose.y,
-            heading=self.pose.heading,
+        self.pose = replace(
+            self.pose,
             position_valid=False,
             heading_valid=False,
-            source=self.pose.source,
-            timestamp=self.pose.timestamp,
         )
 
         for provider in self.providers:
@@ -271,11 +303,11 @@ class Localisation:
 
     def apply_motion(self, *, drive_mm: float = 0.0, rotate_deg: float = 0.0) -> None:
         """
-        Update pose by applying a commanded motion.
+        Update pose by applying a commanded dead_reckoning.
 
         - Requires a valid position.
         - Heading must be known to update x/y from drive.
-        - If heading is unknown, forward motion is not integrated.
+        - If heading is unknown, forward dead_reckoning is not integrated.
         """
         if self.pose is None or not self.pose.position_valid:
             return
@@ -295,14 +327,18 @@ class Localisation:
         else:
             heading_valid = False
 
-        self.pose = Pose(
+        self.pose = replace(
+            self.pose,
             x=x,
             y=y,
             heading=heading,
             position_valid=True,
             heading_valid=heading_valid,
-            source=self.pose.source,
-            timestamp=self.pose.timestamp,
+
+            # Proper propagation would require a motion-model Jacobian
+            # and process noise. Until that exists, do not carry forward
+            # covariance which no longer describes the updated pose.
+            covariance=None,
         )
 
     @staticmethod

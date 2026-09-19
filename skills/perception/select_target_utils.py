@@ -3,7 +3,7 @@
 """
 Target selection utilities (pure logic).
 
-- No motion
+- No dead_reckoning
 - No hardware access
 - No control-loop state
 - Safe for use in behaviors, planning, and tests

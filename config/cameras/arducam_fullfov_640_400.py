@@ -165,8 +165,8 @@ BACKLIGHT_COMPENSATION = None    # range: 0 to 2
 # --------------------------------------------------
 #
 # Exposure:
-#   Lower exposure reduces motion blur but darkens the image.
-#   Higher exposure brightens the image but increases motion blur.
+#   Lower exposure reduces dead_reckoning blur but darkens the image.
+#   Higher exposure brightens the image but increases dead_reckoning blur.
 #
 # Gain:
 #   Higher gain brightens the image but increases noise.

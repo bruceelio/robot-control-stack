@@ -47,7 +47,7 @@ CONFIGS = [
         "awb_settle_s": 2.0,
         "colour_gains": None,
         "fixed_lens_position": None,
-        "notes": "Bias toward less motion blur.",
+        "notes": "Bias toward less dead_reckoning blur.",
     },
     {
         "name": "longer_shutter_lower_noise",
@@ -61,6 +61,6 @@ CONFIGS = [
         "awb_settle_s": 2.0,
         "colour_gains": None,
         "fixed_lens_position": None,
-        "notes": "Slightly brighter; test motion blur impact.",
+        "notes": "Slightly brighter; test dead_reckoning blur impact.",
     },
 ]

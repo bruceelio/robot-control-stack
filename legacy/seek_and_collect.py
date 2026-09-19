@@ -411,7 +411,7 @@ class SeekAndCollect(Behavior):
                 self.active_primitive.start(motion_backend=motion_backend)
                 return self.status
 
-            # Only consider blind FINAL motion AFTER a drive + settle
+            # Only consider blind FINAL dead_reckoning AFTER a drive + settle
             if self.last_seen_distance is not None and self.last_drive_step is not None:
                 remaining = self.last_seen_distance - self.last_drive_step
 

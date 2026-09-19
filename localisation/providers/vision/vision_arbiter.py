@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from typing import Iterable, Optional, Sequence
 
 from vision.apriltag.observations import AprilTagObservation
@@ -153,29 +155,23 @@ class VisionArbiter(PoseProvider):
 
             self._selected_source = best.source
 
-        return PoseObservation(
-            x=best.x,
-            y=best.y,
-            heading=best.heading,
-            position_valid=best.position_valid,
-            heading_valid=best.heading_valid,
-            confidence=best.confidence,
-            source=best.source,
-            timestamp=best.timestamp,
-            is_absolute=best.is_absolute,
-            diagnostics={
-                "vision_provider": best.source,
-                "vision_candidates": [
-                    {
-                        "source": obs.source,
-                        "confidence": obs.confidence,
-                         "heading_valid": obs.heading_valid,
-                    }
-                    for obs in candidates
-                ],
-                "selected": best.source,
-                "selected_diagnostics": best.diagnostics,
-            },
+        diagnostics = {
+            "vision_provider": best.source,
+            "vision_candidates": [
+                {
+                    "source": obs.source,
+                    "confidence": obs.confidence,
+                    "heading_valid": obs.heading_valid,
+                }
+                for obs in candidates
+            ],
+            "selected": best.source,
+            "selected_diagnostics": best.diagnostics,
+        }
+
+        return replace(
+            best,
+            diagnostics=diagnostics,
         )
 
     def reseed(self, pose) -> None:

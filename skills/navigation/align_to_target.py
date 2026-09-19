@@ -27,7 +27,10 @@ class AlignToTarget:
     Program skill: align robot to face a target by rotating in place.
 
     Inputs:
-      - bearing_deg: signed bearing to target in degrees (+right/-left or vice versa per your convention)
+      bearing_deg:
+        Signed target bearing in degrees.
+        Positive = right.
+        Negative = left.
       - tolerance_deg: deadband for "close enough"
       - max_rotate_deg: clamp for safety/comfort
 
@@ -61,12 +64,22 @@ class AlignToTarget:
         self._done = False
         self._started = True
 
-        # If already aligned, succeed immediately (no motion).
+        # If already aligned, succeed immediately (no dead_reckoning).
         if is_aligned(self.bearing_deg, tolerance_deg=self.tolerance_deg):
             self._done = True
             return PrimitiveStatus.SUCCEEDED
 
-        angle = clamp_rotation_deg(self.bearing_deg, max_rotate_deg=self.max_rotate_deg)
+        # Detector bearing convention:
+        #   positive = target to the right
+        #   negative = target to the left
+        #
+        # Rotate convention:
+        #   positive = left / counter-clockwise
+        #   negative = right / clockwise
+        angle = clamp_rotation_deg(
+            -self.bearing_deg,
+            max_rotate_deg=self.max_rotate_deg,
+        )
         self._child = Rotate(angle_deg=angle)
         self._child.start(motion_backend=motion_backend)
         return PrimitiveStatus.RUNNING

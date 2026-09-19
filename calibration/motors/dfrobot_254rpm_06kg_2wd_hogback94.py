@@ -46,7 +46,7 @@ ROTATE_B_LARGE = 0.0
 # Steady-state drive velocity calibration:
 # (motor_power, velocity_mm_s)
 #
-# Currently derived from the existing timed-motion calibration.
+# Currently derived from the existing timed-dead_reckoning calibration.
 # Additional measured points can be added later without changing
 # the velocity backend interface.
 DRIVE_VELOCITY_CURVE = (

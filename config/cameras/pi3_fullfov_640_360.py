@@ -176,8 +176,8 @@ COLOUR_GAINS = None
 #   Lens position roughly 0.8 - 1.5 is a useful tuning region.
 #
 # Exposure:
-#   Lower exposure reduces motion blur but produces a darker image.
-#   Higher exposure increases brightness but increases motion blur.
+#   Lower exposure reduces dead_reckoning blur but produces a darker image.
+#   Higher exposure increases brightness but increases dead_reckoning blur.
 #
 # Gain:
 #   Higher gain brightens the image but increases noise.

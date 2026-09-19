@@ -70,8 +70,8 @@ def run(controller):
     power = power * voltage_multiplier
     power = min(power, CONFIG.motor_power_max)
 
-    left_power = power * CONFIG.motor_polarity[0]
-    right_power = power * CONFIG.motor_polarity[1]
+    left_power = power
+    right_power = power
 
     io.drive["front"].set_power(
         left=left_power,
@@ -144,10 +144,13 @@ def run(controller):
     power = power * voltage_multiplier
     power = min(power, CONFIG.motor_power_max)
 
-    direction = CONFIG.rotation_sign
+    # Canonical rotation convention:
+    # positive angle = left / counter-clockwise
+    # negative angle = right / clockwise
+    direction = 1.0 if angle_deg > 0 else -1.0
 
-    left_power = direction * power * CONFIG.motor_polarity[0]
-    right_power = -direction * power * CONFIG.motor_polarity[1]
+    left_power = -direction * power
+    right_power = direction * power
 
     io.drive["front"].set_power(
         left=left_power,

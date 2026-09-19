@@ -47,7 +47,6 @@ class MotorOutputConditioner:
 
     Current responsibilities:
 
-        - motor polarity
         - maximum motor power
 
     Future responsibilities may include:
@@ -57,7 +56,7 @@ class MotorOutputConditioner:
         - output normalization
         - e-stop gating
 
-    The conditioner does not decide what motion the robot should make.
+    The conditioner does not decide what dead_reckoning the robot should make.
     It only determines what motor output is permitted.
     """
 
@@ -78,22 +77,15 @@ class MotorOutputConditioner:
         Apply configured motor-output conditioning.
         """
 
-        polarity = self.cfg.motor_polarity
         power_max = float(self.cfg.motor_power_max)
-
-        # --------------------------------------------------
-        # Front motors
-        # --------------------------------------------------
 
         front_left = self._condition_motor(
             command.front_left,
-            polarity[0],
             power_max,
         )
 
         front_right = self._condition_motor(
             command.front_right,
-            polarity[1],
             power_max,
         )
 
@@ -105,28 +97,14 @@ class MotorOutputConditioner:
         rear_right = None
 
         if command.rear_left is not None:
-            if len(polarity) < 4:
-                raise RuntimeError(
-                    "Rear-left motor command supplied but "
-                    "CONFIG.motor_polarity has fewer than 4 entries."
-                )
-
             rear_left = self._condition_motor(
                 command.rear_left,
-                polarity[2],
                 power_max,
             )
 
         if command.rear_right is not None:
-            if len(polarity) < 4:
-                raise RuntimeError(
-                    "Rear-right motor command supplied but "
-                    "CONFIG.motor_polarity has fewer than 4 entries."
-                )
-
             rear_right = self._condition_motor(
                 command.rear_right,
-                polarity[3],
                 power_max,
             )
 
@@ -144,39 +122,19 @@ class MotorOutputConditioner:
 
     @staticmethod
     def _condition_motor(
-        power: float,
-        polarity: float,
-        power_max: float,
+            power: float,
+            power_max: float,
     ) -> float:
-        """
-        Apply polarity and final power clamp to one motor.
-        """
-
-        conditioned = float(power) * float(polarity)
 
         return max(
             -power_max,
-            min(power_max, conditioned),
+            min(power_max, float(power)),
         )
 
     def _validate_config(self) -> None:
         """
         Validate the minimum configuration required by the conditioner.
         """
-
-        polarity = self.cfg.motor_polarity
-
-        if len(polarity) not in (2, 4):
-            raise RuntimeError(
-                "CONFIG.motor_polarity must contain either "
-                "2 entries for 2WD or 4 entries for 4WD."
-            )
-
-        for value in polarity:
-            if value not in (-1, 1):
-                raise RuntimeError(
-                    "CONFIG.motor_polarity entries must be -1 or +1."
-                )
 
         power_max = float(self.cfg.motor_power_max)
 

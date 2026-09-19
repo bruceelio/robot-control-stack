@@ -1,4 +1,4 @@
-# primitives/motion/drive.py
+# primitives/dead_reckoning/drive.py
 
 from primitives.base import Primitive, PrimitiveStatus
 import time

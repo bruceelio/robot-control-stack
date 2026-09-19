@@ -139,7 +139,7 @@ class ReacquireTarget(Primitive):
             if now < self._settle_until:
                 return PrimitiveStatus.RUNNING
 
-            # settle finished — allow immediate reacquire before any further motion
+            # settle finished — allow immediate reacquire before any further dead_reckoning
             self._settle_until = None
             t = self._try_reacquire(perception=perception, now=now)
             if t is not None:

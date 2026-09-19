@@ -1,7 +1,7 @@
 from tools.tests.registry import register_test
 
 
-@register_test(category="motion", enabled=True)
+@register_test(category="dead_reckoning", enabled=True)
 def test_level2_drive(robot):
     """Visible movement test in simulator"""
     from level2.level2_canonical import Level2
@@ -14,7 +14,7 @@ def test_level2_drive(robot):
     lvl2.ROTATE(90)
     lvl2.ROTATE(-90)
 
-@register_test(category="motion", enabled=False)
+@register_test(category="dead_reckoning", enabled=False)
 def test_level2_lift(robot):
     """Visible lift up/down test in simulator"""
     from level2.level2_canonical import Level2

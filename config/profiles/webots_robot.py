@@ -165,7 +165,7 @@ DRIVE_TRACK_WIDTH_MM = 280      # estimated via sim protos
 MOTOR_POLARITY = [1, 1]
 MOTION_BACKEND = "timed"
 
-ROTATION_SIGN = 1
+
 
 # Base calibration
 BASE_ROTATE_FACTOR = 1.0
@@ -180,15 +180,15 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 
 # InitEscape
 INIT_ESCAPE_DRIVE_MM = 250
-INIT_ESCAPE_ROTATE_DEG = 36.0
+INIT_ESCAPE_ROTATE_DEG = -36.0
 
 # PostPickupRealign
 POST_PICKUP_REVERSE_MM = 120
-POST_PICKUP_ROTATE_DEG = 150.0
+POST_PICKUP_ROTATE_DEG = -150.0
 
 # PostDropoffRealign
 POST_DROPOFF_REVERSE_MM = 120
-POST_DROPOFF_ROTATE_DEG = 90
+POST_DROPOFF_ROTATE_DEG = -90
 
 # RecoverLocalisation
 RECOVER_STEP_DEG = 15.0
@@ -269,7 +269,7 @@ WALL_SCAN_ANGLE_2_DEG = 8.0
 # Number of samples taken at each scan angle (per side)
 WALL_SCAN_SAMPLES_PER_ANGLE = 3
 
-# Time to wait after rotation before sampling (sensor + motion settle)
+# Time to wait after rotation before sampling (sensor + dead_reckoning settle)
 WALL_SCAN_SETTLE_TIME_S = 0.10
 
 

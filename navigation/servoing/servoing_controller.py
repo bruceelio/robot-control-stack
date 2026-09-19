@@ -23,7 +23,7 @@ LINEAR_KP = 1.0
 ANGULAR_KP = 2.0
 
 # If the target is too far from straight ahead, rotate toward it
-# before commanding forward motion.
+# before commanding forward dead_reckoning.
 TARGET_ANGLE_DRIVE_CUTOFF_RAD = math.radians(60.0)
 
 STOP_DISTANCE_TOLERANCE_MM = 10.0
@@ -87,7 +87,7 @@ class ServoingController:
 
     This controller uses forward/reverse movement and rotation only.
 
-    It does not use lateral/strafe motion. A future mecanum-specific
+    It does not use lateral/strafe dead_reckoning. A future mecanum-specific
     servoing controller may provide lateral_y_mps independently.
 
     The controller is deliberately independent of localisation,

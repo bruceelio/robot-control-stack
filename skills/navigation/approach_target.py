@@ -268,7 +268,7 @@ class ApproachTarget(Primitive):
 
         self._dogleg_cooldown_until: Optional[float] = None
 
-        # After a motion+settle cycle, require a fresh camera observation
+        # After a dead_reckoning+settle cycle, require a fresh camera observation
         # before replanning. This prevents stale last_seen_* state from
         # causing repeated blind rotate/drive loops.
         self._require_fresh_obs_after_settle: bool = False

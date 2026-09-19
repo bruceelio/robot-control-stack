@@ -1,4 +1,4 @@
-# checkout/encoder_manager.py
+# hw_io/encoder_manager.py
 from __future__ import annotations
 
 from importlib import import_module
@@ -25,8 +25,13 @@ class EncoderManager:
         io.encoder[name] -> Encoder.update(...) -> signals.encoder[name]
     """
 
-    def __init__(self, encoder_assignments: dict[str, str] | None) -> None:
+    def __init__(
+        self,
+        encoder_assignments: dict[str, str] | None,
+        encoder_sign: dict[str, int] | None = None,
+    ) -> None:
         self.encoders: dict[str, Encoder] = {}
+        self.encoder_sign = encoder_sign or {}
 
         if not encoder_assignments:
             return
@@ -51,16 +56,24 @@ class EncoderManager:
             return
 
         for name, encoder in self.encoders.items():
-            if name not in io_encoders:
+            if name not in io_encoders.keys():
                 continue
 
             raw = io_encoders[name]
+            snapshot = raw.read()
+
+            sign = int(self.encoder_sign.get(name, 1))
+
+            if sign not in (-1, 1):
+                raise ValueError(
+                    f"Encoder {name!r} has invalid sign {sign}"
+                )
 
             signals.encoder[name] = encoder.update(
-                raw_count=raw.count,
-                timestamp_ms=raw.timestamp_ms,
-                source_valid=raw.valid,
-                valid_flags=raw.valid_flags,
+                raw_count=sign * int(snapshot["count"]),
+                timestamp_ms=snapshot["timestamp_ms"],
+                source_valid=snapshot["valid"],
+                valid_flags=snapshot["valid_flags"],
             )
 
     def reset(self, name: str | None = None) -> None:

@@ -1,4 +1,4 @@
-# checkout/encoder.py
+# checkout/odometry.py
 from __future__ import annotations
 
 from dataclasses import dataclass

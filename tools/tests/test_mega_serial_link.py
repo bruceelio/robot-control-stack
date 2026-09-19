@@ -79,7 +79,7 @@ def test_mega_serial_auto_basic():
 @register_test(category="hal", enabled=True, requires_robot=False)
 def test_mega_serial_drive_and_grip():
     """
-    Hardware-in-the-loop motion test using only hardware-native API.
+    Hardware-in-the-loop dead_reckoning test using only hardware-native API.
     """
     cfg = _mega_config()
 

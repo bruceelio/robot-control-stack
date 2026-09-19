@@ -8,7 +8,7 @@ from motion_backends.motor_output_conditioner import (
 
 class TimedMotionBackend:
     """
-    Timed (open-loop) motion backend.
+    Timed (open-loop) dead_reckoning backend.
 
     Uses:
         - resolved Config (policy, limits)
@@ -199,7 +199,7 @@ class TimedMotionBackend:
         """
         Timed backend is blocking.
 
-        When drive() or rotate() returns, motion is complete.
+        When drive() or rotate() returns, dead_reckoning is complete.
         """
         return False
 
@@ -365,19 +365,15 @@ class TimedMotionBackend:
         else:
             power = self.cal.rotate_power_large
 
-        motor_direction = (
-            self.cfg.rotation_sign
-            * direction
-        )
-
-        left = motor_direction * power
-        right = -motor_direction * power
+        # Canonical rotation convention:
+        #   positive angle = left / counter-clockwise
+        #   negative angle = right / clockwise
+        left = -direction * power
+        right = direction * power
 
         print(
             f"[TIMED] ROTATE logical={a:.1f}deg "
-            f"motor_sign={self.cfg.rotation_sign:+d} "
-            f"p={power:.2f} "
-            f"t={duration:.3f}s"
+            f"p={power:.2f} t={duration:.3f}s"
         )
 
         self._run(

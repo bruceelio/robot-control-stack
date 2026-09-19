@@ -73,7 +73,7 @@ class VelocityDiff2WD:
 
         if abs(command.lateral_y_mps) > 1e-9:
             raise ValueError(
-                "VelocityDiff2WD does not support lateral motion "
+                "VelocityDiff2WD does not support lateral dead_reckoning "
                 f"(lateral_y_mps={command.lateral_y_mps})."
             )
 
@@ -181,7 +181,7 @@ class VelocityDiff2WD:
         Requested velocities above the calibrated range are limited
         to the highest calibrated power rather than extrapolated.
 
-        Reverse motion uses the same curve with reversed sign.
+        Reverse dead_reckoning uses the same curve with reversed sign.
         """
 
         if abs(velocity_mm_s) < 1e-9:

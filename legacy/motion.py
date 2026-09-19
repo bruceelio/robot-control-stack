@@ -1,4 +1,4 @@
-# motion.py
+# dead_reckoning.py
 import math
 from config import drive_factor, rotate_factor, motor_polarity
 from calibration import drive_duration, rotate_duration

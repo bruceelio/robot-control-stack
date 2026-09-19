@@ -195,15 +195,15 @@ DRIVE_TRACK_WIDTH_MM = 380
 
 MOTOR_POLARITY = [1, 1]
 
-MOTION_BACKEND = "timed"
+MOTION_BACKEND = "odometry"     # "timed", "odometry"
 
-ROTATION_SIGN = 1
+
 MOTOR_POWER_MAX = 0.8
 
 
 
 
-# Generic motion command limits
+# Generic dead_reckoning command limits
 
 MIN_ROTATE_DEG = 2.0
 MAX_ROTATE_DEG = 180.0
@@ -249,14 +249,14 @@ INIT_ESCAPE_ROTATE_DEG = 0.0
 # -------------------------
 
 POST_PICKUP_REVERSE_MM = 120
-POST_PICKUP_ROTATE_DEG = 135
+POST_PICKUP_ROTATE_DEG = -135
 
 # -------------------------
 # Post-Dropoff Realignment
 # -------------------------
 
 POST_DROPOFF_REVERSE_MM = 120
-POST_DROPOFF_ROTATE_DEG = 90
+POST_DROPOFF_ROTATE_DEG = -90
 
 
 # -------------------------

@@ -1,4 +1,4 @@
-# motion/__init__.py
+# dead_reckoning/__init__.py
 
 from .drive import Drive
 from .rotate import Rotate

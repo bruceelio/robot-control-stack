@@ -79,7 +79,7 @@ class DeliverObject(Behavior):
                     print(f"[DELIVER_OBJECT] delivered id={self.delivered_target_id}")
                 return self.status
 
-        # Dispatch: motion primitives need motion_backend
+        # Dispatch: dead_reckoning primitives need motion_backend
         if isinstance(self.active_primitive, Drive):
             st = self.active_primitive.update(motion_backend=motion_backend)
         else:

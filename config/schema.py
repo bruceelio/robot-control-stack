@@ -57,7 +57,7 @@ class Config:
     motion_backend: str
     grab_distance_mm: float
     motor_polarity: list[int]
-    rotation_sign: int
+
 
     # Calibration
     rotate_factor: float
@@ -212,7 +212,7 @@ RESOLVE_MAP = {
     "motion_backend": ("profile", "MOTION_BACKEND"),
     "grab_distance_mm": ("profile", "GRAB_DISTANCE_MM"),
     "motor_polarity": ("profile", "MOTOR_POLARITY"),
-    "rotation_sign": ("profile", "ROTATION_SIGN"),
+
 
     # Calibration (computed)
     "rotate_factor": ("computed", "rotate_factor"),

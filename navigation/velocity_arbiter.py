@@ -41,7 +41,7 @@ class VelocityArbiter:
     Selects which navigation velocity command is passed to the
     velocity backend.
 
-    The arbiter does not calculate motion.
+    The arbiter does not calculate dead_reckoning.
 
     The active source is selected explicitly by the Navigation Arbiter.
     """

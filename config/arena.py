@@ -4,7 +4,7 @@
 Static arena geometry.
 
 Defines fixed world landmark positions.
-No robot state. No perception. No motion.
+No robot state. No perception. No dead_reckoning.
 """
 
 from enum import Enum

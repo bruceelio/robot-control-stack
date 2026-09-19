@@ -75,8 +75,8 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.STOPPING
 CHALLENGE = Challenge.SERVOING
 
-DEFAULT_TARGET_KIND = "acidic"
-# DEFAULT_TARGET_KIND = "basic"
+# DEFAULT_TARGET_KIND = "acidic"
+DEFAULT_TARGET_KIND = "basic"
 
 # =========================
 # Match / Starting Zone

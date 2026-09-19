@@ -137,7 +137,7 @@ def run(robot):
                 time.sleep(0.5)
                 continue
 
-            # Marker motion is opposite of robot motion
+            # Marker dead_reckoning is opposite of robot dead_reckoning
             marker_delta = normalize_angle_deg(b1 - b0)
             actual = normalize_angle_deg(-marker_delta)
             error = actual - cmd_angle

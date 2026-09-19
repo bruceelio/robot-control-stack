@@ -69,7 +69,7 @@ class Level2:
         Power remains applied until another DRIVE_POWER command
         or DRIVE_STOP is issued.
 
-        Used by continuous-control motion such as servoing and
+        Used by continuous-control dead_reckoning such as servoing and
         path tracking.
         """
         left_power = self._clip(left_power)
@@ -136,8 +136,9 @@ class Level2:
         Semantic rotation request.
 
         Angle is in degrees.
-        Positive = clockwise.
-        Execution is delegated to the motion backend.
+        Positive = counter-clockwise / left.
+        Negative = clockwise / right.
+        Execution is delegated to the dead_reckoning backend.
         """
         print(f"[Level2] ROTATE request angle={angle_deg}°")
 

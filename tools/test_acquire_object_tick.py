@@ -15,7 +15,7 @@ class P:
 
 class DummyMB:
     def rotate(self, angle_deg: float):
-        # SearchRotate -> primitives.motion.rotate.Rotate calls this
+        # SearchRotate -> primitives.dead_reckoning.rotate.Rotate calls this
         print(f"[DummyMB] rotate({angle_deg=})")
 
     def drive(self, distance_mm: float):

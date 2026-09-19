@@ -143,7 +143,7 @@ WALL_SCAN_ANGLE_2_DEG = 8.0
 # Number of samples taken at each scan angle (per side)
 WALL_SCAN_SAMPLES_PER_ANGLE = 3
 
-# Time to wait after rotation before sampling (sensor + motion settle)
+# Time to wait after rotation before sampling (sensor + dead_reckoning settle)
 WALL_SCAN_SETTLE_TIME_S = 0.10
 
 

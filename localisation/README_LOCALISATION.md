@@ -112,15 +112,15 @@ Current or expected examples include:
 
 ```text
 Vision
-OTOS
 startup pose
+OTOS        # future, when arena-referenced
 ```
 
 Vision derives pose from known arena landmarks.
 
-An appropriately configured OTOS may also provide an arena-referenced pose.
-
 The configured startup pose establishes the initial known pose before movement.
+
+An appropriately configured OTOS may later provide an arena-referenced pose.
 
 ---
 
@@ -130,12 +130,18 @@ These do not independently establish where the robot is in the arena.
 
 Instead they update an already known pose as the robot moves.
 
-Examples include:
+Current examples are:
 
 ```text
+drive-encoder odometry
 commanded motion
-wheel encoders / odometry
-IMU heading propagation
+```
+
+Future odometry sources may include:
+
+```text
+three deadwheels
+two deadwheels + IMU
 ```
 
 Conceptually:
@@ -144,8 +150,8 @@ Conceptually:
                  ABSOLUTE / CORRECTIVE
                 ┌─────────────────────┐
                 │ Vision              │
-                │ OTOS                │
                 │ Startup pose        │
+                │ OTOS (future)       │
                 └──────────┬──────────┘
                            |
                            v
@@ -154,15 +160,11 @@ Conceptually:
                            |
                 ┌──────────┴──────────┐
                 │                     │
-           Commanded motion       Encoders
-                                      |
-                                     IMU
+           Odometry family       Commanded motion
 ```
 
-This distinction is important.
-
 A propagated pose may be the best available estimate while absolute localisation is
-unavailable, but it should not be treated as a new independent absolute measurement.
+unavailable, but it must not be treated as a new independent absolute measurement.
 
 ---
 
@@ -181,10 +183,14 @@ Pose(
     x=...,
     y=...,
     heading=...,
+
     position_valid=...,
     heading_valid=...,
+
     source=...,
     timestamp=...,
+
+    covariance=...,
 )
 ```
 
@@ -203,6 +209,9 @@ heading but not x/y
 ```
 
 depending on the available sensors.
+
+`covariance` is optional. `None` means that the current pose does not have a usable
+covariance estimate; it does **not** mean zero uncertainty.
 
 ---
 
@@ -234,6 +243,7 @@ timestamp
 
 is_absolute
 
+covariance
 diagnostics
 ```
 
@@ -249,11 +259,12 @@ PoseObservation(
     heading_valid=True,
 
     confidence=0.8,
-    source="front:pnp:3tags",
+    source="apriltag_pnp",
     timestamp=...,
 
     is_absolute=True,
 
+    covariance=...,
     diagnostics={...},
 )
 ```
@@ -298,36 +309,19 @@ position_valid OR heading_valid
 
 # Confidence
 
-`confidence` is a numeric value from:
+`confidence` is currently a numeric value from:
 
 ```text
 0.0 to 1.0
 ```
 
-It expresses the provider's confidence in the observation.
+It is used by the present arbitration logic when selecting between otherwise suitable
+observations.
 
-Confidence is useful for selecting between observations of the **same general class**.
+Confidence does **not** make a propagated observation equivalent to an absolute
+measurement.
 
-For example:
-
-```text
-vision candidate A
-vs
-vision candidate B
-```
-
-or:
-
-```text
-propagation candidate A
-vs
-propagation candidate B
-```
-
-Confidence should not be interpreted as making a propagated pose equivalent to an
-absolute measurement.
-
-The architecture first distinguishes:
+The final arbitration logic first distinguishes:
 
 ```text
 absolute
@@ -335,11 +329,59 @@ vs
 propagated
 ```
 
-and then compares suitable candidates within that class.
+and only then compares suitable candidates within the selected class.
+
+Confidence is therefore a current arbitration mechanism, not a substitute for a proper
+uncertainty model.
 
 ---
 
-# Source
+# Covariance
+
+All pose observations are capable of carrying covariance.
+
+For global pose observations the ordering is:
+
+```text
+[x, y, heading]
+```
+
+with the current internal units:
+
+```text
+x, y        = millimetres
+heading     = radians
+
+var(x/y)    = mm²
+var(heading)= rad²
+```
+
+`None` means covariance has not been supplied or cannot currently be propagated
+correctly.
+
+The rule is:
+
+> **Do not invent covariance values simply to fill the field.**
+
+In particular, propagated odometry cannot simply copy robot-relative odometry
+covariance into world-frame pose covariance. Proper propagation requires the relevant
+coordinate transform / Jacobian and process-noise model.
+
+Current drive-encoder propagation therefore:
+
+```text
+reseed from accepted pose
+    -> preserve the accepted covariance while no motion occurs
+
+first actual propagated movement
+    -> covariance becomes None
+```
+
+until a proper propagation model is implemented.
+
+---
+
+# Source and Diagnostics
 
 Every observation carries a `source`.
 
@@ -347,26 +389,28 @@ The source is primarily for:
 
 - diagnostics;
 - logging;
-- understanding which localisation method is active;
+- understanding which localisation family is active;
 - comparing alternative providers.
 
-Examples may include:
+Family arbiters may expose a family-level source while preserving the selected child
+source in diagnostics.
+
+Current examples:
 
 ```text
-startup_config
+VisionArbiter output:
+    source = selected vision method
+    e.g. cam1_markers2 / apriltag_pnp
 
-front:markers2:2tags
-front:markers2:3tags
+OdometryArbiter output:
+    source = odometry
+    diagnostics["provider_source"] = drive_encoders
 
-front:pnp:1tag
-front:pnp:2tags
-front:pnp:3tags
-
-commanded_motion
+CommandedMotionProvider:
+    source = commanded_motion
 ```
 
-The source should describe the observation actually selected rather than hide it
-behind a generic name.
+The underlying source must not be lost even when a family-level name is exposed.
 
 ---
 
@@ -391,44 +435,61 @@ localisation pose observation
     may remain useful slightly longer
 ```
 
-These thresholds should therefore not automatically be forced to the same value.
+These thresholds should not automatically be forced to the same value.
 
 ---
 
-# Provider Architecture
+# Current Package Structure
 
-Providers implement the common localisation provider interface.
-
-Current structure is broadly:
+The active localisation structure is:
 
 ```text
 localisation/
-    README.md
+    README_LOCALISATION.md
     __init__.py
     localisation.py
     arbitration.py
     pose_types.py
+
+    fusion/
+        __init__.py
+        base.py
 
     providers/
         __init__.py
         base.py
 
         vision/
+            __init__.py
             vision_arbiter.py
             pose_cam1_markers2.py
             pose_apriltag_pnp.py
 
-        motion/
+        odometry/
+            __init__.py
+            base.py
+            odometry_arbiter.py
+            drive_encoders.py
+
+        dead_reckoning/
+            __init__.py
             commanded_motion.py
 ```
 
-Additional provider families can be added as hardware is introduced, for example:
+Robot-relative odometry measurement code is deliberately outside localisation:
 
 ```text
-odometry/
-otos/
-inertial/
+navigation/
+    odometry/
+        __init__.py
+        base.py
+        drive_encoders.py
+        three_deadwheel.py
 ```
+
+`navigation/odometry/three_deadwheel.py` currently proves the generic odometry
+abstraction and three-wheel kinematics, but it is not part of the active default
+localisation provider tree.
 
 Providers are organised by **evidence source**, not by robot.
 
@@ -442,7 +503,39 @@ bob_bot
 Student Robotics hardware
 ```
 
-Hardware differences belong below localisation.
+Hardware differences belong below localisation and in resolved configuration.
+
+---
+
+# Current Runtime Provider Tree
+
+The current default tree is:
+
+```text
+VisionArbiter -> vision
+    Cam1Markers2Provider -> cam1_markers2
+    AprilTagPnPPoseProvider -> apriltag_pnp
+
+OdometryArbiter -> odometry
+    DriveEncoderProvider -> drive_encoders
+
+CommandedMotionProvider -> commanded_motion
+
+        |
+        v
+    Arbitrator
+        |
+        v
+   Localisation
+```
+
+The final estimator is currently:
+
+```text
+Arbitrator
+```
+
+but `Localisation` accesses it through the generic `PoseEstimator` boundary.
 
 ---
 
@@ -464,7 +557,7 @@ VISION
 AprilTag observations
    |
    v
-vision localisation providers
+vision localisation methods
    |
    v
 PoseObservation
@@ -478,7 +571,7 @@ Known arena marker geometry is then used to infer robot pose.
 
 There may be more than one way to calculate pose from the same Vision observation.
 
-Current examples include:
+Current methods include:
 
 ```text
 markers2 geometry
@@ -494,7 +587,7 @@ VisionArbiter
 Conceptually:
 
 ```text
-                Vision message
+                one Vision message
                       |
           +-----------+-----------+
           |                       |
@@ -508,21 +601,33 @@ Conceptually:
             +---- VisionArbiter -+
                       |
                       v
-             best vision evidence
+             selected vision result
 ```
 
-The VisionArbiter chooses between available visual pose candidates.
+The current `VisionArbiter` is primarily **method selection for one Vision message**.
 
-It should preserve the selected observation's:
+It is not yet a complete multi-camera family arbiter.
+
+A future multi-camera structure would conceptually be:
 
 ```text
-source
-timestamp
-confidence
-validity
+front camera
+    -> pose-method selection
+    -> front camera pose
+
+rear camera
+    -> pose-method selection
+    -> rear camera pose
+
+front/rear camera poses
+    -> Vision family arbitration
+    -> one stable Vision result
 ```
 
-rather than replacing those values with artificial downstream information.
+That refactor is deliberately deferred until multiple camera pose sources are needed.
+
+The current VisionArbiter preserves the selected observation's measurement fields,
+including covariance.
 
 If the current Vision observation contains no usable localisation information,
 Vision should simply be unavailable for that cycle.
@@ -532,20 +637,263 @@ were current observations.
 
 ---
 
-# Final Localisation Arbitration
+# Generic Odometry Boundary
 
-The final arbitrator receives observations from the configured localisation providers.
+Robot-relative odometry implements the generic interface in:
+
+```text
+navigation/odometry/base.py
+```
+
+The minimal contract is:
+
+```python
+reset()
+read() -> OdometryDelta
+```
+
+`OdometryDelta` represents cumulative robot-relative movement since the last reset:
+
+```text
+forward_mm
+lateral_mm
+heading_rad
+covariance
+```
+
+Robot-relative sign convention:
+
+```text
++forward_mm = robot forward
++lateral_mm = robot left
++heading    = counter-clockwise / left turn
+```
+
+Sensor-specific diagnostics may provide additional methods, but those are not part of
+the generic `OdometrySource` contract.
+
+For example, drive encoders retain a drive-specific `check_consistency()` diagnostic
+without requiring every future odometry source to implement it.
+
+---
+
+# Generic Odometry Localisation Provider
+
+The localisation-side common implementation is:
+
+```text
+localisation/providers/odometry/base.py
+```
+
+with:
+
+```text
+OdometryPoseProvider
+```
+
+It handles the behaviour common to relative odometry providers:
+
+- reseeding from an accepted global pose;
+- owning an independent odometry source;
+- resetting the odometry baseline after reseed;
+- reading cumulative robot-relative movement;
+- applying only the increment since the previous update;
+- transforming robot-relative movement into world coordinates;
+- midpoint-heading integration;
+- publishing a propagated `PoseObservation`;
+- preserving covariance while stationary after reseed;
+- dropping covariance after movement until proper propagation exists.
+
+Concrete odometry providers therefore remain small sensor-specific adapters.
+
+---
+
+# Drive Encoder Odometry
+
+Drive-encoder odometry is the active measured propagation source on the current robot.
+
+The measurement layer is:
+
+```text
+navigation/odometry/drive_encoders.py
+    DriveEncoderOdometry
+```
+
+It owns its own `EncoderManager`, applies configured encoder signs and geometry, and
+returns robot-relative motion.
+
+For differential drive:
+
+```text
+forward_mm = (left_mm + right_mm) / 2
+
+heading_rad = (right_mm - left_mm) / track_width_mm
+
+lateral_mm = 0
+```
+
+The localisation adapter is:
+
+```text
+localisation/providers/odometry/drive_encoders.py
+    DriveEncoderProvider
+```
+
+`DriveEncoderProvider` is intentionally thin. It selects/configures
+`DriveEncoderOdometry`; generic pose integration is inherited from
+`OdometryPoseProvider`.
+
+The localisation provider owns an **independent** odometry source.
+
+It must not share the motion backend's odometry object because motion primitives reset
+their own baseline independently.
+
+---
+
+# OdometryArbiter
+
+Odometry sources are grouped behind:
+
+```text
+OdometryArbiter
+```
+
+Current:
+
+```text
+DriveEncoderProvider
+        |
+        v
+OdometryArbiter
+        |
+        v
+family odometry result
+```
+
+Future:
+
+```text
+DriveEncoderProvider ------\
+ThreeDeadwheelProvider -----+--> OdometryArbiter
+TwoDeadwheelImuProvider ----/
+```
+
+Usually a robot will have only one active odometry implementation.
+
+The family arbiter still provides a stable architectural boundary so the rest of
+localisation does not depend on which odometry hardware is installed.
+
+The family rule is:
+
+```text
+0 valid sources -> no odometry observation
+1 valid source  -> use it
+>1 valid        -> keep the currently selected valid source
+                   and switch only when necessary
+```
+
+The arbiter should not chatter between nearly equivalent sources because one confidence
+value changes slightly.
+
+The selected child information is preserved, including:
+
+```text
+measurement
+timestamp
+validity
+confidence
+covariance
+underlying provider source
+diagnostics
+```
+
+---
+
+# Three-Deadwheel Support
+
+Three-deadwheel kinematics have been implemented at the generic navigation-odometry
+layer.
+
+The tested layout is conceptually:
+
+```text
+left parallel wheel
+right parallel wheel
+perpendicular / lateral wheel
+```
+
+It produces:
+
+```text
+forward_mm
+lateral_mm
+heading_rad
+```
+
+including correction for rotation-induced movement at an offset perpendicular wheel.
+
+This currently exists to prove the generic odometry abstraction.
+
+It is **not** registered in the default localisation provider tree and should not gain
+robot-specific configuration until a robot actually uses three deadwheels.
+
+The same principle applies to future two-deadwheel + IMU odometry: implement it when
+the hardware is actually needed, not merely to fill out the architecture.
+
+---
+
+# Final PoseEstimator Boundary
+
+`Localisation` does not directly require a particular final estimation algorithm.
+
+The boundary is:
+
+```text
+family providers / arbiters
+          |
+          v
+     PoseEstimator
+          |
+          v
+      Localisation
+```
+
+The default factory currently creates:
+
+```text
+Arbitrator
+```
+
+so present behaviour remains simple and understandable.
+
+In future the default estimator can become:
+
+```text
+EKF
+other fusion estimator
+```
+
+without changing the public responsibility of `Localisation`.
+
+For compatibility with older callers, `Localisation.arbitrator` currently aliases the
+active estimator.
+
+---
+
+# Current Final Arbitration
+
+The current final estimator receives family-level and fallback observations.
 
 Conceptually:
 
 ```text
-VisionArbiter --------\
-                       \
-OTOS -------------------> Localisation Arbitrator
-                         /
-Commanded Motion -------/
-                       /
-Encoders --------------/
+VisionArbiter -----------\
+                          \
+OdometryArbiter -----------> Arbitrator
+                            /
+CommandedMotionProvider ---/
+                          /
+OTOS (future) -----------/
 ```
 
 The current policy is intentionally simple:
@@ -554,10 +902,13 @@ The current policy is intentionally simple:
 2. reject stale observations;
 3. reject invalid confidence values;
 4. separate absolute and propagated observations;
-5. if an absolute observation is available, use the absolute class;
+5. if any usable absolute observation is available, use the absolute class;
 6. otherwise use propagation;
-7. within the selected class, prefer the highest-confidence observation;
+7. within the selected class, prefer the highest-confidence suitable observation;
 8. use freshness as a secondary preference where necessary.
+
+Therefore an available absolute Vision observation currently takes precedence over
+odometry or commanded motion even if the propagated source reports a higher confidence.
 
 Conceptually:
 
@@ -575,10 +926,10 @@ candidates candidates
    +---+---+
        |
        v
-highest suitable confidence
+selected observation
        |
        v
-current pose
+current Pose
 ```
 
 ---
@@ -593,20 +944,23 @@ When a new **absolute** pose is accepted:
 absolute correction
         |
         v
-current pose
+current Pose
         |
         v
 reseed propagation providers
 ```
 
-For example:
+Current propagated sources include:
 
 ```text
-Vision fix
-    |
-    v
-CommandedMotion reseeded
+OdometryArbiter
+    -> DriveEncoderProvider
+
+CommandedMotionProvider
 ```
+
+For the drive-encoder provider, reseeding establishes a new global pose and causes its
+own odometry baseline to be reset on the next observation.
 
 This prevents accumulated propagation drift from surviving a good absolute correction.
 
@@ -614,24 +968,22 @@ This prevents accumulated propagation drift from surviving a good absolute corre
 
 ## Propagation Must Not Reseed Itself
 
-A propagated observation must be allowed to continue accumulating motion.
+A propagated observation must be allowed to continue accumulating movement.
 
 Therefore:
 
-> **Propagated observations must not cause the propagation providers to be reseeded from their own output.**
-
-Otherwise the final fraction of an active movement can be lost.
+> **Propagated observations must not cause propagation providers to be reseeded from their own output.**
 
 Correct behaviour:
 
 ```text
-Vision / OTOS
+Vision / future arena-referenced OTOS
     |
     | absolute correction
     v
 RESEED propagation
 
-Commanded Motion / Encoders
+Odometry / Commanded Motion
     |
     | propagated estimate
     v
@@ -645,8 +997,14 @@ establish a new known pose.
 
 # Commanded Motion Provider
 
-`commanded_motion.py` provides temporary pose propagation based on the motion the robot
-was instructed to perform.
+The fallback provider is:
+
+```text
+localisation/providers/dead_reckoning/commanded_motion.py
+```
+
+It provides temporary pose propagation based on the motion the robot was instructed to
+perform.
 
 It does not measure actual wheel movement.
 
@@ -662,37 +1020,26 @@ rather than:
 absolute pose
 ```
 
-The motion backend informs localisation when a timed drive or rotation begins.
+The motion stack informs localisation when a timed drive or rotation begins.
 
 For example:
 
 ```text
-BEGIN_DRIVE
-distance
-duration
-start time
-```
-
-or:
-
-```text
-BEGIN_ROTATE
-angle
-duration
-start time
+begin_commanded_drive(...)
+begin_commanded_rotate(...)
 ```
 
 The provider advances the estimated pose as the command progresses.
 
-This gives localisation a useful temporary estimate when absolute Vision is
-unavailable.
+This remains useful as a fallback when measured odometry is unavailable.
+
+Measured drive-encoder odometry is normally the better propagation source when valid.
 
 ---
 
 # Commanded Motion Limitations
 
-Commanded motion assumes that commanded movement approximately matches physical
-movement.
+Commanded motion assumes commanded movement approximately matches physical movement.
 
 Real robots introduce:
 
@@ -705,54 +1052,20 @@ Real robots introduce:
 
 Commanded motion is therefore expected to drift.
 
-It is a fallback / propagation source, not a replacement for measured localisation.
+It is a fallback propagation source, not a replacement for measured localisation.
 
----
-
-## Small Rotations
-
-Very small commanded rotations are intentionally not necessarily propagated into the
-localisation estimate.
-
-The physical robot showed that repeated small rotation estimates could accumulate
-significant heading error.
-
-The robot may therefore physically execute a small turn while commanded-motion
-localisation deliberately ignores that turn.
-
-This is a localisation policy, not a motor-control limitation.
-
----
-
-# Future Encoder Integration
-
-Encoders belong naturally on the propagation side of the architecture.
-
-They measure actual wheel movement and should therefore eventually provide better
-motion information than commanded motion.
-
-Conceptually:
-
-```text
-current pose
-    |
-    +---- commanded motion
-    |
-    +---- wheel encoders
-    |
-    +---- IMU
-```
-
-Encoders still do not independently establish the global arena pose.
-
-They propagate an existing pose.
+Very small commanded rotations may also be deliberately excluded from commanded-motion
+propagation where experience shows the estimate is less trustworthy than ignoring the
+small command.
 
 ---
 
 # OTOS
 
-OTOS differs from ordinary wheel odometry because it may provide a direct pose
-estimate when correctly referenced to the arena frame.
+OTOS is not currently an active provider.
+
+It differs from ordinary wheel odometry because it may provide a direct pose estimate
+when correctly referenced to the arena frame.
 
 Where configured as an arena-referenced pose source it belongs on the
 absolute/corrective side:
@@ -762,7 +1075,9 @@ Vision
 OTOS
 ```
 
-rather than being treated as just another competing dead-reckoning estimate.
+rather than being treated automatically as just another dead-reckoning source.
+
+Implementation should wait until the actual hardware/reference behaviour is known.
 
 ---
 
@@ -787,13 +1102,14 @@ get_start_pose(...)
 localisation.set_pose(...)
         |
         v
-initial current pose
+initial current Pose
         |
         v
 reseed propagation providers
 ```
 
-This provides the initial reference from which motion propagation can begin.
+This provides the initial reference from which odometry and commanded-motion
+propagation can begin.
 
 ---
 
@@ -801,34 +1117,48 @@ This provides the initial reference from which motion propagation can begin.
 
 Arena coordinates use a fixed world frame.
 
-The intended field convention is:
+The established localisation convention is:
 
 ```text
 heading 0°     = +X
 heading +90°   = +Y
-positive angle = counter-clockwise
+positive angle = counter-clockwise / left
 ```
 
-All localisation providers should ultimately express pose using the same convention.
-
-Motor/rotation command sign conventions are a separate issue.
-
-The motion stack still needs a final audit so that:
+Robot-relative odometry uses:
 
 ```text
-positive commanded rotation
++forward = robot forward
++lateral = robot left
++heading = counter-clockwise / left
 ```
 
-is consistently interpreted as:
+The motion stack has also been physically checked so that:
 
 ```text
-counter-clockwise
+rotate(+angle)
 ```
 
-throughout the complete stack.
+means:
 
-Do not change localisation coordinate conventions merely to compensate for a
-motor-command sign mismatch.
+```text
+left / counter-clockwise
+```
+
+and:
+
+```text
+rotate(-angle)
+```
+
+means:
+
+```text
+right / clockwise
+```
+
+Detector/control bearing conventions may differ; conversions must happen at the
+appropriate boundary rather than changing the localisation coordinate convention.
 
 ---
 
@@ -878,7 +1208,7 @@ Neither should own the other's job.
 
 # Runtime Flow
 
-The normal runtime concept is:
+The current runtime concept is:
 
 ```text
 Controller tick
@@ -890,23 +1220,34 @@ obtain current Vision message
       |                          |
       v                          v
  Perception                 Localisation
-      |                          |
-objects/targets              pose providers
+                                 |
+                    +------------+-------------+
+                    |                          |
+                    v                          v
+              VisionArbiter             OdometryArbiter
+                    |                          |
+                    |                    DriveEncoderProvider
+                    |                          |
+                    +------------+-------------+
+                                 |
+                     CommandedMotionProvider
                                  |
                                  v
-                         VisionArbiter
+                           PoseEstimator
                                  |
-                                 v
-                     Localisation Arbitrator
+                       currently Arbitrator
                                  |
                                  v
                            current Pose
 ```
 
-Motion commands separately feed propagation providers:
+The exact call structure need not mirror this diagram line-for-line; it shows ownership
+and evidence flow.
+
+Motion commands separately inform the commanded-motion fallback:
 
 ```text
-Motion Backend
+Motion stack
       |
       +---- begin_commanded_drive(...)
       |
@@ -915,6 +1256,9 @@ Motion Backend
                  v
           CommandedMotionProvider
 ```
+
+Measured odometry reaches localisation through semantic IO and its independent
+`DriveEncoderOdometry` instance.
 
 ---
 
@@ -931,7 +1275,9 @@ The localisation package should not contain:
 - target approach policy;
 - motor PWM;
 - servo control;
-- competition strategy.
+- competition strategy;
+- robot-specific encoder pin assignments;
+- robot-specific odometry geometry embedded directly in algorithms.
 
 Those responsibilities belong elsewhere.
 
@@ -939,68 +1285,108 @@ Those responsibilities belong elsewhere.
 
 # Current Design Status
 
-The current architecture supports:
+The current architecture now supports:
 
 - configured startup pose;
 - independent position and heading validity;
-- multiple localisation providers;
+- `Pose` covariance;
+- `PoseObservation` covariance;
+- multiple localisation provider families;
 - multiple visual localisation methods;
-- vision-level arbitration;
-- final absolute-vs-propagated arbitration;
+- Vision-level method arbitration;
+- generic robot-relative `OdometrySource`;
+- generic `OdometryPoseProvider`;
+- measured drive-encoder pose propagation;
+- independent localisation odometry state;
+- `OdometryArbiter` family boundary;
 - commanded-motion fallback;
+- final absolute-vs-propagated arbitration;
 - provider reseeding from absolute corrections;
+- covariance preservation through family/final selection where available;
+- a generic `PoseEstimator` boundary;
 - simulation and physical robots using the same localisation architecture.
 
-Planned additions include:
+The current default provider tree is:
 
-- encoder-based propagation;
+```text
+VisionArbiter
+    Cam1Markers2Provider
+    AprilTagPnPPoseProvider
+
+OdometryArbiter
+    DriveEncoderProvider
+
+CommandedMotionProvider
+```
+
+The current default final estimator is:
+
+```text
+Arbitrator
+```
+
+Deferred until there is a concrete hardware or performance need:
+
+- three-deadwheel localisation provider registration/configuration;
+- two-deadwheel + IMU odometry;
 - OTOS integration;
-- IMU support;
-- stronger uncertainty modelling;
-- multi-camera localisation;
-- eventual EKF-based sensor fusion.
+- multi-camera family arbitration;
+- proper covariance propagation/process-noise models;
+- EKF or other sensor fusion.
 
 ---
 
-# Future EKF Direction
+# Future Fusion Direction
 
-The current provider/arbitration architecture is intentionally understandable and
-useful while the robot has relatively few localisation sensors.
+The family boundaries remain useful even after simple final arbitration is replaced.
 
-As measured motion sources are added:
-
-```text
-encoders
-IMU
-OTOS
-multiple cameras
-```
-
-an Extended Kalman Filter may become the more natural fusion architecture.
-
-In that future model:
+The intended long-term structure is:
 
 ```text
-absolute sources
-    -> pose measurements + covariance
-
-propagation sensors
-    -> motion / velocity / delta measurements + covariance
+individual sensor / method providers
+            |
+            v
+       FAMILY ARBITERS
+            |
+            v
+      FUSION ESTIMATOR
+       (EKF or similar)
+            |
+            v
+      Localisation Pose
 ```
 
-The current distinction between:
+Conceptually:
 
 ```text
-absolute correction
+vision methods/cameras
+        |
+        v
+   Vision family result ----\
+
+odometry implementations ----> Fusion
+        |                     /
+        v                    /
+  Odometry family result ---/
+
+OTOS ----------------------/
+
+Dead reckoning -----------/
 ```
 
-and:
+Fusion should normally consume one result from each family rather than every correlated
+child measurement independently.
 
-```text
-pose propagation
-```
+For example, PnP and marker triangulation derived from the same camera frame are
+correlated. Feeding both independently into a future EKF as though they were unrelated
+measurements would overstate the available information.
 
-is therefore important even if the final implementation later moves to an EKF.
+Likewise, if a future odometry provider already incorporates IMU heading, the same IMU
+should not automatically be fed independently again without accounting for that
+correlation.
+
+The current family arbiters therefore remain part of the long-term design rather than
+being temporary code to discard when fusion arrives.
 
 ---
 
@@ -1010,18 +1396,25 @@ Localisation has one central responsibility:
 
 > **Maintain the best available estimate of the robot's pose in the arena.**
 
-The architecture is:
+The current architecture is:
 
 ```text
-absolute sources establish/correct pose
-                +
-propagation sources carry pose between corrections
-                |
-                v
-        Localisation Arbitrator
-                |
-                v
-           current Pose
+          Vision methods
+               |
+               v
+          VisionArbiter
+               |
+               |
+Drive encoders -> OdometryArbiter
+               |
+Commanded motion
+               |
+               v
+          PoseEstimator
+      currently Arbitrator
+               |
+               v
+          current Pose
 ```
 
 The most important design rules are:
@@ -1033,6 +1426,11 @@ The most important design rules are:
 5. Absolute and propagated observations are different classes of evidence.
 6. Absolute corrections reseed propagation.
 7. Propagation must not reseed itself.
-8. Hardware-specific details do not belong in localisation.
-9. All providers use one common arena coordinate convention.
-10. The architecture should remain suitable for eventual EKF-based fusion.
+8. Robot-relative odometry uses a generic `reset()/read()` boundary.
+9. Odometry family selection is separate from global pose estimation.
+10. Hardware-specific details do not belong in localisation algorithms.
+11. All providers use one common arena coordinate convention.
+12. Covariance is optional and must never be invented.
+13. Family arbiters preserve the selected provider's information.
+14. `Localisation` depends on the `PoseEstimator` boundary, not directly on a future-specific fusion implementation.
+15. The current simple `Arbitrator` can later be replaced by fusion without restructuring the whole package.
