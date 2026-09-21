@@ -26,6 +26,10 @@ class Config:
     drive_layout: str
     wheel_type: str
     drive_track_width_mm: float
+    gripper_mount: dict
+    gripper_from_camera: dict
+    gripper_open_position: float
+    gripper_grab_position: float
 
     io: dict[str, str | None]
 
@@ -36,8 +40,7 @@ class Config:
     encoder_sign: dict
     encoder_wheel_diameter_mm: dict
     camera_mounts: dict
-    gripper_mount: dict
-    gripper_from_camera: dict
+
 
     # Servoing
     servoing_enabled: bool
@@ -193,6 +196,8 @@ RESOLVE_MAP = {
     "camera_mounts": ("profile", "CAMERA_MOUNTS"),
     "gripper_mount": ("profile", "GRIPPER_MOUNT"),
     "gripper_from_camera": ("computed", "gripper_from_camera"),
+    "gripper_open_position": ("profile", "GRIPPER_OPEN_POSITION"),
+    "gripper_grab_position": ("profile", "GRIPPER_GRAB_POSITION"),
 
     # Servoing
     "servoing_enabled": ("profile", "SERVOING_ENABLED"),

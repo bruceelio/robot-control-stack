@@ -12,6 +12,31 @@ from config import CONFIG
 from perception.vision.detection_pipeline import build_vision_message
 from hw_io.cameras.resolve import resolve_camera
 
+from queue import Empty, Full
+
+def _publish_latest(output_queue: Queue, message: dict) -> None:
+    """
+    Publish latest vision state without ever blocking the vision worker.
+
+    If the one-slot queue already contains an old message, discard it.
+    If a multiprocessing queue race prevents replacement immediately,
+    drop this publication rather than stall camera processing.
+    """
+    try:
+        output_queue.put_nowait(message)
+        return
+    except Full:
+        pass
+
+    try:
+        output_queue.get_nowait()
+    except Empty:
+        pass
+
+    try:
+        output_queue.put_nowait(message)
+    except Full:
+        pass
 
 def run_vision_worker(
     *,
@@ -27,7 +52,7 @@ def run_vision_worker(
     It owns the camera backend for camera_name.
     """
     camera = None
-    output_queue.put({
+    _publish_latest(output_queue, {
         "camera": camera_name,
         "timestamp": time.time(),
         "detections": [],
@@ -48,14 +73,12 @@ def run_vision_worker(
         camera_profile = camera_config["profile"]
         camera_device = camera_config["device"]
 
-        output_queue.put({
+        _publish_latest(output_queue, {
             "camera": camera_name,
             "timestamp": time.time(),
             "detections": [],
             "markers": [],
-            "status": "profile_resolved",
-            "camera_profile": camera_profile,
-            "camera_device": camera_device,
+            "status": "worker_started",
         })
 
         print(f"[VISION_WORKER] starting camera={camera_name}", flush=True)
@@ -118,13 +141,7 @@ def run_vision_worker(
                 }
 
             # Latest-only behaviour: remove old queued messages.
-            try:
-                while not output_queue.empty():
-                    output_queue.get_nowait()
-            except Exception:
-                pass
-
-            output_queue.put(vision_message)
+            _publish_latest(output_queue, vision_message)
 
     finally:
         if camera is not None and hasattr(camera, "close"):

@@ -15,43 +15,93 @@ def resolve_io(*, robot, camera_manager=None) -> IOMap:
 
     from config import CONFIG
 
-    backends = required_backends(CONFIG.io)
-    print(f"[IO RESOLVE] required backends={backends}")
+    backend_names = required_backends(CONFIG.io)
 
-    # Temporary limitation during migration:
-    # currently each robot must resolve to one backend.
-    if len(backends) != 1:
+    print(
+        f"[IO RESOLVE] required backends={backend_names}"
+    )
+
+    if not backend_names:
         raise RuntimeError(
-            f"Expected exactly one IO backend, got {backends}"
+            "Robot configuration does not define any IO backends"
         )
 
-    backend = backends[0]
+    # --------------------------------------------------
+    # Build requested backends
+    # --------------------------------------------------
 
-    # Student Robotics 2026 Webots simulation.
-    # Uses the SR robot3 API, but has simulator-specific hardware mappings.
-    if backend == "sr2026sim":
-        from hw_io.hw_sr2026sim import SR2026SimIO
-        return SR2026SimIO(robot)
+    resolved = {}
 
-    # Physical Student Robotics 2026 hardware.
-    if backend == "sr2026":
-        from hw_io.hw_sr2026 import SR2026IO
-        return SR2026IO(robot)
+    for backend_name in backend_names:
 
-    if backend == "mega2560":
-        from hw_io.hw_mega2560 import Mega2560IO
-        return Mega2560IO(
-            robot,
-            camera_manager=camera_manager,
+        if backend_name == "sr2026sim":
+            from hw_io.hw_sr2026sim import SR2026SimIO
+
+            resolved[backend_name] = SR2026SimIO(robot)
+            continue
+
+        if backend_name == "sr2026":
+            from hw_io.hw_sr2026 import SR2026IO
+
+            resolved[backend_name] = SR2026IO(robot)
+            continue
+
+        if backend_name == "mega2560":
+            from hw_io.hw_mega2560 import Mega2560IO
+
+            resolved[backend_name] = Mega2560IO(
+                robot,
+                camera_manager=camera_manager,
+            )
+            continue
+
+        if backend_name == "mega2560alt":
+            from hw_io.hw_mega2560alt import Mega2560AltIO
+
+            resolved[backend_name] = Mega2560AltIO(
+                robot,
+                camera_manager=camera_manager,
+            )
+            continue
+
+        if backend_name == "pi":
+            from hw_io.hw_pi import PiBackend
+
+            resolved[backend_name] = PiBackend(
+                robot=robot,
+                camera_manager=camera_manager,
+            )
+            continue
+
+        raise RuntimeError(
+            f"No IO backend implementation for "
+            f"{backend_name!r}"
         )
 
-    if backend == "mega2560alt":
-        from hw_io.hw_mega2560alt import Mega2560AltIO
-        return Mega2560AltIO(
-            robot,
-            camera_manager=camera_manager,
-        )
+    # --------------------------------------------------
+    # Preserve existing single-backend behaviour
+    # --------------------------------------------------
 
-    raise RuntimeError(
-        f"No IOMap implementation for backend={backend!r}"
+    if len(resolved) == 1:
+        backend_name = backend_names[0]
+
+        # PiBackend is deliberately only a partial backend,
+        # so it must still be wrapped if ever used alone.
+        if backend_name != "pi":
+            return resolved[backend_name]
+
+    # --------------------------------------------------
+    # Multiple backends
+    # --------------------------------------------------
+
+    from hw_io.composite import CompositeIO
+
+    print(
+        f"[IO RESOLVE] composing backends="
+        f"{backend_names}"
+    )
+
+    return CompositeIO(
+        backends=resolved,
+        io_config=CONFIG.io,
     )

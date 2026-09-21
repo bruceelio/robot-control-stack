@@ -79,6 +79,10 @@ struct EncoderSnapshot;
 #define ENABLE_DEADWHEEL_ENCODERS  0
 #define ENABLE_SHOOTER_ENCODER     0
 
+#define ENABLE_BATTERY_MONITOR     1
+#define ENABLE_INDICATORS          1
+#define ENABLE_SENSORS             1
+
 // =========================================================
 // PIN ASSIGNMENTS
 // =========================================================
@@ -231,15 +235,6 @@ static const int GRIP_RIGHT_CLOSED_US   = 800;
 static const int LIFT_DOWN_US           = 800;
 static const int LIFT_UP_US             = 2250;
 
-// ------------------------- BATTERY INPUT -----------------
-static const char BATTERY_VOLTAGE_PIN[] = "A0"; // update if/when battery source changes
-
-static const float BATTERY_DIVIDER_RATIO = 5.0f; // your code already assumes A0 volts * 5
-
-static const float BATTERY_LOW_WARN_V       = 12.0f;
-static const float BATTERY_CRITICAL_WARN_V  = 11.5f;
-static const float BATTERY_SHUTDOWN_NOW_V   = 11.0f;
-
 // ------------------------- SYSTEM ------------------------
 static const char DEVICE_ID[] = "MEGA_AUX_1";
 static const unsigned long PI_HEARTBEAT_TIMEOUT_MS = 86400000UL; // 24 hours; (500 ms)
@@ -362,53 +357,6 @@ float normalize(int val) {
   return (float)(val - dead_max) / (float)(100 - dead_max);
 }
 
-// =========================================================
-// BATTERY VOLTAGE LOW PIEZO ALARM
-// =========================================================
-
-float readBatteryVoltage() {
-  int raw = analogRead(PIN_VOLTAGE_BATTERY);
-  float sensorVolts = raw * (5.0f / 1023.0f);
-  return sensorVolts * BATTERY_DIVIDER_RATIO;
-}
-
-void updateBatteryAlarm() {
-  static unsigned long lastBeepMs = 0;
-  static bool beepOn = false;
-
-  float v = readBatteryVoltage();
-  unsigned long now = millis();
-
-  if (v <= BATTERY_SHUTDOWN_NOW_V) {
-    tone(PIN_PIEZO_BUZZER, 2200);   // continuous alarm
-    stopDrive();
-    writeShooterMotor(0.0f);
-    writeCollectorMotor(0.0f);
-    return;
-  }
-
-  if (v <= BATTERY_CRITICAL_WARN_V) {
-    if (now - lastBeepMs >= 200) {  // fast beep
-      lastBeepMs = now;
-      beepOn = !beepOn;
-      if (beepOn) tone(PIN_PIEZO_BUZZER, 2200);
-      else noTone(PIN_PIEZO_BUZZER);
-    }
-    return;
-  }
-
-  if (v <= BATTERY_LOW_WARN_V) {
-    if (now - lastBeepMs >= 800) {  // slow beep
-      lastBeepMs = now;
-      beepOn = !beepOn;
-      if (beepOn) tone(PIN_PIEZO_BUZZER, 1800);
-      else noTone(PIN_PIEZO_BUZZER);
-    }
-    return;
-  }
-
-  noTone(PIN_PIEZO_BUZZER);
-}
 
 // =========================================================
 // ROBOCLAW
@@ -675,41 +623,6 @@ void updateShooterFeedFromIbus() {
   }
 }
 
-
-// =========================================================
-// READ HELPERS
-// =========================================================
-
-int readDigitalPin(uint8_t pin) {
-  return digitalRead(pin);
-}
-
-long readAnalogSource(const char *name) {
-  // Current implementation supports A0..A15 or numeric strings.
-  if (name[0] == 'A' || name[0] == 'a') {
-    int idx = atoi(name + 1);
-    return analogRead(idx);
-  }
-
-  int pin = atoi(name);
-  return analogRead(pin);
-}
-
-long readRangePair(uint8_t trigPin, uint8_t echoPin) {
-  digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
-  digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(trigPin, LOW);
-
-  long duration = pulseIn(echoPin, HIGH, 30000UL); // timeout ~30ms
-  if (duration <= 0) return -1;
-
-  // Distance in mm (approx): duration_us * 0.1715
-  long distanceMm = (long)(duration * 0.1715f);
-  return distanceMm;
-}
-
 // =========================================================
 // PI SERIAL CONTROL
 // =========================================================
@@ -787,6 +700,24 @@ void handlePiCommand(char *line) {
 
 #if ENABLE_ENCODERS
   if (handleEncoderCommand(line)) {
+    return;
+  }
+#endif
+
+#if ENABLE_BATTERY_MONITOR
+  if (handleBatteryCommand(line)) {
+    return;
+  }
+#endif
+
+#if ENABLE_INDICATORS
+  if (handleIndicatorCommand(line)) {
+    return;
+  }
+#endif
+
+#if ENABLE_SENSORS
+  if (handleSensorCommand(line)) {
     return;
   }
 #endif
@@ -1172,58 +1103,12 @@ if (strncmp(line, "FRONT_ROUTE ", 12) == 0) {
     }
   }
 
-  // LED lisiparoi WRITE brightness=<value>
-  char ledName[32];
-  char ledBrightnessText[32];
-
-  if (sscanf(line, "LED %31s WRITE brightness=%31s", ledName, ledBrightnessText) == 2) {
-    if (strcmp(ledName, "lisiparoi") == 0) {
-      float brightness = constrain(atof(ledBrightnessText), 0.0f, 1.0f);
-      int pwmValue = (int)(brightness * 255.0f);
-
-      analogWrite(PIN_LED_LISIPAROI_PWM, pwmValue);
-
-      PI_SERIAL.print("OK LED lisiparoi brightness=");
-      PI_SERIAL.println(brightness, 4);
-      return;
-    }
-
-    PI_SERIAL.print("ERR LED ");
-    PI_SERIAL.println(ledName);
-    return;
-  }
-
   // READ DI 26
   // READ AI A1
   // READ LIMIT lift_high
   // READ QUAD 22 23
   // READ RANGE 2 3
 
-  // VOLTAGE battery READ
-  char voltageName[32];
-  char voltageCmd[32];
-
-  if (sscanf(line, "VOLTAGE %31s %31s", voltageName, voltageCmd) == 2) {
-
-    if (strcmp(voltageName, "battery") == 0 &&
-        strcmp(voltageCmd, "READ") == 0) {
-
-      int raw = readAnalogSource(BATTERY_VOLTAGE_PIN);
-
-      float sensorVolts = raw * (5.0f / 1023.0f);
-      float batteryVolts = sensorVolts * 5.0f;
-
-      PI_SERIAL.print("OK VOLTAGE battery volts=");
-      PI_SERIAL.println(batteryVolts, 2);
-      return;
-    }
-
-    PI_SERIAL.print("ERR VOLTAGE ");
-    PI_SERIAL.print(voltageName);
-    PI_SERIAL.print(" ");
-    PI_SERIAL.println(voltageCmd);
-    return;
-  }
 
   char rkind[16];
   char a1[32];
@@ -1231,41 +1116,7 @@ if (strncmp(line, "FRONT_ROUTE ", 12) == 0) {
   int count = sscanf(line, "READ %15s %31s %31s", rkind, a1, a2);
 
   if (count >= 2) {
-    if (strcmp(rkind, "DI") == 0) {
-      replyValue("DI", readDigitalPin((uint8_t)atoi(a1)));
-      return;
-    }
 
-    if (strcmp(rkind, "AI") == 0) {
-      replyValue("AI", readAnalogSource(a1));
-      return;
-    }
-
-    if (strcmp(rkind, "BATTERY") == 0) {
-      if (strcmp(a1, "voltage") == 0) {
-        replyValue("BATTERY", readAnalogSource(BATTERY_VOLTAGE_PIN));
-        return;
-      }
-    }
-
-    if (strcmp(rkind, "LIMIT") == 0) {
-      if (strcmp(a1, "lift_high") == 0) {
-        replyValue("LIMIT", readDigitalPin(PIN_LIMIT_LIFT_HIGH));
-        return;
-      }
-      if (strcmp(a1, "lift_low") == 0) {
-        replyValue("LIMIT", readDigitalPin(PIN_LIMIT_LIFT_LOW));
-        return;
-      }
-    }
-
-    if (strcmp(rkind, "BUTTON") == 0) {
-      if (strcmp(a1, "start") == 0) {
-        bool pressed = (digitalRead(PIN_BUTTON_START) == LOW);
-        replyValue("BUTTON", pressed);
-        return;
-      }
-    }
 
     #if ENABLE_ENCODERS
       if (strcmp(rkind, "QUAD") == 0 && count >= 3) {
@@ -1273,11 +1124,6 @@ if (strncmp(line, "FRONT_ROUTE ", 12) == 0) {
         return;
       }
     #endif
-
-    if (strcmp(rkind, "RANGE") == 0 && count >= 3) {
-      replyValue("RANGE", readRangePair((uint8_t)atoi(a1), (uint8_t)atoi(a2)));
-      return;
-    }
   }
 
   // Backward compatibility during migration
@@ -1356,30 +1202,28 @@ void setup() {
   pinMode(PIN_ALT_FRONT_RIGHT_PWM, OUTPUT);
   pinMode(PIN_ALT_FRONT_RIGHT_DIR, OUTPUT);
 
-  // Ultrasonic pins
-  pinMode(PIN_ULTRASONIC_FRONT_LEFT_TRIG, OUTPUT);
-  pinMode(PIN_ULTRASONIC_FRONT_LEFT_ECHO, INPUT);
-  pinMode(PIN_ULTRASONIC_FRONT_RIGHT_TRIG, OUTPUT);
-  pinMode(PIN_ULTRASONIC_FRONT_RIGHT_ECHO, INPUT);
 
-  // Piezo Pins
+  // Indicators
+  #if ENABLE_INDICATORS
+    setupIndicators();
+  #endif
 
-  pinMode(PIN_PIEZO_BUZZER, OUTPUT);
-  noTone(PIN_PIEZO_BUZZER);
+  // Battery monitor
+  #if ENABLE_BATTERY_MONITOR
+    setupBatteryMonitor();
+  #endif
 
-  // Limits
-  pinMode(PIN_LIMIT_LIFT_HIGH, INPUT_PULLUP);
-  pinMode(PIN_LIMIT_LIFT_LOW, INPUT_PULLUP);
+  // Sensors
+  #if ENABLE_SENSORS
+    setupSensors();
+  #endif
 
   // Encoders
   #if ENABLE_ENCODERS
     setupEncoders();
   #endif
 
-  pinMode(PIN_BUTTON_START, INPUT_PULLUP);
 
-  pinMode(PIN_LED_LISIPAROI_PWM, OUTPUT);
-  analogWrite(PIN_LED_LISIPAROI_PWM, 0);
 
   // Servos
   gripLeftServo.attach(PIN_SERVO_GRIPPER_LEFT);
@@ -1408,7 +1252,20 @@ void loop() {
   servicePiSerial();
   readIbusFrame();
 
-  updateBatteryAlarm();
+  #if ENABLE_BATTERY_MONITOR
+    serviceBatteryMonitor();
+   #endif
+
+  #if ENABLE_INDICATORS
+    serviceIndicators();
+  #endif
+
+  #if ENABLE_BATTERY_MONITOR
+    if (batteryShutdownActive()) {
+      delay(20);
+      return;
+    }
+  #endif
 
   // AUTO owns outputs while heartbeat is fresh.
   if (piHasControl()) {

@@ -17,6 +17,9 @@ class RunMode(Enum):
     DIAGNOSTICS = auto()
     CHALLENGES = auto()
 
+class AutonomousProgram(Enum):
+    AUTO_SR2026_STAGE1 = auto()
+
 
 class StartupScript(Enum):
     NONE = auto()
@@ -50,20 +53,30 @@ ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ==================================================
 # RUN MODE
 # ==================================================
-#
-# All run modes use the same normal controller startup.
-
 
 RUN_MODE = RunMode.NORMAL
 # RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
+# ==================================================
+# AUTONOMOUS PROGRAM
+# ==================================================
+
+AUTONOMOUS_PROGRAM = AutonomousProgram.AUTO_SR2026_STAGE1
+
+# ==================================================
+# STARTUP_SCRIPT
+# ==================================================
 
 STARTUP_SCRIPT = StartupScript.NONE
 # STARTUP_SCRIPT = StartupScript.BASIC_GRAB
 # STARTUP_SCRIPT = StartupScript.ACIDIC_GRAB
 # STARTUP_SCRIPT = StartupScript.MOTION_TEST
+
+# ==================================================
+# CHALLENGE
+# ==================================================
 
 # CHALLENGE = Challenge.NONE
 # CHALLENGE = Challenge.VISION
@@ -75,8 +88,12 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.STOPPING
 CHALLENGE = Challenge.SERVOING
 
-# DEFAULT_TARGET_KIND = "acidic"
-DEFAULT_TARGET_KIND = "basic"
+# =========================
+# Default Target
+# =========================
+
+DEFAULT_TARGET_KIND = "acidic"
+# DEFAULT_TARGET_KIND = "basic"
 
 # =========================
 # Match / Starting Zone

@@ -26,13 +26,20 @@ from hw_io.base import IOMap
 
 
 class Level2:
-    def __init__(self, io: IOMap, *, max_power: float):
+    def __init__(
+            self,
+            io: IOMap,
+            *,
+            max_power: float,
+            config=None,
+    ):
         """
         io: canonical IOMap implementation (SR-backed or direct-hardware-backed)
         max_power: maximum allowed motor power (from Config)
         """
         self.io = io
         self.max_power = max_power
+        self.config = config
 
     # -----------------------------
     # Utility
@@ -249,98 +256,106 @@ class Level2:
 
     def LIFT_DOWN(self):
         print("[Level2] LIFT_DOWN")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            print("[Level2] LIFT_DOWN: no servos available")
-            return
+
+        servo = self.io.servo["lift"]
 
         try:
-            servos[0].position = -1
+            servo.position = -1
 
             t_end = time.time() + 1.0
             while time.time() < t_end:
-                servos[0].position = -1
+                servo.position = -1
                 self.io.sleep(0.05)
+
         except Exception as e:
             print("[Level2] LIFT_DOWN failed:", e)
 
     def LIFT_MIDDLE(self):
         print("[Level2] LIFT_MIDDLE")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            print("[Level2] LIFT_MIDDLE: no servos available")
-            return
+
+        servo = self.io.servo["lift"]
 
         try:
-            servos[0].position = 0
+            servo.position = 0
             self.SLEEP(1.0)
+
         except Exception as e:
             print("[Level2] LIFT_MIDDLE failed:", e)
 
     def LIFT_UP(self):
         print("[Level2] LIFT_UP")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            print("[Level2] LIFT_UP: no servos available")
-            return
+
+        servo = self.io.servo["lift"]
 
         try:
-            servos[0].position = 1
+            servo.position = 1
 
             t_end = time.time() + 1.0
             while time.time() < t_end:
-                servos[0].position = 1  # keep reasserting
+                servo.position = 1
                 self.io.sleep(0.05)
+
         except Exception as e:
             print("[Level2] LIFT_UP failed:", e)
 
     def LIFT_DISABLE(self):
         print("[Level2] LIFT_DISABLE")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            return
+
         try:
-            servos[0].position = None
+            self.io.servo["lift"].position = None
+
         except Exception as e:
             print("[Level2] LIFT_DISABLE failed:", e)
 
     def VACUUM_ON(self):
         print("[Level2] VACUUM_ON")
         outs = getattr(self.io, "outputs", None)
+
         if outs is None:
             print("[Level2] VACUUM_ON: no outputs available")
             return
+
         outs.set("VACUUM", True)
 
     def VACUUM_OFF(self):
         print("[Level2] VACUUM_OFF")
         outs = getattr(self.io, "outputs", None)
+
         if outs is None:
             print("[Level2] VACUUM_OFF: no outputs available")
             return
+
         outs.set("VACUUM", False)
 
     def GRAB(self):
         print("[Level2] GRAB")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            print("[Level2] GRAB: no servos available")
-            return
+
         try:
-            servos[1].position = -1.0  # or 0.0, depending on your open/closed convention
+            if self.config is None:
+                raise RuntimeError("Level2.GRAB requires robot configuration")
+
+            position = self.config.gripper_grab_position
+            print(f"[Level2] GRAB position={position}")
+
+            self.io.servo["gripper"].position = position
             self.SLEEP(1.0)
+
         except Exception as e:
             print("[Level2] GRAB failed:", e)
 
     def RELEASE(self):
         print("[Level2] RELEASE")
-        servos = getattr(self.io, "servos", None)
-        if servos is None:
-            print("[Level2] RELEASE: no servos available")
-            return
+
         try:
-            servos[1].position = 1.0  # opposite of GRAB
+            if self.config is None:
+                raise RuntimeError("Level2.RELEASE requires robot configuration")
+
+            position = self.config.gripper_open_position
+            print(f"[Level2] RELEASE position={position}")
+
+            self.io.servo["gripper"].position = position
             self.SLEEP(1.0)
+
         except Exception as e:
             print("[Level2] RELEASE failed:", e)
 

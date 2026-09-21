@@ -27,27 +27,27 @@ DRIVE_MOTOR_PROFILE = "gobilda_312rpm_06kg_2wd"
 # Cameras / Vision Hardware
 # -------------------------
 
-"""
+
 CAMERAS = {
     "front": {
         "profile": "pi3_fullfov_640_360",
         "device": 0,
     }
 }
-"""
 
+"""
 CAMERAS = {
     "front": {
         "profile": "arducam_fullfov_640_400",
         "device": "/dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._Arducam_OV9281_USB_Camera_UC599-video-index0",
     }
 }
-
+"""
 
 VISION_SOURCES = {
     "vision1": {
         "camera": "front",
-        "provider": "apriltag_pnp",
+        "provider": "cam1_markers2",     # "apriltag_pnp", "cam1_markers2"
         "enabled": True,
     }
 }
@@ -103,6 +103,7 @@ BATTERY_VOLTAGE_NOMINAL = 14.17
 # Arducam (mounted on the Right)
 # -----------------------
 
+"""
 CAMERA_MOUNTS = {
     "front": {
         "x_mm": 60.0,   # forward/back
@@ -124,6 +125,7 @@ GRIPPER_MOUNT = {
 }
 
 """
+
 # Pi3 (mounted on the left)
 # -----------------------
 
@@ -146,7 +148,7 @@ GRIPPER_MOUNT = {
     "pitch_deg": 0.0,
     "yaw_deg": 0.0,
 }
-"""
+
 
 """
 # Pi3
@@ -229,7 +231,14 @@ SURFACE_MULTIPLIERS = {
 BASE_ROTATE_FACTOR = 1.0
 BASE_DRIVE_FACTOR = 1.0
 
+# -------------------------
+# Gripper
+# -------------------------
 
+# Logical gripper positions in the canonical -1.0 ... +1.0 servo range.
+# Physical left/right servo mirroring is handled by the hardware backend.
+GRIPPER_OPEN_POSITION = 1.0
+GRIPPER_GRAB_POSITION = -0.55
 
 # ==================================================
 # 3. AUTONOMOUS / PERCEPTION TUNING
@@ -249,14 +258,14 @@ INIT_ESCAPE_ROTATE_DEG = 0.0
 # -------------------------
 
 POST_PICKUP_REVERSE_MM = 120
-POST_PICKUP_ROTATE_DEG = -135
+POST_PICKUP_ROTATE_DEG = -155
 
 # -------------------------
 # Post-Dropoff Realignment
 # -------------------------
 
 POST_DROPOFF_REVERSE_MM = 120
-POST_DROPOFF_ROTATE_DEG = -90
+POST_DROPOFF_ROTATE_DEG = 90
 
 
 # -------------------------
@@ -405,8 +414,8 @@ IO = {
 
     "encoder.deadwheel_parallel":         None,
     "encoder.deadwheel_perpendicular":    None,
-    "encoder.drive_front_left":           None,
-    "encoder.drive_front_right":          None,
+    "encoder.drive_front_left":           "mega2560",
+    "encoder.drive_front_right":          "mega2560",
     "encoder.shooter":                    None,
 
     "imu.main":                           None,

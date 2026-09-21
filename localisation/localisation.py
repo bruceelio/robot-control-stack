@@ -41,6 +41,20 @@ class Localisation:
 
         self.providers = providers
 
+        print("[LOC][PROVIDERS]")
+
+        for provider in self.providers:
+            print(
+                f"  {type(provider).__name__}"
+                f" -> {provider.name}"
+            )
+
+            for child in getattr(provider, "providers", []):
+                print(
+                    f"    {type(child).__name__}"
+                    f" -> {child.name}"
+                )
+
         if estimator is None:
             estimator = create_default_estimator(providers)
 

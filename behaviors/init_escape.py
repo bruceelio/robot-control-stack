@@ -4,6 +4,7 @@ from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.composites.drive_then_rotate import DriveThenRotate
 from primitives.manipulation.liftup import LiftUp
+from primitives.manipulation.liftdown import LiftDown
 
 
 class InitEscape(Behavior):
@@ -21,18 +22,24 @@ class InitEscape(Behavior):
         print("[INIT_ESCAPE] start")
         self.config = config
         self.primitive = None
-        self.step = "LIFT_UP"
+        self.step = "LIFT_INIT"
         self.status = BehaviorStatus.RUNNING
 
     def update(self, *, motion_backend, lvl2=None, **_):
-        if self.step == "LIFT_UP":
-            print("[INIT_ESCAPE] LIFT_UP fire-and-forget")
+        if self.step == "LIFT_INIT":
             try:
-                lift = LiftUp()
+                if self.config.robot_id == "bob_bot":
+                    print("[INIT_ESCAPE] LIFT_DOWN fire-and-forget")
+                    lift = LiftDown()
+                else:
+                    print("[INIT_ESCAPE] LIFT_UP fire-and-forget")
+                    lift = LiftUp()
+
                 lift.start(lvl2=lvl2)
                 lift.update(lvl2=lvl2)
+
             except Exception as e:
-                print(f"[INIT_ESCAPE] LIFT_UP ignored failure: {e}")
+                print(f"[INIT_ESCAPE] lift init ignored failure: {e}")
 
             self.primitive = None
             self.step = "DRIVE_THEN_ROTATE"
