@@ -37,6 +37,7 @@ class Challenge(Enum):
     TRANSPORTATION = auto()
     STOPPING = auto()
     SERVOING = auto()
+    SERVOING_ARENA_TAG = auto()
 
 class MatchZoneSource(Enum):
     AUTO = "auto"
@@ -54,8 +55,8 @@ ROBOT_PROFILE = RobotProfile.BOB_BOT
 # RUN MODE
 # ==================================================
 
-RUN_MODE = RunMode.NORMAL
-# RUN_MODE = RunMode.CHALLENGES
+# RUN_MODE = RunMode.NORMAL
+RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
@@ -86,7 +87,8 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.SIMULATOR
 # CHALLENGE = Challenge.TRANSPORTATION
 # CHALLENGE = Challenge.STOPPING
-CHALLENGE = Challenge.SERVOING
+# CHALLENGE = Challenge.SERVOING
+CHALLENGE = Challenge.SERVOING_ARENA_TAG
 
 # =========================
 # Default Target
@@ -107,4 +109,4 @@ MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
 MATCH_ZONE_FIXED = 0
 USB_MATCH_ZONE_FILE = "zone.txt"
 
-START_SLOT = 1  # 1: Simulation Start; 2:   ; 3: corner start diag run
+START_SLOT = 3  # 1: Simulation Start; 2:   ; 3: corner start diag run

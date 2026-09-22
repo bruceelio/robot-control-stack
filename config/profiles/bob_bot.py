@@ -6,16 +6,15 @@
 
 # ROBOT_ID:
 # Identifies this particular robot configuration.
-#
-# HARDWARE_PROFILE:
-# Selects the IOMap implementation appropriate to the robot hardware.
-#
-# ENVIRONMENT:
-# Selects whether the robot is running against real or simulated hardware.
 
 ROBOT_ID = "bob_bot"
 
+# ENVIRONMENT:
+# Selects whether the robot is running against real or simulated hardware.
+
 ENVIRONMENT = "real"
+
+
 
 # -------------------------
 # Drive / Motors Hardware
@@ -24,9 +23,8 @@ ENVIRONMENT = "real"
 DRIVE_MOTOR_PROFILE = "gobilda_312rpm_06kg_2wd"
 
 # -------------------------
-# Cameras / Vision Hardware
+# Cameras
 # -------------------------
-
 
 CAMERAS = {
     "front": {
@@ -44,6 +42,10 @@ CAMERAS = {
 }
 """
 
+# -------------------------
+# Vision Sources
+# -------------------------
+
 VISION_SOURCES = {
     "vision1": {
         "camera": "front",
@@ -53,7 +55,6 @@ VISION_SOURCES = {
 }
 
 ASYNC_VISION_ENABLED = True
-
 
 # -------------------------
 # Encoders
@@ -91,7 +92,6 @@ VOLTAGE_SENSORS = {
 
 BATTERY_VOLTAGE_NOMINAL = 14.17
 
-
 # -------------------------
 # Physical Geometry
 # -------------------------
@@ -100,6 +100,7 @@ BATTERY_VOLTAGE_NOMINAL = 14.17
 # base_link = midpoint between drive wheels
 # +x forward, +y left, +z up
 
+# -------------------------
 # Arducam (mounted on the Right)
 # -----------------------
 
@@ -126,6 +127,7 @@ GRIPPER_MOUNT = {
 
 """
 
+# -------------------------
 # Pi3 (mounted on the left)
 # -----------------------
 
@@ -149,31 +151,6 @@ GRIPPER_MOUNT = {
     "yaw_deg": 0.0,
 }
 
-
-"""
-# Pi3
-# Previous camera / gripper geometry
-
-CAMERA_MOUNTS = {
-    "front": {
-        "x_mm": 85.0,
-        "y_mm": -110.0,
-        "z_mm": 210.0,
-        "roll_deg": 0.0,
-        "pitch_deg": -18.0,
-        "yaw_deg": 8.0,
-    }
-}
-
-GRIPPER_MOUNT = {
-    "x_mm": 160.0,
-    "y_mm": 0.0,
-    "z_mm": 35.0,
-    "roll_deg": 0.0,
-    "pitch_deg": 0.0,
-    "yaw_deg": 0.0,
-}
-"""
 # -------------------------
 # Servoing
 # -------------------------
@@ -184,7 +161,9 @@ SERVOING_ENABLED = True
 # Maximum commanded velocities while servoing.
 # Limited to speeds at which perception remains sufficiently reliable.
 SERVOING_LINEAR_MAX_MM_S = 300.0
-SERVOING_ANGULAR_MAX_RAD_S = 0.8
+
+# Pi3: Failed at 0.4
+SERVOING_ANGULAR_MAX_RAD_S = 0.35
 
 
 # -------------------------
@@ -196,13 +175,9 @@ WHEEL_TYPE = "standard"
 DRIVE_TRACK_WIDTH_MM = 380
 
 MOTOR_POLARITY = [1, 1]
-
-MOTION_BACKEND = "odometry"     # "timed", "odometry"
-
-
 MOTOR_POWER_MAX = 0.8
 
-
+MOTION_BACKEND = "odometry"     # "timed", "odometry"
 
 
 # Generic dead_reckoning command limits
@@ -212,7 +187,6 @@ MAX_ROTATE_DEG = 180.0
 
 MIN_DRIVE_MM = 5.0
 MAX_DRIVE_MM = 2500.0
-
 
 
 # ==================================================
@@ -248,10 +222,9 @@ GRIPPER_GRAB_POSITION = -0.55
 # Initial Escape
 # -------------------------
 
-# InitEscape (400, 40)
+# InitEscape
 INIT_ESCAPE_DRIVE_MM = 0
 INIT_ESCAPE_ROTATE_DEG = 0.0
-
 
 # -------------------------
 # Post-Pickup Realignment
@@ -267,7 +240,6 @@ POST_PICKUP_ROTATE_DEG = -155
 POST_DROPOFF_REVERSE_MM = 120
 POST_DROPOFF_ROTATE_DEG = 90
 
-
 # -------------------------
 # Localisation Recovery
 # -------------------------
@@ -275,7 +247,6 @@ POST_DROPOFF_ROTATE_DEG = 90
 RECOVER_STEP_DEG = 15.0
 RECOVER_MAX_SWEEP_DEG = 180.0
 RECOVER_SETTLE_TIME = 0.5
-
 
 
 # -------------------------
@@ -292,7 +263,6 @@ VISION_LOSS_TIMEOUT_S = 0.5
 VISION_GRACE_PERIOD_S = 0.3
 
 REACQUIRE_TARGET_VISION_LOSS = 20
-
 
 # -------------------------
 # Marker Height Detection
@@ -393,6 +363,10 @@ WALL_PARALLEL_STEP_DEG = 5.0
 WALL_PARALLEL_TIMEOUT_S = 4.0
 
 GRAB_DISTANCE_MM = 0.0 # not currently in code?
+
+# -------------------------
+# IO List
+# -------------------------
 
 IO = {
     "audio.df_player":                    None,
