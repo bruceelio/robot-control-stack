@@ -12,11 +12,13 @@ from navigation.height_model import HeightModel
 from policies.vision_grace_period import VisionGracePeriod
 
 from primitives.base import PrimitiveStatus
+from primitives.manipulation import LiftDown
 
-from skills.manipulation.grasp_object import GraspObject
-from skills.manipulation.verify_grip import VerifyGrip
+from skills.manipulation.final_pickup import FinalPickup
+from skills.manipulation.prepare_pickup import PreparePickup
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
+from skills.navigation.approach_target_servo import ApproachTargetServo
 
 from skills.perception.select_target import SelectTarget
 from skills.perception.track_object import TrackObject
@@ -27,7 +29,8 @@ class AcquireObject(Behavior):
     """
     Pickup-only pipeline:
 
-      SELECT -> ALIGN -> APPROACHING -> GRABBING -> SUCCEEDED
+  SELECT -> PREPARE_PICKUP -> ALIGN -> APPROACHING
+         -> FINAL_PICKUP -> SUCCEEDED
 
     Adds:
       - Active scanning while SELECT is running (SearchRotate)
@@ -43,6 +46,10 @@ class AcquireObject(Behavior):
         self.phase = "SELECT"
         self.target = None
 
+        self._prepare_view_skill = None
+        self._prepare_pickup_skill = None
+        self._final_pickup_skill = None
+
         # The concrete marker id we actually approached (if any)
         self.acquired_target_id = None
 
@@ -55,15 +62,17 @@ class AcquireObject(Behavior):
         # APPROACH skill
         self._approach_skill = None
 
-        # Grab state
-        self._grab_step = None  # "GRASP" -> "VERIFY"
-        self._grasp_skill = None
-        self._verify_skill = None
+        # Active navigation stage during target approach.
+        # 3 = localisation/path navigation   (future)
+        # 2 = perception/servo navigation
+        # 1 = dead reckoning
+        self._navigation_stage = None
 
         self.height_model = HeightModel()
         self.exclude_ids: set[int] = set()
 
         self.locked_target_id = None
+
 
         # Locked-target tracking (single source of truth for visibility/loss)
         self._tracker: TrackObject | None = None
@@ -112,13 +121,17 @@ class AcquireObject(Behavior):
         self.kind = kind or config.default_target_kind
         self.locked_target_id = None
 
+        self._prepare_view_skill = None
+        self._prepare_pickup_skill = None
+        self._final_pickup_skill = None
+
         # exclusions must be set before tracing
         self.exclude_ids = set(exclude_ids) if exclude_ids else set()
 
         trace(
             src="ACQ",
             evt="ACQ_START",
-            phase="SELECT",
+            phase="PREPARE_VIEW",
             run=self.run_id,
             kind=self.kind,
             exclude=len(self.exclude_ids),
@@ -134,30 +147,20 @@ class AcquireObject(Behavior):
         self._tracker.reset(locked_target_id=None, kind=self.kind)
         self.track = None
 
-        self.phase = "SELECT"
+        self.phase = "PREPARE_VIEW"
         self.target = None
         self.acquired_target_id = None
 
         # Reset height model for each acquire run
         self.height_model = HeightModel()
 
-        # --- SELECT skill boot ---
-        self._select_skill = SelectTarget(
-            kind=self.kind,
-            max_age_s=self.config.vision_loss_timeout_s,
-            log_every_s=1.0,
-            label="ACQUIRE_OBJECT][SELECT",
-        )
-        self._select_skill.start(seed_target=seed_target, exclude_ids=self.exclude_ids)
+        # SELECT starts only after PREPARE_VIEW has cleared the camera.
+        self._select_skill = None
 
         self._align_skill = None
         self._approach_skill = None
+        self._navigation_stage = None
         self._search_rotate_skill = None
-
-        # reset grab state
-        self._grab_step = None
-        self._grasp_skill = None
-        self._verify_skill = None
 
         self._global_search_behavior = None
 
@@ -172,7 +175,7 @@ class AcquireObject(Behavior):
         self._track_after_recover_skill = None
 
         # --- SELECT stall watchdog reset (IMPORTANT: must be before return) ---
-        self._select_started_s = time.time()
+        self._select_started_s = None
         self._select_stall_count = 0
 
         # --- Vision settle / fresh observation gate reset ---
@@ -188,6 +191,9 @@ class AcquireObject(Behavior):
     def update(self, *, lvl2, perception, localisation, motion_backend, **_):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
+
+        if self.phase == "PREPARE_VIEW":
+            return self._prepare_view(lvl2)
 
         # Defensive: ensure tracker & policy exist
         if self._tracker is None:
@@ -225,11 +231,17 @@ class AcquireObject(Behavior):
         if self.phase == "SELECT":
             return self._select(perception, motion_backend)
 
+        if self.phase == "PREPARE_PICKUP":
+            return self._prepare_pickup(lvl2, motion_backend)
+
         if self.phase == "ALIGN":
             return self._align(lvl2, motion_backend)
 
         if self.phase == "APPROACHING":
             return self._approach(lvl2, perception, motion_backend)
+
+        if self.phase == "FINAL_PICKUP":
+            return self._final_pickup(lvl2, motion_backend)
 
         if self.phase == "RECOVER_LOST_TARGET":
             return self._recover_lost_target(perception, localisation, motion_backend)
@@ -239,9 +251,6 @@ class AcquireObject(Behavior):
 
         if self.phase == "GLOBAL_SEARCH":
             return self._global_search(perception, motion_backend)
-
-        if self.phase == "GRABBING":
-            return self._grab(lvl2)
 
         return self.status
 
@@ -307,6 +316,65 @@ class AcquireObject(Behavior):
         self._global_search_behavior = None
 
     # -------------------------
+    # Phase: PREPARE_VIEW
+    # -------------------------
+
+    def _prepare_view(self, lvl2):
+
+        if self._prepare_view_skill is None:
+            print("[ACQUIRE_OBJECT][PREPARE_VIEW] lowering lift")
+
+            self._prepare_view_skill = LiftDown(
+                settle_time=0.0,
+            )
+
+            try:
+                self._prepare_view_skill.start(
+                    lvl2=lvl2,
+                )
+            except Exception as e:
+                print(
+                    f"[ACQUIRE_OBJECT][PREPARE_VIEW] "
+                    f"LIFT DOWN failed: {e}"
+                )
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+        st = self._prepare_view_skill.update()
+
+        if st == PrimitiveStatus.RUNNING:
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
+            print(
+                "[ACQUIRE_OBJECT][PREPARE_VIEW] "
+                "LIFT DOWN failed"
+            )
+            self.status = BehaviorStatus.FAILED
+            return self.status
+
+        print(
+            "[ACQUIRE_OBJECT][PREPARE_VIEW] "
+            "lift down complete -> SELECT"
+        )
+
+        self._prepare_view_skill = None
+
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
+            phase="SELECT",
+            run=self.run_id,
+            lock="none",
+        )
+
+        self.phase = "SELECT"
+        self._select_started_s = None
+        self._select_stall_count = 0
+
+        return self.status
+
+    # -------------------------
     # Phase: SELECT
     # -------------------------
 
@@ -319,7 +387,10 @@ class AcquireObject(Behavior):
                 log_every_s=1.0,
                 label="ACQUIRE_OBJECT][SELECT",
             )
-            self._select_skill.start(seed_target=None, exclude_ids=self.exclude_ids)
+            self._select_skill.start(
+                seed_target=None,
+                exclude_ids=self.exclude_ids,
+            )
 
             # entering SELECT fresh -> reset watchdog
             self._select_started_s = time.time()
@@ -398,6 +469,83 @@ class AcquireObject(Behavior):
         trace(
             src="ACQ",
             evt="PHASE_ENTER",
+            phase="PREPARE_PICKUP",
+            run=self.run_id,
+            lock=self.locked_target_id or "none",
+        )
+
+        self.phase = "PREPARE_PICKUP"
+        self._prepare_pickup_skill = None
+
+        return self.status
+
+    # -------------------------
+    # Phase: PREPARE_PICKUP
+    # -------------------------
+
+    def _prepare_pickup(self, lvl2, motion_backend):
+
+        if self._prepare_pickup_skill is None:
+            self._prepare_pickup_skill = PreparePickup()
+
+            st = self._prepare_pickup_skill.start(
+                lvl2=lvl2,
+            )
+        else:
+            st = self._prepare_pickup_skill.update(
+                lvl2=lvl2,
+            )
+
+        if st == PrimitiveStatus.RUNNING:
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
+            print("[ACQUIRE_OBJECT][PREPARE_PICKUP] FAILED")
+            self.status = BehaviorStatus.FAILED
+            return self.status
+
+        print("[ACQUIRE_OBJECT][PREPARE_PICKUP] complete")
+
+        # Prefer the highest currently available approach stage.
+        #
+        # Stage 3 localisation/path navigation is future work.
+        # Stage 2 uses continuous perception/servoing.
+        # Stage 1 preserves the existing dead-reckoning path.
+
+        if self.config.servoing_enabled:
+            print(
+                "[ACQUIRE_OBJECT][NAV] "
+                "Stage 2 available -> SERVO APPROACH"
+            )
+
+            self._navigation_stage = 2
+
+            trace(
+                src="ACQ",
+                evt="PHASE_ENTER",
+                phase="APPROACHING",
+                run=self.run_id,
+                lock=self.locked_target_id or "none",
+            )
+
+            self.phase = "APPROACHING"
+            self._approach_skill = None
+
+            return self.status
+
+        # Stage 2 is not available on this robot.
+        # Preserve the existing Stage 1 path through ALIGN.
+
+        print(
+            "[ACQUIRE_OBJECT][NAV] "
+            "Stage 2 unavailable -> Stage 1 DEAD_RECKONING"
+        )
+
+        self._navigation_stage = 1
+
+        trace(
+            src="ACQ",
+            evt="PHASE_ENTER",
             phase="ALIGN",
             run=self.run_id,
             lock=self.locked_target_id or "none",
@@ -405,7 +553,9 @@ class AcquireObject(Behavior):
 
         self.phase = "ALIGN"
         self._align_skill = None
+
         return self.status
+
 
     # -------------------------
     # Phase: ALIGN
@@ -413,6 +563,7 @@ class AcquireObject(Behavior):
 
     def _align(self, lvl2, motion_backend):
         bearing = float(self.target["bearing"])
+        self._navigation_stage = 1
 
         if self._align_skill is None:
             self._align_skill = AlignToTarget(
@@ -513,14 +664,37 @@ class AcquireObject(Behavior):
 
     def _approach(self, lvl2, perception, motion_backend):
 
-
         if self._approach_skill is None:
-            self._approach_skill = ApproachTarget(
-                config=self.config,
-                kind=self.kind,
-                height_model=self.height_model,
-                locked_target_id=self.locked_target_id,
-            )
+
+            if self._navigation_stage == 2:
+                print(
+                    "[ACQUIRE_OBJECT][NAV] "
+                    "starting Stage 2 ApproachTargetServo"
+                )
+
+                self._approach_skill = ApproachTargetServo(
+                    config=self.config,
+                    kind=self.kind,
+                    height_model=self.height_model,
+                    locked_target_id=self.locked_target_id,
+                )
+
+            else:
+                # Stage 1 remains the default/fallback.
+                self._navigation_stage = 1
+
+                print(
+                    "[ACQUIRE_OBJECT][NAV] "
+                    "starting Stage 1 ApproachTarget"
+                )
+
+                self._approach_skill = ApproachTarget(
+                    config=self.config,
+                    kind=self.kind,
+                    height_model=self.height_model,
+                    locked_target_id=self.locked_target_id,
+                )
+
             self._approach_skill.start(
                 motion_backend=motion_backend,
                 lvl2=lvl2,
@@ -546,7 +720,68 @@ class AcquireObject(Behavior):
 
             if not fresh_enough:
                 age = None if snap is None else snap.age_s
-                print(f"[VISION] waiting fresh obs age={age}")
+
+                # _vision_settle_until is also the moment at which
+                # the fresh-observation wait begins.
+                if self._vision_settle_until is not None:
+                    waited = max(0.0, now - self._vision_settle_until)
+                else:
+                    waited = 0.0
+
+                print(
+                    f"[VISION] waiting fresh obs "
+                    f"age={age} waited={waited:.2f}s"
+                )
+
+                fresh_timeout_s = float(
+                    getattr(
+                        self.config,
+                        "vision_loss_timeout_s",
+                        0.5,
+                    )
+                )
+
+                if waited >= fresh_timeout_s:
+                    print(
+                        "[VISION] no fresh post-align observation "
+                        f"within {fresh_timeout_s:.2f}s "
+                        "-> RECOVER_LOST_TARGET"
+                    )
+
+                    self._require_fresh_obs_after_settle = False
+                    self._vision_settle_until = None
+
+                    self._safe_stop(
+                        self._approach_skill,
+                        motion_backend=motion_backend,
+                    )
+                    self._approach_skill = None
+
+                    self._recover_seed_target = self.target
+                    self._recover_lost_target_id = self.locked_target_id
+                    self._recover_started_s = time.time()
+                    self._recover_timeout_s = float(
+                        getattr(
+                            self.config,
+                            "recover_total_timeout_s",
+                            8.0,
+                        )
+                    )
+
+                    trace(
+                        src="ACQ",
+                        evt="PHASE_ENTER",
+                        phase="RECOVER_LOST_TARGET",
+                        run=self.run_id,
+                        lock=self.locked_target_id or "none",
+                    )
+
+                    self.phase = "RECOVER_LOST_TARGET"
+                    self._recover_behavior = None
+                    self._recover_result = None
+
+                    return self.status
+
                 return self.status
 
             print(f"[VISION] fresh observation accepted age={snap.age_s:.3f}s")
@@ -561,6 +796,79 @@ class AcquireObject(Behavior):
             motion_backend=motion_backend,
             lvl2=lvl2,
         )
+
+        # --------------------------------------------------
+        # Navigation-stage fallback
+        # --------------------------------------------------
+        #
+        # Stage 2 depends on usable live perception.
+        # If that becomes unavailable, stop continuous servoing
+        # and fall back to the proven Stage 1 approach.
+        #
+        # Do not fall back for a height-classification safety failure.
+
+        if (
+                self._navigation_stage == 2
+                and st == PrimitiveStatus.FAILED
+        ):
+            failure_reason = getattr(
+                self._approach_skill,
+                "failure_reason",
+                None,
+            )
+
+            if (
+                    failure_reason
+                    == ApproachTargetServo.FAILURE_PERCEPTION
+            ):
+                print(
+                    "[ACQUIRE_OBJECT][NAV] "
+                    "Stage 2 perception unavailable "
+                    "-> fallback to Stage 1"
+                )
+
+                # Important: stop continuous velocity output before
+                # handing control to the dead-reckoning approach.
+                self._safe_stop(
+                    self._approach_skill,
+                    motion_backend=motion_backend,
+                )
+
+                self._approach_skill = None
+                self._navigation_stage = 1
+
+                # There was no discrete ALIGN rotation here, so there
+                # is no post-ALIGN camera-settle requirement.
+                self._vision_settle_until = None
+                self._require_fresh_obs_after_settle = False
+
+                return self.status
+
+            if (
+                    failure_reason
+                    == ApproachTargetServo.FAILURE_HEIGHT
+            ):
+                print(
+                    "[ACQUIRE_OBJECT][NAV] "
+                    "Stage 2 height unresolved at commit "
+                    "-> FAILED"
+                )
+
+                self._safe_stop(
+                    self._approach_skill,
+                    motion_backend=motion_backend,
+                )
+
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+        # While Stage 2 is healthy, its controller owns perception
+        # freshness. Do not also run the Stage 1 vision-loss policy.
+        if (
+                self._navigation_stage == 2
+                and st == PrimitiveStatus.RUNNING
+        ):
+            return self.status
 
         if st == PrimitiveStatus.RUNNING:
             if not snap.visible_now:
@@ -652,10 +960,13 @@ class AcquireObject(Behavior):
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        # SUCCEEDED => ready to grab
+        # SUCCEEDED => reached pickup commit distance
+
         tid = None
+
         if self._approach_skill is not None:
             tid = self._approach_skill.approached_target_id
+
         if tid is None and self.target is not None:
             try:
                 tid = int(self.target.get("id"))
@@ -663,21 +974,46 @@ class AcquireObject(Behavior):
                 tid = None
 
         self.acquired_target_id = tid
-        if tid is not None:
-            print(f"[ACQUIRE_OBJECT] approached_target_id={tid}")
 
-        self._grab_step = "GRASP"
-        self._grasp_skill = None
-        self._verify_skill = None
+        if tid is not None:
+            print(
+                f"[ACQUIRE_OBJECT] "
+                f"approached_target_id={tid}"
+            )
+
+        distance_mm = self._approach_skill.final_distance_mm
+        bearing_deg = self._approach_skill.final_bearing_deg
+        target_is_high = self._approach_skill.target_is_high
+
+        if distance_mm is None or bearing_deg is None:
+            print(
+                "[ACQUIRE_OBJECT] ApproachTarget SUCCEEDED "
+                "without final pickup geometry"
+            )
+            self.status = BehaviorStatus.FAILED
+            return self.status
+
         trace(
             src="ACQ",
             evt="PHASE_ENTER",
-            phase="GRABBING",
+            phase="FINAL_PICKUP",
             run=self.run_id,
             lock=self.locked_target_id or "none",
         )
 
-        self.phase = "GRABBING"
+        self._final_pickup_skill = FinalPickup()
+
+        self._final_pickup_skill.start(
+            config=self.config,
+            lvl2=lvl2,
+            motion_backend=motion_backend,
+            distance_mm=distance_mm,
+            bearing_deg=bearing_deg,
+            target_is_high=target_is_high,
+        )
+
+        self.phase = "FINAL_PICKUP"
+
         return self.status
 
     # -------------------------
@@ -831,58 +1167,48 @@ class AcquireObject(Behavior):
         return self.status
 
     # -------------------------
-    # Phase: GRABBING
+    # Phase: FINAL_PICKUP
     # -------------------------
 
-    def _grab(self, lvl2):
+    def _final_pickup(self, lvl2, motion_backend):
 
-
-        if self._grab_step is None:
-            self._grab_step = "GRASP"
-
-        if self._grab_step == "GRASP":
-            if self._grasp_skill is None:
-                self._grasp_skill = GraspObject()
-                print("[GRAB] starting GraspObject")
-                self._grasp_skill.start(lvl2=lvl2, config=self.config)
-
-            st = self._grasp_skill.update(lvl2=lvl2)
-            if st == PrimitiveStatus.RUNNING:
-                return self.status
-            if st == PrimitiveStatus.FAILED:
-                print("[GRAB] GraspObject FAILED")
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-            print("[GRAB] GraspObject complete")
-            self._grab_step = "VERIFY"
-
-        if self._grab_step == "VERIFY":
-            if self._verify_skill is None:
-                self._verify_skill = VerifyGrip()
-                print("[GRAB] starting VerifyGrip")
-                self._verify_skill.start(lvl2=lvl2, config=self.config)
-
-            st = self._verify_skill.update(lvl2=lvl2)
-            if st == PrimitiveStatus.RUNNING:
-                return self.status
-            if st == PrimitiveStatus.FAILED:
-                print("[GRAB] VerifyGrip FAILED")
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-            print("[GRAB] VerifyGrip complete")
-            self.status = BehaviorStatus.SUCCEEDED
+        if self._final_pickup_skill is None:
+            print(
+                "[ACQUIRE_OBJECT][FINAL_PICKUP] "
+                "missing FinalPickup skill"
+            )
+            self.status = BehaviorStatus.FAILED
             return self.status
 
+        st = self._final_pickup_skill.update(
+            lvl2=lvl2,
+            motion_backend=motion_backend,
+        )
+
+        if st == PrimitiveStatus.RUNNING:
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
+            print(
+                "[ACQUIRE_OBJECT][FINAL_PICKUP] FAILED"
+            )
+            self.status = BehaviorStatus.FAILED
+            return self.status
+
+        print(
+            "[ACQUIRE_OBJECT][FINAL_PICKUP] complete"
+        )
+
+        self.status = BehaviorStatus.SUCCEEDED
         return self.status
 
     def stop(self, *, motion_backend=None, **_):
         self._safe_stop(self._select_skill, motion_backend=motion_backend)
+        self._safe_stop(self._prepare_view_skill, motion_backend=motion_backend)
+        self._safe_stop(self._prepare_pickup_skill, motion_backend=motion_backend)
         self._safe_stop(self._align_skill, motion_backend=motion_backend)
         self._safe_stop(self._approach_skill, motion_backend=motion_backend)
+        self._safe_stop(self._final_pickup_skill, motion_backend=motion_backend,)
         self._safe_stop(self._recover_behavior, motion_backend=motion_backend)
         self._safe_stop(self._track_after_recover_skill, motion_backend=motion_backend)
         self._safe_stop(self._global_search_behavior, motion_backend=motion_backend)
-        self._safe_stop(self._grasp_skill, motion_backend=motion_backend)
-        self._safe_stop(self._verify_skill, motion_backend=motion_backend)

@@ -55,8 +55,8 @@ ROBOT_PROFILE = RobotProfile.BOB_BOT
 # RUN MODE
 # ==================================================
 
-# RUN_MODE = RunMode.NORMAL
-RUN_MODE = RunMode.CHALLENGES
+RUN_MODE = RunMode.NORMAL
+# RUN_MODE = RunMode.CHALLENGES
 # RUN_MODE = RunMode.TESTS
 # RUN_MODE = RunMode.DIAGNOSTICS
 
@@ -87,8 +87,8 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.SIMULATOR
 # CHALLENGE = Challenge.TRANSPORTATION
 # CHALLENGE = Challenge.STOPPING
-# CHALLENGE = Challenge.SERVOING
-CHALLENGE = Challenge.SERVOING_ARENA_TAG
+CHALLENGE = Challenge.SERVOING
+# CHALLENGE = Challenge.SERVOING_ARENA_TAG
 
 # =========================
 # Default Target

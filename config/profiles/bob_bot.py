@@ -133,9 +133,9 @@ GRIPPER_MOUNT = {
 
 CAMERA_MOUNTS = {
     "front": {
-        "x_mm": 40.0,
-        "y_mm": -90.0,
-        "z_mm": 215.0,
+        "x_mm": 45.0,
+        "y_mm": -87.5,
+        "z_mm": 200.0,
         "roll_deg": 0.0,
         "pitch_deg": -8.0,
         "yaw_deg": 0.0,
@@ -176,6 +176,7 @@ DRIVE_TRACK_WIDTH_MM = 380
 
 MOTOR_POLARITY = [1, 1]
 MOTOR_POWER_MAX = 0.8
+MOTOR_POWER_MIN = 0.10      # required for min movement from servoing
 
 MOTION_BACKEND = "odometry"     # "timed", "odometry"
 

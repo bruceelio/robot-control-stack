@@ -77,15 +77,18 @@ class MotorOutputConditioner:
         Apply configured motor-output conditioning.
         """
 
+        power_min = float(self.cfg.motor_power_min)
         power_max = float(self.cfg.motor_power_max)
 
         front_left = self._condition_motor(
             command.front_left,
+            power_min,
             power_max,
         )
 
         front_right = self._condition_motor(
             command.front_right,
+            power_min,
             power_max,
         )
 
@@ -99,12 +102,14 @@ class MotorOutputConditioner:
         if command.rear_left is not None:
             rear_left = self._condition_motor(
                 command.rear_left,
+                power_min,
                 power_max,
             )
 
         if command.rear_right is not None:
             rear_right = self._condition_motor(
                 command.rear_right,
+                power_min,
                 power_max,
             )
 
@@ -123,12 +128,24 @@ class MotorOutputConditioner:
     @staticmethod
     def _condition_motor(
             power: float,
+            power_min: float,
             power_max: float,
     ) -> float:
 
+        power = float(power)
+
+        # Exact zero means stop.
+        if power == 0.0:
+            return 0.0
+
+        # A non-zero command must be large enough to overcome
+        # drivetrain static friction / motor deadband.
+        if abs(power) < power_min:
+            power = power_min if power > 0.0 else -power_min
+
         return max(
             -power_max,
-            min(power_max, float(power)),
+            min(power_max, power),
         )
 
     def _validate_config(self) -> None:
@@ -141,4 +158,12 @@ class MotorOutputConditioner:
         if not 0.0 < power_max <= 1.0:
             raise RuntimeError(
                 "CONFIG.motor_power_max must be > 0.0 and <= 1.0."
+            )
+
+        power_min = float(self.cfg.motor_power_min)
+
+        if not 0.0 <= power_min <= power_max:
+            raise RuntimeError(
+                "CONFIG.motor_power_min must be >= 0.0 "
+                "and <= CONFIG.motor_power_max."
             )

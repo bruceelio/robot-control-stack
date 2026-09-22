@@ -11,11 +11,10 @@ from navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Drive, Rotate
-from primitives.manipulation import Release, LiftDown, LiftMiddle
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.parallel_to_wall import ParallelToWall  # NEW
-from skills.navigation.target_geometry import target_from_gripper
+from perception.robot_geometry import target_from_gripper
 from skills.perception.reacquire_target import ReacquireTarget
 from skills.perception.select_target_utils import get_closest_target
 
@@ -49,7 +48,12 @@ def _get_dict_path(d: dict, *path: str) -> Any:
     return cur
 
 
-def _marker_elevation(marker, *, img_h: int, fov_y_rad: float) -> tuple[float, str]:
+def _marker_elevation(
+    marker,
+    *,
+    img_h: int | None = None,
+    fov_y_rad: float | None = None,
+) -> tuple[float, str]:
     """
     Pose-free elevation cue.
 
@@ -111,6 +115,9 @@ def _marker_elevation(marker, *, img_h: int, fov_y_rad: float) -> tuple[float, s
                     return pitch, f"{label}({unit})"
                 except (TypeError, ValueError):
                     pass
+
+    if img_h is None or fov_y_rad is None:
+        return 0.0, "none"
 
     # -----------------------------
     # 3) Fallback: derive from image y coordinate
@@ -260,6 +267,9 @@ class ApproachTarget(Primitive):
         self.last_seen_bearing: Optional[float] = None
         self.last_drive_step: Optional[float] = None
 
+        self.final_distance_mm: Optional[float] = None
+        self.final_bearing_deg: Optional[float] = None
+
         # lock onto initially chosen marker id (if provided)
         self.target_id: Optional[int] = None
 
@@ -337,6 +347,9 @@ class ApproachTarget(Primitive):
         self.target_is_high = None
         self.bearing_consumed = False
 
+        self.final_distance_mm = None
+        self.final_bearing_deg = None
+
         self.last_drive_step = None
 
         if self.locked_target_id is not None:
@@ -357,23 +370,6 @@ class ApproachTarget(Primitive):
         self._require_fresh_obs_after_settle = False
         self._fresh_obs_wait_started = None
 
-        # prepare manipulator for pickup
-
-        # open gripper / vacuum off here
-        try:
-            prep_release = Release(settle_time=0.0)
-            prep_release.start(lvl2=lvl2)
-            print("[APPROACH][PREP] RELEASE (open gripper / vacuum off)")
-        except Exception as e:
-            print(f"[APPROACH][PREP] RELEASE failed: {e}")
-
-        # Lower lift here
-        try:
-            prep_liftdown = LiftDown(settle_time=0.0)
-            prep_liftdown.start(lvl2=lvl2)
-            print("[APPROACH][PREP] LIFT DOWN")
-        except Exception as e:
-            print(f"[APPROACH][PREP] LIFT DOWN failed: {e}")
 
     def update(self, *, perception, motion_backend, lvl2=None, **_):
         if lvl2 is None:
@@ -725,7 +721,7 @@ class ApproachTarget(Primitive):
         # =================================================
         # HEIGHT MODEL UPDATE/COMMIT (POSE-FREE)
         # =================================================
-        if distance <= self.t.marker_height_max_distance_mm and not self.height_model.is_committed():
+        if distance <= self.t.marker_height_max_distance_mm:
             pitch, src = _marker_elevation(
                 target.get("marker", target),  # unwrap marker object if present
                 img_h=self.t.camera_image_height_px,
@@ -742,18 +738,25 @@ class ApproachTarget(Primitive):
                     low_thresh=float(self.t.marker_pitch_low_deg),
                 )
 
-            decision = self.height_model.try_commit(
-                distance_mm=distance,
-                high_thresh=float(self.t.marker_pitch_high_deg),
-                low_thresh=float(self.t.marker_pitch_low_deg),
-                decision_deadline_mm=float(self.t.height_decision_deadline_mm),
-            )
-            if decision.committed:
-                print(
-                    f"[HEIGHT] committed {'HIGH' if self.height_model.is_high() else 'LOW'} "
-                    f"reason={decision.reason} score={self.height_model.score:.2f} "
-                    f"max_pitch={self.height_model.min_pitch:.3f} samples={self.height_model.samples}"
+            if not self.height_model.is_committed():
+                decision = self.height_model.try_commit(
+                    distance_mm=distance,
+                    high_thresh=float(self.t.marker_pitch_high_deg),
+                    low_thresh=float(self.t.marker_pitch_low_deg),
+                    decision_deadline_mm=float(
+                        self.t.height_decision_deadline_mm
+                    ),
                 )
+
+                if decision.committed:
+                    print(
+                        f"[HEIGHT] committed "
+                        f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
+                        f"reason={decision.reason} "
+                        f"score={self.height_model.score:.2f} "
+                        f"max_pitch={self.height_model.min_pitch:.3f} "
+                        f"samples={self.height_model.samples}"
+                    )
 
         # Refresh geometry after potential height commit
         mode, commit, direct = self._geometry_params()
@@ -815,43 +818,42 @@ class ApproachTarget(Primitive):
                 f"band={band_now} bearing={bearing:.1f}° exceeds max, but in band C — skipping parallel-to-wall until closer"
             )
 
-        # Final commit trigger
-        if (not self.final_commit) and (distance <= commit) and self.height_model.is_committed():
-            self.final_commit = True
-            self.target_is_high = self.height_model.is_high()
-            self._require_fresh_obs_after_settle = False
-            self._fresh_obs_wait_started = None
+        # --------------------------------------------------
+        # Pickup handoff
+        # --------------------------------------------------
 
-            if self.target_is_high:
-                try:
-                    if lvl2 is None:
-                        raise RuntimeError("LiftMiddle requires lvl2 but got None")
+        if distance <= commit:
 
-                    prep_lift = LiftMiddle(settle_time=0.0)
-                    prep_lift.start(lvl2=lvl2)
-                    print("[APPROACH][FINAL] LIFT MIDDLE (HIGH target before blind commit)")
-                except Exception as e:
-                    print(f"[APPROACH][FINAL] LIFT MIDDLE failed: {e}")
+            if not self.height_model.is_committed():
+                print(
+                    "[APPROACH][HEIGHT] "
+                    f"unresolved at commit distance={distance:.0f}mm "
+                    f"commit={commit:.0f}mm -> FAILED"
+                )
+                return PrimitiveStatus.FAILED
 
-            final_drive_mm = distance + float(self.t.final_approach_marker_push_mm)
+            latest_height = self.height_model.last_good_is_high()
+
+            self.target_is_high = (
+                latest_height
+                if latest_height is not None
+                else self.height_model.is_high()
+            )
+
+            self.final_distance_mm = float(distance)
+            self.final_bearing_deg = float(bearing)
+
             print(
-                f"[APPROACH][FINAL] mode={mode} "
-                f"commit dist={distance:.0f}mm final_drive={final_drive_mm:.0f}mm"
+                "[APPROACH][HANDOFF] "
+                f"approach_mode={mode} "
+                f"pickup_height={'HIGH' if self.target_is_high else 'LOW'} "
+                f"dist={distance:.0f}mm "
+                f"bearing={bearing:.1f}deg "
+                f"commit={commit:.0f}mm "
+                f"-> FINAL_PICKUP"
             )
 
-            self.cached_distance = final_drive_mm
-            self.cached_bearing = bearing
-            self.last_action = "rotate"
-
-            angle = max(-self.t.max_rotate_deg, min(self.t.max_rotate_deg, self.cached_bearing))
-
-            self.active_primitive = AlignToTarget(
-                bearing_deg=angle,
-                tolerance_deg=0.0,
-                max_rotate_deg=self.t.max_rotate_deg,
-            )
-            self.active_primitive.start(motion_backend=motion_backend)
-            return PrimitiveStatus.RUNNING
+            return PrimitiveStatus.SUCCEEDED
 
         # If bearing already good, skip rotate -> drive
         if self.bearing_consumed:

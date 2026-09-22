@@ -34,15 +34,20 @@ class HeightModel:
     def reset(self):
         self._committed = False
         self._is_high: bool | None = None
+        self._last_good_is_high: bool | None = None
         self.score = 0.0
         self.min_pitch = float("inf")
         self.samples = 0
+
 
     def is_committed(self) -> bool:
         return self._committed
 
     def is_high(self) -> bool:
         return bool(self._is_high)
+
+    def last_good_is_high(self) -> bool | None:
+        return self._last_good_is_high
 
     @staticmethod
     def _weights(distance_mm: float) -> tuple[float, float]:
@@ -67,17 +72,25 @@ class HeightModel:
             high_thresh: float,
             low_thresh: float,
     ) -> None:
-        if self._committed:
-            return
-
         pitch = float(pitch_rad)
         d = float(distance_mm)
 
+        # Always retain the latest confident observation,
+        # even after the original height decision has committed.
+        if pitch <= float(high_thresh):
+            self._last_good_is_high = True
+        elif pitch >= float(low_thresh):
+            self._last_good_is_high = False
+
+        # Once committed, do not alter the original approach decision/score.
+        if self._committed:
+            return
+
         self.samples += 1
-        self.min_pitch = min(self.min_pitch, pitch)  # CHANGED
+        self.min_pitch = min(self.min_pitch, pitch)
 
         # --- HARD HIGH LATCH (more negative = higher) ---
-        if pitch <= float(high_thresh):  # CHANGED
+        if pitch <= float(high_thresh):
             self._commit(True)
             return
 
