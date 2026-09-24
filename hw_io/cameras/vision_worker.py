@@ -1,4 +1,4 @@
-# checkout/cameras/vision_worker.py
+# hw_io/cameras/vision_worker.py
 
 from __future__ import annotations
 
@@ -63,9 +63,6 @@ def run_vision_worker(
     try:
         cam_cal = CALIBRATION.cameras[camera_name]
 
-        camera_yaw_deg = float(
-            CONFIG.camera_mounts[camera_name]["yaw_deg"]
-        )
 
         # Important: resolve/open camera inside this worker process.
         camera_config = CONFIG.cameras[camera_name]
@@ -95,6 +92,7 @@ def run_vision_worker(
         )
         last_status = None
         last_marker_count = None
+        last_marker_ids = None
 
         while not stop_event.is_set():
             timestamp = time.time()
@@ -102,21 +100,30 @@ def run_vision_worker(
             try:
                 markers = camera.see()
                 marker_count = len(markers)
+                marker_ids = [int(marker.id) for marker in markers]
 
-                if last_status != "ok" or last_marker_count != marker_count:
+                if (
+                        last_status != "ok"
+                        or last_marker_count != marker_count
+                        or last_marker_ids != marker_ids
+                ):
                     print(
-                        f"[VISION_WORKER] camera={camera_name} status=ok markers={marker_count}",
+                        f"[VISION_WORKER] "
+                        f"camera={camera_name} "
+                        f"status=ok "
+                        f"markers={marker_count} "
+                        f"ids={marker_ids}",
                         flush=True,
                     )
                     last_status = "ok"
                     last_marker_count = marker_count
+                    last_marker_ids = marker_ids
 
                 vision_message = build_vision_message(
                     camera_name=camera_name,
                     timestamp=timestamp,
                     markers=markers,
                     cam_cal=cam_cal,
-                    camera_yaw_deg=camera_yaw_deg,
                     status="ok",
                 )
 

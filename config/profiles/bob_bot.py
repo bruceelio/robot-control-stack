@@ -101,7 +101,7 @@ BATTERY_VOLTAGE_NOMINAL = 14.17
 # +x forward, +y left, +z up
 
 # -------------------------
-# Arducam (mounted on the Right)
+# Arducam (mounted on the left)
 # -----------------------
 
 """
@@ -128,7 +128,7 @@ GRIPPER_MOUNT = {
 """
 
 # -------------------------
-# Pi3 (mounted on the left)
+# Pi3 (mounted on the right)
 # -----------------------
 
 CAMERA_MOUNTS = {
@@ -228,18 +228,62 @@ INIT_ESCAPE_DRIVE_MM = 0
 INIT_ESCAPE_ROTATE_DEG = 0.0
 
 # -------------------------
+# Approach Target
+# -------------------------
+
+# ApproachTargetServo PID tuning
+APPROACH_TARGET_SERVO_LINEAR_KP = 1.0
+APPROACH_TARGET_SERVO_LINEAR_KI = 0.0
+APPROACH_TARGET_SERVO_LINEAR_KD = 0.0
+
+APPROACH_TARGET_SERVO_ANGULAR_KP = 2.0
+APPROACH_TARGET_SERVO_ANGULAR_KI = 0.0
+APPROACH_TARGET_SERVO_ANGULAR_KD = 0.0
+
+APPROACH_TARGET_SERVO_DERIVATIVE_MODE = "error"
+
+# ApproachTargetServo limits / policy
+APPROACH_TARGET_SERVO_LINEAR_MAX_MM_S = 300.0
+APPROACH_TARGET_SERVO_ANGULAR_MAX_RAD_S = 0.35
+APPROACH_TARGET_SERVO_DRIVE_CUTOFF_DEG = 60.0
+APPROACH_TARGET_SERVO_STOP_TOLERANCE_MM = 10.0
+
+# -------------------------
 # Post-Pickup Realignment
 # -------------------------
 
-POST_PICKUP_REVERSE_MM = 120
+POST_PICKUP_REVERSE_MM = 160
 POST_PICKUP_ROTATE_DEG = -155
+
+# -------------------------
+# Return To Base
+# -------------------------
+
+# ReturnToBaseServo PID tuning
+RETURN_TO_BASE_SERVO_LINEAR_KP = 1.0
+RETURN_TO_BASE_SERVO_LINEAR_KI = 0.0
+RETURN_TO_BASE_SERVO_LINEAR_KD = 0.0
+
+RETURN_TO_BASE_SERVO_ANGULAR_KP = 2.0
+RETURN_TO_BASE_SERVO_ANGULAR_KI = 0.0
+RETURN_TO_BASE_SERVO_ANGULAR_KD = 0.0
+
+RETURN_TO_BASE_SERVO_DERIVATIVE_MODE = "error"
+
+# ReturnToBaseServo limits / policy
+RETURN_TO_BASE_SERVO_LINEAR_MAX_MM_S = 300.0
+RETURN_TO_BASE_SERVO_ANGULAR_MAX_RAD_S = 0.35
+RETURN_TO_BASE_SERVO_DRIVE_SLOWDOWN_START_DEG = 5.0
+RETURN_TO_BASE_SERVO_DRIVE_CUTOFF_DEG = 40.0
+RETURN_TO_BASE_SERVO_STOP_TOLERANCE_MM = 10.0
+
 
 # -------------------------
 # Post-Dropoff Realignment
 # -------------------------
 
-POST_DROPOFF_REVERSE_MM = 120
-POST_DROPOFF_ROTATE_DEG = 90
+POST_DROPOFF_REVERSE_MM = 160
+POST_DROPOFF_ROTATE_DEG = -90
 
 # -------------------------
 # Localisation Recovery

@@ -61,7 +61,11 @@ class ApproachTargetServo(Primitive):
             else None
         )
 
-        self.controller = ServoingController()
+        self.controller = ServoingController(
+            application="approach_target",
+            config=self.config,
+        )
+
         self.velocity_backend = None
 
         self.failure_reason: Optional[str] = None
@@ -77,6 +81,8 @@ class ApproachTargetServo(Primitive):
         return self.locked_target_id
 
     def start(self, *, lvl2, **_):
+        self.controller.reset()
+
         self.failure_reason = None
 
         self.final_distance_mm = None
@@ -217,12 +223,8 @@ class ApproachTargetServo(Primitive):
             target.get("last_seen", 0.0)
         )
 
-        camera_distance = float(target["distance"])
-        camera_bearing = float(target["bearing"])
-
         distance_mm, bearing_deg = target_from_gripper(
-            distance_mm=camera_distance,
-            bearing_deg=camera_bearing,
+            observation=target,
             config=self.config,
         )
 
@@ -310,7 +312,8 @@ class ApproachTargetServo(Primitive):
 
             print(
                 "[SERVO_APPROACH][HANDOFF] "
-                f"mode={'HIGH' if self.target_is_high else 'LOW'} "
+                f"approach_mode={'HIGH' if self.height_model.is_high() else 'LOW'} "
+                f"pickup_height={'HIGH' if self.target_is_high else 'LOW'} "
                 f"dist={distance_mm:.0f}mm "
                 f"bearing={bearing_deg:.1f}deg "
                 f"commit={commit_distance_mm:.0f}mm "

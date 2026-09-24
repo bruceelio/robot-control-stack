@@ -1,4 +1,4 @@
-# behaviors/acquire_object.py
+# behaviors/approach_object.py
 
 import time
 import inspect
@@ -14,7 +14,6 @@ from policies.vision_grace_period import VisionGracePeriod
 from primitives.base import PrimitiveStatus
 from primitives.manipulation import LiftDown
 
-from skills.manipulation.final_pickup import FinalPickup
 from skills.manipulation.prepare_pickup import PreparePickup
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
@@ -25,7 +24,7 @@ from skills.perception.track_object import TrackObject
 
 from log_trace import next_run, trace
 
-class AcquireObject(Behavior):
+class ApproachObject(Behavior):
     """
     Pickup-only pipeline:
 
@@ -48,7 +47,10 @@ class AcquireObject(Behavior):
 
         self._prepare_view_skill = None
         self._prepare_pickup_skill = None
-        self._final_pickup_skill = None
+        # Navigation handoff geometry for PickupObject.
+        self.final_distance_mm = None
+        self.final_bearing_deg = None
+        self.target_is_high = None
 
         # The concrete marker id we actually approached (if any)
         self.acquired_target_id = None
@@ -123,7 +125,9 @@ class AcquireObject(Behavior):
 
         self._prepare_view_skill = None
         self._prepare_pickup_skill = None
-        self._final_pickup_skill = None
+        self.final_distance_mm = None
+        self.final_bearing_deg = None
+        self.target_is_high = None
 
         # exclusions must be set before tracing
         self.exclude_ids = set(exclude_ids) if exclude_ids else set()
@@ -239,9 +243,6 @@ class AcquireObject(Behavior):
 
         if self.phase == "APPROACHING":
             return self._approach(lvl2, perception, motion_backend)
-
-        if self.phase == "FINAL_PICKUP":
-            return self._final_pickup(lvl2, motion_backend)
 
         if self.phase == "RECOVER_LOST_TARGET":
             return self._recover_lost_target(perception, localisation, motion_backend)
@@ -405,7 +406,7 @@ class AcquireObject(Behavior):
 
 
             # Hard timeout since SELECT started -> escalate
-            select_timeout_s = float(getattr(self.config, "select_timeout_s", 6.0))
+            select_timeout_s = float(getattr(self.config, "select_timeout_s", 0.8))
             max_stalls = int(getattr(self.config, "select_max_stalls_before_escalate", 2))
 
             if self._select_started_s is None:
@@ -981,39 +982,30 @@ class AcquireObject(Behavior):
                 f"approached_target_id={tid}"
             )
 
-        distance_mm = self._approach_skill.final_distance_mm
-        bearing_deg = self._approach_skill.final_bearing_deg
-        target_is_high = self._approach_skill.target_is_high
+        self.final_distance_mm = self._approach_skill.final_distance_mm
+        self.final_bearing_deg = self._approach_skill.final_bearing_deg
+        self.target_is_high = self._approach_skill.target_is_high
 
-        if distance_mm is None or bearing_deg is None:
+        if (
+                self.final_distance_mm is None
+                or self.final_bearing_deg is None
+        ):
             print(
                 "[ACQUIRE_OBJECT] ApproachTarget SUCCEEDED "
-                "without final pickup geometry"
+                "without pickup handoff geometry"
             )
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="FINAL_PICKUP",
-            run=self.run_id,
-            lock=self.locked_target_id or "none",
+        print(
+            "[ACQUIRE_OBJECT] approach complete "
+            f"id={self.acquired_target_id} "
+            f"distance={self.final_distance_mm:.0f}mm "
+            f"bearing={self.final_bearing_deg:.1f}deg "
+            f"high={self.target_is_high}"
         )
 
-        self._final_pickup_skill = FinalPickup()
-
-        self._final_pickup_skill.start(
-            config=self.config,
-            lvl2=lvl2,
-            motion_backend=motion_backend,
-            distance_mm=distance_mm,
-            bearing_deg=bearing_deg,
-            target_is_high=target_is_high,
-        )
-
-        self.phase = "FINAL_PICKUP"
-
+        self.status = BehaviorStatus.SUCCEEDED
         return self.status
 
     # -------------------------
@@ -1166,41 +1158,6 @@ class AcquireObject(Behavior):
         self.status = BehaviorStatus.FAILED
         return self.status
 
-    # -------------------------
-    # Phase: FINAL_PICKUP
-    # -------------------------
-
-    def _final_pickup(self, lvl2, motion_backend):
-
-        if self._final_pickup_skill is None:
-            print(
-                "[ACQUIRE_OBJECT][FINAL_PICKUP] "
-                "missing FinalPickup skill"
-            )
-            self.status = BehaviorStatus.FAILED
-            return self.status
-
-        st = self._final_pickup_skill.update(
-            lvl2=lvl2,
-            motion_backend=motion_backend,
-        )
-
-        if st == PrimitiveStatus.RUNNING:
-            return self.status
-
-        if st == PrimitiveStatus.FAILED:
-            print(
-                "[ACQUIRE_OBJECT][FINAL_PICKUP] FAILED"
-            )
-            self.status = BehaviorStatus.FAILED
-            return self.status
-
-        print(
-            "[ACQUIRE_OBJECT][FINAL_PICKUP] complete"
-        )
-
-        self.status = BehaviorStatus.SUCCEEDED
-        return self.status
 
     def stop(self, *, motion_backend=None, **_):
         self._safe_stop(self._select_skill, motion_backend=motion_backend)
@@ -1208,7 +1165,6 @@ class AcquireObject(Behavior):
         self._safe_stop(self._prepare_pickup_skill, motion_backend=motion_backend)
         self._safe_stop(self._align_skill, motion_backend=motion_backend)
         self._safe_stop(self._approach_skill, motion_backend=motion_backend)
-        self._safe_stop(self._final_pickup_skill, motion_backend=motion_backend,)
         self._safe_stop(self._recover_behavior, motion_backend=motion_backend)
         self._safe_stop(self._track_after_recover_skill, motion_backend=motion_backend)
         self._safe_stop(self._global_search_behavior, motion_backend=motion_backend)

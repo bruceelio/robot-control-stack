@@ -236,3 +236,89 @@ def get_start_pose(base: int, slot: int):
         return START_POSES[slot][base]
     except KeyError as e:
         raise ValueError(f"Unknown start pose base={base} slot={slot}") from e
+
+# --------------------------------------------------
+# Return-to-base guide paths
+# --------------------------------------------------
+
+def _marker_path(
+    start_id: int,
+    final_id: int,
+    step: int,
+) -> tuple[int, ...]:
+    """
+    Walk around the 20 arena boundary markers until final_id
+    is reached.
+
+    step:
+        +1 = increasing marker IDs around the perimeter
+        -1 = decreasing marker IDs around the perimeter
+    """
+    path = []
+    marker_id = int(start_id)
+
+    while True:
+        path.append(marker_id)
+
+        if marker_id == final_id:
+            break
+
+        marker_id = (marker_id + step) % 20
+
+    return tuple(path)
+
+
+def return_guide_paths(zone: int) -> tuple[tuple[int, ...], ...]:
+    """
+    Ordered Stage-2 return-to-base guide paths for a match zone.
+
+    Each zone has two possible routes around the arena perimeter,
+    approaching the home-zone final guide from opposite directions.
+    """
+    zone = int(zone)
+
+    if zone not in (0, 1, 2, 3):
+        raise ValueError(f"Unknown match zone: {zone}")
+
+    final_guide = (19 + (5 * zone)) % 20
+
+    increasing_start = (final_guide - 10) % 20
+    decreasing_start = (final_guide + 9) % 20
+
+    increasing_path = _marker_path(
+        increasing_start,
+        final_guide,
+        +1,
+    )
+
+    decreasing_path = _marker_path(
+        decreasing_start,
+        final_guide,
+        -1,
+    )
+
+    return (
+        increasing_path,
+        decreasing_path,
+    )
+
+def return_guide_routes(zone: int):
+    """
+    Stage-2 return routes for this arena.
+
+    guide_side describes where the active intermediate guide
+    should be held in the camera so that the camera looks ahead
+    toward the next guide.
+    """
+    increasing_path, decreasing_path = return_guide_paths(zone)
+
+    return (
+        {
+            "guide_ids": increasing_path,
+            "guide_side": "left",
+        },
+        {
+            "guide_ids": decreasing_path,
+            "guide_side": "right",
+        },
+    )

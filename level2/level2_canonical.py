@@ -298,6 +298,22 @@ class Level2:
         except Exception as e:
             print("[Level2] LIFT_UP failed:", e)
 
+    def LIFT_CARRY(self):
+        print("[Level2] LIFT_CARRY")
+
+        servo = self.io.servo["lift"]
+
+        try:
+            servo.position = -0.8
+
+            t_end = time.time() + 1.0
+            while time.time() < t_end:
+                servo.position = -0.8
+                self.io.sleep(0.05)
+
+        except Exception as e:
+            print("[Level2] LIFT_CARRY failed:", e)
+
     def LIFT_DISABLE(self):
         print("[Level2] LIFT_DISABLE")
 

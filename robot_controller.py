@@ -22,6 +22,7 @@ from calibration import CALIBRATION
 from calibration.resolve import resolve
 from perception.vision.detection_pipeline import build_vision_message
 
+
 from hw_io.base import IOMap
 from hw_io.resolve import resolve_io
 from hw_io.encoder_manager import EncoderManager, make_signals
@@ -62,6 +63,9 @@ class Controller:
             CONFIG.encoders,
             CONFIG.encoder_sign,
         )
+
+        self.latest_arena_observations = []
+        self.latest_arena_observation_timestamp = 0.0
 
         self.perf = PerformanceMonitor("main", report_every_s=5.0)
 
@@ -122,6 +126,7 @@ class Controller:
 
         if CONFIG.io.get("usb.match_zone") is not None:
             match_zone = self.io.usb["match_zone"]
+            self.match_zone = int(match_zone)
         else:
             match_zone = 0
 
@@ -174,7 +179,29 @@ class Controller:
 
         # Asynchronous physical-camera path.
         if self.camera_manager is not None:
-            return self.camera_manager.get_latest(camera_name)
+            vision_message = self.camera_manager.get_latest(camera_name)
+
+            if vision_message is not None:
+                markers = list(vision_message.get("markers", []))
+                marker_ids = [
+                    int(marker.id)
+                    for marker in markers
+                ]
+
+                timestamp = float(
+                    vision_message.get("timestamp", 0.0)
+                )
+                age_s = max(0.0, now_s - timestamp)
+
+                print(
+                    f"[VISION_RX] "
+                    f"camera={camera_name} "
+                    f"markers={len(markers)} "
+                    f"ids={marker_ids} "
+                    f"age={age_s:.3f}s"
+                )
+
+            return vision_message
 
         # Synchronous path, e.g. SR/Webots.
         camera = self.io.cameras().get(camera_name)
@@ -191,9 +218,6 @@ class Controller:
             timestamp=now_s,
             markers=markers,
             cam_cal=cam_cal,
-            camera_yaw_deg=float(
-                CONFIG.camera_mounts[camera_name]["yaw_deg"]
-            ),
         )
 
         vision_message["markers"] = markers
@@ -321,10 +345,20 @@ class Controller:
         # Perception consumes Vision
         # ----------------------------------
 
-        _, objects = sense(
+        arena_observations, objects = sense(
             self.io,
             self.perception,
             latest_vision_message=vision_message,
+        )
+
+        self.latest_arena_observations = arena_observations
+
+        self.latest_arena_observation_timestamp = (
+            0.0
+            if vision_message is None
+            else float(
+                vision_message.get("timestamp", 0.0)
+            )
         )
 
 

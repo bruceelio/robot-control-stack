@@ -1,8 +1,9 @@
-# skills/manipulation/final_pickup.py
+# behaviors/pickup_object.py
 
 from __future__ import annotations
 
-from primitives.base import Primitive, PrimitiveStatus
+from behaviors.base import Behavior, BehaviorStatus
+from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
 from primitives.manipulation import LiftMiddle
 
@@ -11,9 +12,9 @@ from skills.manipulation.grasp_object import GraspObject
 from skills.manipulation.verify_grip import VerifyGrip
 
 
-class FinalPickup(Primitive):
+class PickupObject(Behavior):
     """
-    Final pickup sequence after ApproachToPickup reaches its commit distance.
+    Final pickup behavior after ApproachObject reaches its handoff distance.
 
     Sequence:
         1. HIGH target: move lift to middle
@@ -55,6 +56,7 @@ class FinalPickup(Primitive):
         **_,
     ):
         self.config = config
+        self.status = BehaviorStatus.RUNNING
 
         self.distance_mm = float(distance_mm)
         self.bearing_deg = float(bearing_deg)
@@ -80,12 +82,12 @@ class FinalPickup(Primitive):
             try:
                 prep_lift = LiftMiddle(settle_time=0.0)
                 prep_lift.start(lvl2=lvl2)
-                print("[FINAL_PICKUP] LIFT MIDDLE")
+                print("[[PICKUP_OBJECT]] LIFT MIDDLE")
             except Exception as e:
-                print(f"[FINAL_PICKUP] LIFT MIDDLE failed: {e}")
+                print(f"[[PICKUP_OBJECT]] LIFT MIDDLE failed: {e}")
 
         print(
-            f"[FINAL_PICKUP] start "
+            f"[[PICKUP_OBJECT]] start "
             f"high={self.target_is_high} "
             f"dist={self.distance_mm:.0f}mm "
             f"bearing={self.bearing_deg:.1f}deg "
@@ -101,7 +103,7 @@ class FinalPickup(Primitive):
 
         self._step = "ALIGN"
 
-        return PrimitiveStatus.RUNNING
+        return self.status
 
     def update(self, *, lvl2, motion_backend, **_):
 
@@ -118,10 +120,11 @@ class FinalPickup(Primitive):
                 return st
 
             if st == PrimitiveStatus.FAILED:
-                print("[FINAL_PICKUP] alignment FAILED")
-                return PrimitiveStatus.FAILED
+                print("[[PICKUP_OBJECT]] alignment FAILED")
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
-            print("[FINAL_PICKUP] alignment complete")
+            print("[[PICKUP_OBJECT]] alignment complete")
 
             self._drive = Drive(
                 distance_mm=self.final_drive_mm
@@ -146,10 +149,11 @@ class FinalPickup(Primitive):
                 return st
 
             if st == PrimitiveStatus.FAILED:
-                print("[FINAL_PICKUP] final drive FAILED")
-                return PrimitiveStatus.FAILED
+                print("[[PICKUP_OBJECT]] final drive FAILED")
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
-            print("[FINAL_PICKUP] final drive complete")
+            print("[[PICKUP_OBJECT]] final drive complete")
 
             self._grasp = GraspObject()
             self._grasp.start(
@@ -171,10 +175,11 @@ class FinalPickup(Primitive):
                 return st
 
             if st == PrimitiveStatus.FAILED:
-                print("[FINAL_PICKUP] GraspObject FAILED")
-                return PrimitiveStatus.FAILED
+                print("[[PICKUP_OBJECT]] GraspObject FAILED")
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
-            print("[FINAL_PICKUP] GraspObject complete")
+            print("[[PICKUP_OBJECT]] GraspObject complete")
 
             self._verify = VerifyGrip()
             self._verify.start(
@@ -196,13 +201,16 @@ class FinalPickup(Primitive):
                 return st
 
             if st == PrimitiveStatus.FAILED:
-                print("[FINAL_PICKUP] VerifyGrip FAILED")
-                return PrimitiveStatus.FAILED
+                print("[[PICKUP_OBJECT]] VerifyGrip FAILED")
+                self.status = BehaviorStatus.FAILED
+                return self.status
 
-            print("[FINAL_PICKUP] complete")
-            return PrimitiveStatus.SUCCEEDED
+            print("[PICKUP_OBJECT] complete")
+            self.status = BehaviorStatus.SUCCEEDED
+            return self.status
 
-        return PrimitiveStatus.FAILED
+        self.status = BehaviorStatus.FAILED
+        return self.status
 
     def stop(self, *, motion_backend=None):
         for child in (

@@ -40,4 +40,8 @@ def run_challenge(challenge, controller):
         from tools.challenges.servoing_arena_tag import run
         return run(controller)
 
+    if challenge == Challenge.SERVOING_RETURN_TO_BASE:
+        from tools.challenges.servoing_return_to_base import run
+        return run(controller)
+
     raise RuntimeError(f"Unsupported challenge: {challenge}")

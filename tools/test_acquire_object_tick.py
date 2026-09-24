@@ -5,7 +5,7 @@ import time
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from behaviors.acquire_object import AcquireObject
+from behaviors.approach_object import AcquireObject
 
 class P:
     def __init__(self, objects_by_kind):

@@ -70,9 +70,43 @@ class Config:
     init_escape_drive_mm: int
     init_escape_rotate_deg: float
 
+    # Approach Target servo
+    approach_target_servo_linear_kp: float
+    approach_target_servo_linear_ki: float
+    approach_target_servo_linear_kd: float
+
+    approach_target_servo_angular_kp: float
+    approach_target_servo_angular_ki: float
+    approach_target_servo_angular_kd: float
+
+    approach_target_servo_derivative_mode: str
+
+    approach_target_servo_linear_max_mm_s: float
+    approach_target_servo_angular_max_rad_s: float
+    approach_target_servo_drive_cutoff_deg: float
+    approach_target_servo_stop_tolerance_mm: float
+
     # PostPickupRealign
     post_pickup_reverse_mm: int
     post_pickup_rotate_deg: float
+
+    # Return To Base servo
+    return_to_base_servo_linear_kp: float
+    return_to_base_servo_linear_ki: float
+    return_to_base_servo_linear_kd: float
+
+    return_to_base_servo_angular_kp: float
+    return_to_base_servo_angular_ki: float
+    return_to_base_servo_angular_kd: float
+
+    return_to_base_servo_derivative_mode: str
+
+    return_to_base_servo_linear_max_mm_s: float
+    return_to_base_servo_angular_max_rad_s: float
+    return_to_base_servo_drive_slowdown_start_deg: float
+    return_to_base_servo_drive_cutoff_deg: float
+    return_to_base_servo_stop_tolerance_mm: float
+
 
     # PostDropOffRealign
     post_dropoff_reverse_mm: int
@@ -237,9 +271,69 @@ RESOLVE_MAP = {
     "init_escape_drive_mm": ("profile", "INIT_ESCAPE_DRIVE_MM"),
     "init_escape_rotate_deg": ("profile", "INIT_ESCAPE_ROTATE_DEG"),
 
+    # Approach Target servo
+    "approach_target_servo_linear_kp":
+        ("profile", "APPROACH_TARGET_SERVO_LINEAR_KP"),
+    "approach_target_servo_linear_ki":
+        ("profile", "APPROACH_TARGET_SERVO_LINEAR_KI"),
+    "approach_target_servo_linear_kd":
+        ("profile", "APPROACH_TARGET_SERVO_LINEAR_KD"),
+
+    "approach_target_servo_angular_kp":
+        ("profile", "APPROACH_TARGET_SERVO_ANGULAR_KP"),
+    "approach_target_servo_angular_ki":
+        ("profile", "APPROACH_TARGET_SERVO_ANGULAR_KI"),
+    "approach_target_servo_angular_kd":
+        ("profile", "APPROACH_TARGET_SERVO_ANGULAR_KD"),
+
+    "approach_target_servo_derivative_mode":
+        ("profile", "APPROACH_TARGET_SERVO_DERIVATIVE_MODE"),
+
+    "approach_target_servo_linear_max_mm_s":
+        ("profile", "APPROACH_TARGET_SERVO_LINEAR_MAX_MM_S"),
+    "approach_target_servo_angular_max_rad_s":
+        ("profile", "APPROACH_TARGET_SERVO_ANGULAR_MAX_RAD_S"),
+    "approach_target_servo_drive_cutoff_deg":
+        ("profile", "APPROACH_TARGET_SERVO_DRIVE_CUTOFF_DEG"),
+    "approach_target_servo_stop_tolerance_mm":
+        ("profile", "APPROACH_TARGET_SERVO_STOP_TOLERANCE_MM"),
+
     # PostPickupRealign
     "post_pickup_reverse_mm": ("profile", "POST_PICKUP_REVERSE_MM"),
     "post_pickup_rotate_deg": ("profile", "POST_PICKUP_ROTATE_DEG"),
+
+# Return To Base servo
+"return_to_base_servo_linear_kp":
+    ("profile", "RETURN_TO_BASE_SERVO_LINEAR_KP"),
+"return_to_base_servo_linear_ki":
+    ("profile", "RETURN_TO_BASE_SERVO_LINEAR_KI"),
+"return_to_base_servo_linear_kd":
+    ("profile", "RETURN_TO_BASE_SERVO_LINEAR_KD"),
+
+"return_to_base_servo_angular_kp":
+    ("profile", "RETURN_TO_BASE_SERVO_ANGULAR_KP"),
+"return_to_base_servo_angular_ki":
+    ("profile", "RETURN_TO_BASE_SERVO_ANGULAR_KI"),
+"return_to_base_servo_angular_kd":
+    ("profile", "RETURN_TO_BASE_SERVO_ANGULAR_KD"),
+
+"return_to_base_servo_derivative_mode":
+    ("profile", "RETURN_TO_BASE_SERVO_DERIVATIVE_MODE"),
+
+"return_to_base_servo_linear_max_mm_s":
+    ("profile", "RETURN_TO_BASE_SERVO_LINEAR_MAX_MM_S"),
+"return_to_base_servo_angular_max_rad_s":
+    ("profile", "RETURN_TO_BASE_SERVO_ANGULAR_MAX_RAD_S"),
+"return_to_base_servo_drive_slowdown_start_deg":
+    (
+        "profile",
+        "RETURN_TO_BASE_SERVO_DRIVE_SLOWDOWN_START_DEG",
+    ),
+"return_to_base_servo_drive_cutoff_deg":
+    ("profile", "RETURN_TO_BASE_SERVO_DRIVE_CUTOFF_DEG"),
+"return_to_base_servo_stop_tolerance_mm":
+    ("profile", "RETURN_TO_BASE_SERVO_STOP_TOLERANCE_MM"),
+
 
     # PostDropoffRealign
     "post_dropoff_reverse_mm": ("profile", "POST_DROPOFF_REVERSE_MM"),

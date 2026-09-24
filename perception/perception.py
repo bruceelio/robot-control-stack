@@ -4,7 +4,6 @@ import time
 import math
 import hashlib
 from calibration import CALIBRATION
-from config import CONFIG
 from hw_io.base import IOMap
 from perception.vision.detection_pipeline import (
     arena_detections_from_vision_message,
@@ -211,9 +210,6 @@ def sense(
 
     cam_cal = CALIBRATION.cameras[camera_name]
 
-    camera_yaw_deg = float(
-        CONFIG.camera_mounts[camera_name]["yaw_deg"]
-    )
 
     if latest_vision_message is not None:
         seen = list(latest_vision_message.get("markers", []))
@@ -238,7 +234,6 @@ def sense(
             timestamp=now,
             markers=arena_markers,
             cam_cal=cam_cal,
-            camera_yaw_deg=camera_yaw_deg,
         )
         vision_message["markers"] = all_apriltag_markers
 
@@ -269,7 +264,6 @@ def sense(
         now,
         cam_cal,
         camera_name=camera_name,
-        camera_yaw_deg=camera_yaw_deg,
     )
 
     update_objects(
@@ -280,7 +274,6 @@ def sense(
         now,
         cam_cal,
         camera_name=camera_name,
-        camera_yaw_deg=camera_yaw_deg,
     )
 
     # Log current seen markers left -> right (most negative bearing first)
@@ -354,7 +347,6 @@ def update_objects(
     cam,
     *,
     camera_name: str,
-    camera_yaw_deg: float,
 ):
     memory = perception.objects[kind]
 
@@ -363,7 +355,6 @@ def update_objects(
         bearing_deg = corrected_bearing_deg(
             m,
             cam,
-            camera_yaw_deg,
         )
         bearing_rad = math.radians(bearing_deg)
 

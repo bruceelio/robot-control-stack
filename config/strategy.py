@@ -38,6 +38,7 @@ class Challenge(Enum):
     STOPPING = auto()
     SERVOING = auto()
     SERVOING_ARENA_TAG = auto()
+    SERVOING_RETURN_TO_BASE = auto()
 
 class MatchZoneSource(Enum):
     AUTO = "auto"
@@ -46,9 +47,9 @@ class MatchZoneSource(Enum):
     FIXED = "fixed"
 
 
-ROBOT_PROFILE = RobotProfile.BOB_BOT
+# ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.ROB_BOT
-# ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
+ROBOT_PROFILE = RobotProfile.WEBOTS_ROBOT         # Run this for WeBots
 # ROBOT_PROFILE = RobotProfile.SR1
 
 # ==================================================
@@ -87,15 +88,16 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.SIMULATOR
 # CHALLENGE = Challenge.TRANSPORTATION
 # CHALLENGE = Challenge.STOPPING
-CHALLENGE = Challenge.SERVOING
+# CHALLENGE = Challenge.SERVOING
 # CHALLENGE = Challenge.SERVOING_ARENA_TAG
+CHALLENGE = Challenge.SERVOING_RETURN_TO_BASE
 
 # =========================
 # Default Target
 # =========================
 
-DEFAULT_TARGET_KIND = "acidic"
-# DEFAULT_TARGET_KIND = "basic"
+# DEFAULT_TARGET_KIND = "acidic"
+DEFAULT_TARGET_KIND = "basic"
 
 # =========================
 # Match / Starting Zone

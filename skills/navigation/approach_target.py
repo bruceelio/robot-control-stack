@@ -358,9 +358,14 @@ class ApproachTarget(Primitive):
             self.target_id = int(seed_target.get("id")) if seed_target else None
 
         if seed_target is not None:
+            distance, bearing = target_from_gripper(
+                observation=seed_target,
+                config=self.config,
+            )
+
             self.last_seen_time = now
-            self.last_seen_distance = float(seed_target.get("distance", 0.0))
-            self.last_seen_bearing = float(seed_target.get("bearing", 0.0))
+            self.last_seen_distance = distance
+            self.last_seen_bearing = bearing
         else:
             self.last_seen_time = None
             self.last_seen_distance = None
@@ -628,12 +633,8 @@ class ApproachTarget(Primitive):
         mode, commit, direct = self._geometry_params()
 
         if target is not None:
-            camera_distance = float(target["distance"])
-            camera_bearing = float(target["bearing"])
-
             distance, bearing = target_from_gripper(
-                distance_mm=camera_distance,
-                bearing_deg=camera_bearing,
+                observation=target,
                 config=self.config,
             )
 
