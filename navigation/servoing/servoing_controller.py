@@ -459,11 +459,14 @@ class ServoingController:
                     self.config.approach_target_servo_angular_kd
                 ),
 
-                linear_max_mm_s=float(
-                    self.config.approach_target_servo_linear_max_mm_s
+                linear_max_mm_s=(
+                        float(
+                            self.config.approach_range_linear_max_mps
+                        )
+                        * 1000.0
                 ),
                 angular_max_rad_s=float(
-                    self.config.approach_target_servo_angular_max_rad_s
+                    self.config.approach_range_angular_max_rad_s
                 ),
 
                 target_angle_drive_slowdown_start_rad=None,

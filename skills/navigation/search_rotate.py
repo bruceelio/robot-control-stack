@@ -3,140 +3,288 @@
 from __future__ import annotations
 
 import time
-from typing import Iterable, Optional
+from typing import Any, Optional
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Rotate
-from skills.perception.select_target_utils import get_closest_target
 
 
 class SearchRotate(Primitive):
     """
-    Skill: SearchRotate
-    Responsibility:
-      - Actively rotate in place to find ANY valid target (early exit when found)
-      - Bounded by max rotation and/or timeout
+    Generic stepped rotational search pattern.
 
-    Inputs:
-      - perception
-      - kinds: str or list[str] (which target kinds to accept)
-      - step_deg, max_deg, timeout_s
-      - max_age_s (freshness window for perception memory)
-      - settle_s (optional post-rotate settle time)
+    SearchRotate owns only the search motion.
 
-    Outputs:
-      - SUCCEEDED if a target is found (found_target is set)
-      - FAILED if scan completes without finding a target
-      - RUNNING while scanning
+    It does NOT know:
+      - what is being searched for
+      - how perception works
+      - object kinds
+      - tag IDs
+      - exclusions
+      - localisation policy
+
+    The caller evaluates its own search condition and passes the
+    current result into update() as found_item.
+
+    found_item may therefore be:
+      - an object observation
+      - an arena marker
+      - a localisation landmark
+      - some future vision result
+      - any other caller-defined object
+
+    Returns:
+      RUNNING
+        while the search is active
+
+      SUCCEEDED
+        as soon as found_item is not None
+
+      FAILED
+        if the rotation budget or timeout is exhausted,
+        or if a rotation primitive fails
     """
 
     def __init__(
         self,
         *,
-        kinds: str | Iterable[str],
         step_deg: float,
         max_deg: float,
         timeout_s: float,
-        max_age_s: float,
+        settle_s: float = 0.0,
         label: str = "SEARCH_ROTATE",
-        settle_s: float = 0.0,   # <-- NEW
     ):
         super().__init__()
-        if isinstance(kinds, str):
-            self.kinds = [kinds]
-        else:
-            self.kinds = list(kinds)
 
         self.step_deg = float(step_deg)
-        self.max_deg = float(max_deg)
+        self.max_deg = abs(float(max_deg))
         self.timeout_s = float(timeout_s)
-        self.max_age_s = float(max_age_s)
+        self.settle_s = max(0.0, float(settle_s))
         self.label = label
 
-        self.settle_s = float(settle_s)  # <-- NEW
-
-        self._rotated = 0.0
+        self._rotated_deg = 0.0
         self._child: Optional[Rotate] = None
-        self._t0: Optional[float] = None
-        self.found_target = None
+        self._start_time: Optional[float] = None
+        self._settle_until: Optional[float] = None
 
-        self._settle_until: Optional[float] = None  # <-- NEW
+        self.found_item: Any = None
+        self._status = PrimitiveStatus.RUNNING
 
-    def start(self, *, motion_backend, **_):
-        self._rotated = 0.0
+    def start(
+        self,
+        *,
+        motion_backend,
+        **_,
+    ):
+        self._rotated_deg = 0.0
         self._child = None
-        self._t0 = time.time()
-        self.found_target = None
-        self._settle_until = None  # <-- NEW
-        return PrimitiveStatus.RUNNING
+        self._start_time = time.time()
+        self._settle_until = None
 
-    def _find_any_target(self, perception, now: float):
-        best = None
-        for k in self.kinds:
-            t = get_closest_target(perception, k, now=now, max_age_s=self.max_age_s)
-            if t is None:
-                continue
-            if best is None or t["distance"] < best["distance"]:
-                best = t
-        return best
+        self.found_item = None
+        self._status = PrimitiveStatus.RUNNING
 
-    def update(self, *, motion_backend, perception=None, **_):
+        if abs(self.step_deg) < 1e-6:
+            print(
+                f"[{self.label}] "
+                "invalid step_deg -> FAILED"
+            )
+            self._status = PrimitiveStatus.FAILED
+            return self._status
+
+        if self.max_deg <= 0.0:
+            print(
+                f"[{self.label}] "
+                "invalid max_deg -> FAILED"
+            )
+            self._status = PrimitiveStatus.FAILED
+            return self._status
+
+        print(
+            f"[{self.label}] start "
+            f"step={self.step_deg:+.1f}deg "
+            f"max={self.max_deg:.1f}deg "
+            f"timeout={self.timeout_s:.2f}s "
+            f"settle={self.settle_s:.2f}s"
+        )
+
+        return self._status
+
+    def update(
+        self,
+        *,
+        motion_backend,
+        found_item=None,
+        **_,
+    ):
+        if self._status != PrimitiveStatus.RUNNING:
+            return self._status
+
         now = time.time()
 
-        # 0) If settling, wait (but still allow early exit if target appears)
+        # -------------------------
+        # Search condition satisfied
+        # -------------------------
+        if found_item is not None:
+            self.found_item = found_item
+
+            self._stop_child(
+                motion_backend=motion_backend,
+            )
+
+            print(
+                f"[{self.label}] "
+                "found -> SUCCEEDED"
+            )
+
+            self._status = PrimitiveStatus.SUCCEEDED
+            return self._status
+
+        # -------------------------
+        # Timeout
+        # -------------------------
+        if (
+            self._start_time is not None
+            and self.timeout_s > 0.0
+            and (now - self._start_time) >= self.timeout_s
+        ):
+            self._stop_child(
+                motion_backend=motion_backend,
+            )
+
+            print(
+                f"[{self.label}] "
+                "timeout -> FAILED"
+            )
+
+            self._status = PrimitiveStatus.FAILED
+            return self._status
+
+        # -------------------------
+        # Settle after rotation
+        # -------------------------
         if self._settle_until is not None:
-            if perception is not None:
-                t = self._find_any_target(perception, now)
-                if t is not None:
-                    self.found_target = t
-                    self._settle_until = None
-                    return PrimitiveStatus.SUCCEEDED
 
             if now < self._settle_until:
-                return PrimitiveStatus.RUNNING
+                return self._status
 
-            # settle complete
             self._settle_until = None
 
-        # 1) Early exit if target appears
-        if perception is not None:
-            t = self._find_any_target(perception, now)
-            if t is not None:
-                self.found_target = t
-                return PrimitiveStatus.SUCCEEDED
-
-        # 2) Timeout bound
-        if self._t0 is not None and (now - self._t0) >= self.timeout_s:
-            return PrimitiveStatus.FAILED
-
-        # 3) If rotating child active, keep going
+        # -------------------------
+        # Active rotation
+        # -------------------------
         if self._child is not None:
-            st = self._child.update(motion_backend=motion_backend)
-            if st == PrimitiveStatus.SUCCEEDED:
-                self._child = None
-                # NEW: camera settle after rotation completes
-                if self.settle_s > 0.0:
-                    self._settle_until = time.time() + self.settle_s
-                return PrimitiveStatus.RUNNING
+
+            st = self._child.update(
+                motion_backend=motion_backend,
+            )
+
+            if st == PrimitiveStatus.RUNNING:
+                return self._status
+
             if st == PrimitiveStatus.FAILED:
                 self._child = None
-                return PrimitiveStatus.FAILED
-            return PrimitiveStatus.RUNNING
 
-        # 4) Rotation bound
-        if self._rotated >= self.max_deg:
-            return PrimitiveStatus.FAILED
+                print(
+                    f"[{self.label}] "
+                    "rotate failed -> FAILED"
+                )
 
-        # 5) Start next rotate step
-        angle = self.step_deg
-        self._rotated += abs(angle)
+                self._status = PrimitiveStatus.FAILED
+                return self._status
 
-        self._child = Rotate(angle_deg=angle)
-        self._child.start(motion_backend=motion_backend)
-        return PrimitiveStatus.RUNNING
-
-    def stop(self):
-        self._settle_until = None  # <-- NEW
-        if self._child is not None:
-            self._child.stop()
+            # Rotation completed.
             self._child = None
+
+            if self.settle_s > 0.0:
+                self._settle_until = (
+                    time.time() + self.settle_s
+                )
+
+            return self._status
+
+        # -------------------------
+        # Rotation budget exhausted
+        # -------------------------
+        remaining_deg = (
+            self.max_deg - self._rotated_deg
+        )
+
+        if remaining_deg <= 1e-6:
+            print(
+                f"[{self.label}] "
+                "search sweep complete -> FAILED"
+            )
+
+            self._status = PrimitiveStatus.FAILED
+            return self._status
+
+        # -------------------------
+        # Start next rotation step
+        # -------------------------
+        step_mag = min(
+            abs(self.step_deg),
+            remaining_deg,
+        )
+
+        angle = (
+            step_mag
+            if self.step_deg > 0.0
+            else -step_mag
+        )
+
+        self._rotated_deg += abs(angle)
+
+        print(
+            f"[{self.label}] "
+            f"rotate={angle:+.1f}deg "
+            f"sweep={self._rotated_deg:.1f}/"
+            f"{self.max_deg:.1f}deg"
+        )
+
+        self._child = Rotate(
+            angle_deg=angle,
+        )
+
+        self._child.start(
+            motion_backend=motion_backend,
+        )
+
+        return self._status
+
+    def _stop_child(
+        self,
+        *,
+        motion_backend,
+    ):
+        if self._child is None:
+            return
+
+        try:
+            self._child.stop(
+                motion_backend=motion_backend,
+            )
+        except Exception:
+            pass
+
+        self._child = None
+
+    def stop(
+        self,
+        *,
+        motion_backend=None,
+        **_,
+    ):
+        self._settle_until = None
+
+        if (
+            self._child is not None
+            and motion_backend is not None
+        ):
+            self._stop_child(
+                motion_backend=motion_backend,
+            )
+        else:
+            self._child = None
+
+        self._status = PrimitiveStatus.FAILED

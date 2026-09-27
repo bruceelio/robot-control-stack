@@ -10,6 +10,7 @@ from perception.vision.detection_pipeline import (
     build_vision_message,
     corrected_bearing_deg,
     corrected_distance,
+    corrected_vertical_angle_rad,
 )
 from vision.apriltag.reconcile import (
     reconcile_apriltag_markers,
@@ -116,6 +117,10 @@ class Perception:
     def __init__(self, io: IOMap):
         self.io = io
         self.objects = {"acidic": {}, "basic": {}}
+
+        # All object-face observations from the latest scan only.
+        # Unlike objects, these are not aged or retained between scans.
+        self.object_faces = {"acidic": {}, "basic": {}}
 
         # Canonical AprilTag observations from the latest frame.
         # Localisation may consume these independently of object perception.
@@ -333,6 +338,26 @@ def classify_markers(markers):
     return arena, acidic, basic
 
 
+class _CorrectedPosition:
+    def __init__(self, position, *, vertical_angle: float):
+        self._position = position
+        self.vertical_angle = vertical_angle
+
+    def __getattr__(self, name):
+        return getattr(self._position, name)
+
+
+class _CorrectedMarker:
+    def __init__(self, marker, *, vertical_angle: float):
+        self._marker = marker
+        self.position = _CorrectedPosition(
+            marker.position,
+            vertical_angle=vertical_angle,
+        )
+
+    def __getattr__(self, name):
+        return getattr(self._marker, name)
+
 
 # ==================================================
 # Object tracking
@@ -350,6 +375,11 @@ def update_objects(
 ):
     memory = perception.objects[kind]
 
+    # Face observations are frame-local: replace this kind's complete
+    # face set every time update_objects() processes a new scan.
+    face_memory = perception.object_faces[kind]
+    face_memory.clear()
+
     for m in markers:
         dist = corrected_distance(m, cam)
         bearing_deg = corrected_bearing_deg(
@@ -360,12 +390,55 @@ def update_objects(
 
         # If we don't have a usable heading, keep targets in robot-relative coordinates
         if robot_pose is None or len(robot_pose) < 3 or robot_pose[2] is None:
-            va_rad = float(m.position.vertical_angle)
+            va_rad = corrected_vertical_angle_rad(
+                m,
+                cam,
+            )
             va_deg = math.degrees(va_rad)
+
+            corrected_marker = _CorrectedMarker(
+                m,
+                vertical_angle=va_rad,
+            )
+
+            orientation = getattr(m, "orientation", None)
+            yaw_rad = getattr(orientation, "yaw", None)
+            pitch_rad = getattr(orientation, "pitch", None)
+            roll_rad = getattr(orientation, "roll", None)
+
+            face_memory.setdefault(m.id, []).append({
+                "id": m.id,
+                "kind": kind,
+                "distance": dist,
+                "bearing": bearing_deg,
+                "vertical_angle_rad": va_rad,
+                "vertical_angle_deg": va_deg,
+                "yaw_rad": yaw_rad,
+                "yaw_deg": (
+                    None
+                    if yaw_rad is None
+                    else math.degrees(yaw_rad)
+                ),
+                "pitch_rad": pitch_rad,
+                "pitch_deg": (
+                    None
+                    if pitch_rad is None
+                    else math.degrees(pitch_rad)
+                ),
+                "roll_rad": roll_rad,
+                "roll_deg": (
+                    None
+                    if roll_rad is None
+                    else math.degrees(roll_rad)
+                ),
+                "last_seen": now,
+                "relative": True,
+                "camera": camera_name,
+            })
 
             memory[m.id] = {
                 "id": m.id,
-                "marker": m,
+                "marker": corrected_marker,
                 "kind": kind,
                 "distance": dist,
                 "bearing": bearing_deg,
@@ -399,7 +472,7 @@ def update_objects(
 
         memory[m.id] = {
             "id": m.id,
-            "marker": m,
+            "marker": corrected_marker,
             "x": ax,
             "y": ay,
             "distance": math.hypot(ax - rx, ay - ry),

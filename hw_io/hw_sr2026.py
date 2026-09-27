@@ -91,6 +91,14 @@ class CurrentReading:
     def amps(self) -> Optional[float]:
         return self._getter()
 
+class ValueReading:
+    def __init__(self, getter: Callable[[], Any]):
+        self._getter = getter
+
+    @property
+    def value(self) -> Any:
+        return self._getter()
+
 
 class SR2026SemanticMotor:
     """Canonical motor wrapper around one SR Motor Board channel."""
@@ -346,6 +354,7 @@ class SR2026IO(IOMap):
         self._voltage = NamedIndexedCollection([], {})
         self._current = NamedIndexedCollection([], {})
         self._encoder = NamedIndexedCollection([], {})
+        self._usb = NamedIndexedCollection([], {})
 
         self._motor = NamedIndexedCollection([], {})
         self._drive = NamedIndexedCollection([], {})
@@ -497,6 +506,16 @@ class SR2026IO(IOMap):
             ordered_items=[],
             named_items={},
         )
+
+        self._usb = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "match_zone": ValueReading(self._read_match_zone),
+            },
+        )
+
+    def _read_match_zone(self) -> int:
+        return int(self.robot.zone)
 
     def _read_battery_voltage(self) -> Optional[float]:
         sensor = getattr(self._power, "battery_sensor", None)
@@ -653,6 +672,10 @@ class SR2026IO(IOMap):
     @property
     def encoder(self):
         return self._encoder
+
+    @property
+    def usb(self):
+        return self._usb
 
     @property
     def camera(self) -> Dict[str, Camera]:

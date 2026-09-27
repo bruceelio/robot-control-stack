@@ -79,13 +79,15 @@ class ReturnToBase(Behavior):
         return self.status
 
     def update(
-        self,
-        *,
-        lvl2,
-        motion_backend,
-        arena_observations=None,
-        observation_timestamp=None,
-        **_,
+            self,
+            *,
+            lvl2,
+            motion_backend,
+            arena_observations=None,
+            observation_timestamp=None,
+            perception=None,
+            delivered_ids=None,
+            **_,
     ):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
@@ -147,6 +149,8 @@ class ReturnToBase(Behavior):
             st = self.active.update(
                 arena_observations=arena_observations,
                 observation_timestamp=observation_timestamp,
+                perception=perception,
+                delivered_ids=delivered_ids,
             )
 
         else:

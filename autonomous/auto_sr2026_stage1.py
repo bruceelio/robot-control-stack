@@ -11,6 +11,10 @@ from behaviors.dropoff_object import DropoffObject
 from behaviors.post_dropoff_realign import PostDropoffRealign
 from behaviors.scripted_start import ScriptedStart
 from behaviors.return_to_base import ReturnToBase
+from behaviors.global_object_search import GlobalObjectSearch
+
+from skills.manipulation.prepare_search import PrepareSearch
+from skills.perception.select_target import SelectTarget
 
 from config import CONFIG
 from config.strategy import STARTUP_SCRIPT, StartupScript
@@ -33,13 +37,20 @@ class AutoSR2026Stage1:
         # -------------------------
         self.delivered_ids: set[int] = set()
         self.last_collected_id: int | None = None
+        self.delivered_kind: str | None = None
+        self.pending_pickup_kind: str | None = None
 
         self.pending_pickup_id: int | None = None
         self.pickup_distance_mm: float | None = None
         self.pickup_bearing_deg: float | None = None
         self.pickup_target_is_high: bool | None = None
+        self.selected_target = None
+        self.selected_kind: str | None = None
+        self.selected_servo_method = None
+
 
         self.return_arrival_side = None
+        self.recover_localisation_success_state = None
 
         # -------------------------
         # State & behavior
@@ -92,20 +103,202 @@ class AutoSR2026Stage1:
 
             if status.name == "SUCCEEDED":
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+                self.state = RobotState.PREPARE_SEARCH
+
+            return
+
+
+        # -------------------------
+        # PREPARE SEARCH
+        # -------------------------
+        if self.state == RobotState.PREPARE_SEARCH:
+            if self.behavior is None:
+                self.behavior = PrepareSearch()
+
+                self.behavior.start(
+                    lvl2=controller.lvl2,
+                )
+
+            status = self.behavior.update()
+
+            if status.name == "SUCCEEDED":
+                print("PrepareSearch complete")
+                self.behavior = None
+                self.state = RobotState.GLOBAL_OBJECT_SEARCH
+
+            elif status.name == "FAILED":
+                print("PrepareSearch failed")
+                # Failure routing still TBD.
+                # Do not silently retry it here.
 
             return
 
         # -------------------------
-        # ACQUIRE OBJECT
+        # GLOBAL OBJECT SEARCH
         # -------------------------
-        if self.state == RobotState.SEEK_AND_COLLECT:
+        if self.state == RobotState.GLOBAL_OBJECT_SEARCH:
+
             if self.behavior is None:
-                self.behavior = ApproachObject()
+                # Before the first successful delivery, either object
+                # kind is sufficient to move on to SelectTarget.
+                #
+                # After the first delivery, the delivered kind becomes
+                # mandatory.
+                required_kind = (
+                    None
+                    if self.delivered_kind is None
+                    else self.delivered_kind
+                )
+
+                self.behavior = GlobalObjectSearch()
+
                 self.behavior.start(
                     config=CONFIG,
-                    kind=CONFIG.default_target_kind,
-                    exclude_ids=self.delivered_ids,  # NEW: don’t re-select delivered markers
+                    required_kind=required_kind,
+                    exclude_ids=self.delivered_ids,
+                    motion_backend=controller.motion_backend,
+                    localisation=controller.localisation,
+                )
+
+            status = self.behavior.update(
+                perception=controller.perception,
+                motion_backend=controller.motion_backend,
+                localisation=controller.localisation,
+            )
+
+            if status.name == "SUCCEEDED":
+
+                print(
+                    "[GLOBAL_OBJECT_SEARCH] complete "
+                    "-> SELECT_TARGET"
+                )
+
+                self.behavior = None
+                self.state = RobotState.SELECT_TARGET
+
+            elif status.name == "FAILED":
+
+                print(
+                    "[GLOBAL_OBJECT_SEARCH] failed "
+                    "-> RECOVER_LOCALISATION"
+                )
+
+                self.behavior = None
+
+                self.recover_localisation_success_state = (
+                    RobotState.PREPARE_SEARCH
+                )
+
+                self.state = RobotState.RECOVER_LOCALISATION
+
+            return
+
+        # -------------------------
+        # SELECT TARGET
+        # -------------------------
+        if self.state == RobotState.SELECT_TARGET:
+
+            if self.behavior is None:
+
+                if self.delivered_kind is None:
+                    required_kind = None
+                    preferred_kind = CONFIG.default_target_kind
+                    preferred_elevation = CONFIG.default_target_elevation
+
+                else:
+                    required_kind = self.delivered_kind
+                    preferred_kind = None
+                    preferred_elevation = None
+
+                self.behavior = SelectTarget(
+                    max_age_s=CONFIG.visible_max_age_s,
+
+                    required_kind=required_kind,
+                    preferred_kind=preferred_kind,
+                    preferred_elevation=preferred_elevation,
+
+                    marker_pitch_high_deg=CONFIG.marker_pitch_high_deg,
+                    marker_pitch_low_deg=CONFIG.marker_pitch_low_deg,
+
+                    timeout_s=float(
+                        getattr(
+                            CONFIG,
+                            "select_timeout_s",
+                            0.8,
+                        )
+                    ),
+
+                    label="SELECT_TARGET",
+
+                    exclude_ids=self.delivered_ids,
+                )
+
+                self.behavior.start(
+                    exclude_ids=self.delivered_ids,
+                )
+
+            status = self.behavior.update(
+                perception=controller.perception,
+            )
+
+            if status.name == "SUCCEEDED":
+
+                self.selected_target = (
+                    self.behavior.selected_target
+                )
+
+                self.selected_kind = (
+                    self.behavior.selected_kind
+                )
+
+                self.selected_servo_method = (
+                    self.behavior.selected_servo_method
+                )
+
+                print(
+                    "[SELECT_TARGET] complete "
+                    f"id={self.behavior.selected_target_id} "
+                    f"kind={self.selected_kind} "
+                    f"servo={self.selected_servo_method.value}"
+                )
+
+                self.behavior = None
+                self.state = RobotState.SEEK_AND_COLLECT
+
+
+            elif status.name == "FAILED":
+
+                print(
+
+                    "SelectTarget failed "
+
+                    "-> GLOBAL_OBJECT_SEARCH"
+
+                )
+
+                self.behavior = None
+
+                self.state = RobotState.GLOBAL_OBJECT_SEARCH
+
+            return
+
+        # -------------------------
+        # APPROACH OBJECT
+        # -------------------------
+
+        if self.state == RobotState.SEEK_AND_COLLECT:
+            if self.behavior is None:
+                self.behavior = ApproachObject(
+                    pose_bearing_allowed=(
+                            CONFIG.environment == "simulation"
+                    )
+                )
+
+                self.behavior.start(
+                    config=CONFIG,
+                    selected_target=self.selected_target,
+                    selected_kind=self.selected_kind,
+                    selected_servo_method=self.selected_servo_method,
                 )
 
             status = self.behavior.update(
@@ -119,6 +312,12 @@ class AutoSR2026Stage1:
                 self.pending_pickup_id = getattr(
                     self.behavior,
                     "acquired_id",
+                    None,
+                )
+
+                self.pending_pickup_kind = getattr(
+                    self.behavior,
+                    "kind",
                     None,
                 )
 
@@ -148,13 +347,33 @@ class AutoSR2026Stage1:
                     f"high={self.pickup_target_is_high}"
                 )
 
+                self.selected_target = None
+                self.selected_kind = None
+                self.selected_servo_method = None
+
                 self.behavior = None
                 self.state = RobotState.PICKUP_OBJECT
 
+
             elif status.name == "FAILED":
-                print("AcquireObject failed — retrying")
+
+                print(
+
+                    "ApproachObject failed — "
+
+                    "returning to target selection"
+
+                )
+
+                self.selected_target = None
+
+                self.selected_kind = None
+
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+
+                # Temporary until ReacquireTarget is the proper route.
+
+                self.state = RobotState.SELECT_TARGET
 
             return
 
@@ -195,8 +414,9 @@ class AutoSR2026Stage1:
                 print("PickupObject failed — returning to search")
 
                 self.pending_pickup_id = None
+                self.pending_pickup_kind = None
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+                self.state = RobotState.PREPARE_SEARCH
 
             return
 
@@ -221,12 +441,28 @@ class AutoSR2026Stage1:
 
             if status.name == "SUCCEEDED":
                 print("PostPickupRealign complete")
+
                 self.behavior = None
+
+                self.recover_localisation_success_state = (
+                    RobotState.RETURN_TO_BASE
+                )
+
                 self.state = RobotState.RECOVER_LOCALISATION
 
+
             elif status.name == "FAILED":
+
                 print("PostPickupRealign failed — attempting recovery")
+
                 self.behavior = None
+
+                self.recover_localisation_success_state = (
+
+                    RobotState.RETURN_TO_BASE
+
+                )
+
                 self.state = RobotState.RECOVER_LOCALISATION
 
             return
@@ -250,13 +486,22 @@ class AutoSR2026Stage1:
 
             if status.name == "SUCCEEDED":
                 print("Localisation recovered")
+
                 self.behavior = None
-                self.state = RobotState.RETURN_TO_BASE
+
+                next_state = (
+                    self.recover_localisation_success_state
+                    if self.recover_localisation_success_state is not None
+                    else RobotState.RETURN_TO_BASE
+                )
+
+                self.recover_localisation_success_state = None
+                self.state = next_state
 
 
             elif status.name == "FAILED":
 
-                print("ReturnToBase failed — recovering localisation")
+                print("RecoverLocalisation failed")
 
                 self.behavior = None
 
@@ -272,12 +517,14 @@ class AutoSR2026Stage1:
                 self.behavior = ReturnToBase()
                 self.behavior.start(
                     config=CONFIG,
-                    match_zone=controller.match_zone,
+                    match_zone=controller.io.usb["match_zone"].value,
                 )
 
             status = self.behavior.update(
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
+                perception=controller.perception,
+                delivered_ids=self.delivered_ids,
                 arena_observations=controller.latest_arena_observations,
                 observation_timestamp=(
                     controller.latest_arena_observation_timestamp
@@ -319,7 +566,7 @@ class AutoSR2026Stage1:
                 self.behavior = DropoffObject()
                 self.behavior.start(
                     config=CONFIG,
-                    match_zone=controller.match_zone,
+                    match_zone=controller.io.usb["match_zone"].value,
                     arrival_side=self.return_arrival_side,
                     delivered_target_id=self.last_collected_id,
                     delivered_ids=self.delivered_ids,
@@ -348,6 +595,19 @@ class AutoSR2026Stage1:
                 if delivered_id is not None:
                     self.delivered_ids.add(delivered_id)
 
+                    if (
+                            self.delivered_kind is None
+                            and self.pending_pickup_kind is not None
+                    ):
+                        self.delivered_kind = self.pending_pickup_kind
+
+                        print(
+                            f"[STRATEGY] first delivered kind="
+                            f"{self.delivered_kind}"
+                        )
+
+                    self.pending_pickup_kind = None
+
                     print(
                         f"Delivered id={delivered_id} "
                         f"(delivered_ids="
@@ -362,11 +622,14 @@ class AutoSR2026Stage1:
                 self.behavior = None
                 self.state = RobotState.POST_DROPOFF_REALIGN
 
+
             elif status.name == "FAILED":
-                print("DropoffObject failed — resuming seek")
+
+                print("DropoffObject failed — returning to search")
 
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+
+                self.state = RobotState.PREPARE_SEARCH
 
             return
 
@@ -387,14 +650,14 @@ class AutoSR2026Stage1:
             )
 
             if status.name == "SUCCEEDED":
-                print("PostDropoffRealign complete — resuming seek")
+                print("PostDropoffRealign complete — preparing next search")
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+                self.state = RobotState.PREPARE_SEARCH
 
             elif status.name == "FAILED":
-                print("PostDropoffRealign failed — resuming seek anyway")
+                print("PostDropoffRealign failed — preparing next search anyway")
                 self.behavior = None
-                self.state = RobotState.SEEK_AND_COLLECT
+                self.state = RobotState.PREPARE_SEARCH
 
             return
 

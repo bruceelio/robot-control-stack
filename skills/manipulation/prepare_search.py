@@ -1,4 +1,4 @@
-# skills/manipulation/prepare_pickup.py
+# skills/manipulation/prepare_search.py
 
 from __future__ import annotations
 
@@ -6,13 +6,20 @@ from primitives.base import Primitive, PrimitiveStatus
 from primitives.manipulation import Release, LiftDown
 
 
-class PreparePickup(Primitive):
+class PrepareSearch(Primitive):
     """
-    Prepare the manipulator before approaching a pickup target.
+    Prepare the robot for object search.
 
-    Current sequence:
+    Sequence:
         - open gripper
         - lower lift
+
+    Success:
+        - manipulator is configured for searching
+
+    Failure:
+        - release command failed
+        - lift-down command failed
     """
 
     def __init__(self):
@@ -23,24 +30,24 @@ class PreparePickup(Primitive):
         self._status = PrimitiveStatus.RUNNING
 
         try:
-            prep_release = Release(settle_time=0.0)
-            prep_release.start(lvl2=lvl2)
-            print("[PREPARE_PICKUP] RELEASE")
+            release = Release(settle_time=0.0)
+            release.start(lvl2=lvl2)
+            print("[PREPARE_SEARCH] RELEASE")
         except Exception as e:
-            print(f"[PREPARE_PICKUP] RELEASE failed: {e}")
+            print(f"[PREPARE_SEARCH] RELEASE failed: {e}")
             self._status = PrimitiveStatus.FAILED
             return self._status
 
         try:
-            prep_liftdown = LiftDown(settle_time=0.0)
-            prep_liftdown.start(lvl2=lvl2)
-            print("[PREPARE_PICKUP] LIFT DOWN")
+            lift_down = LiftDown(settle_time=0.0)
+            lift_down.start(lvl2=lvl2)
+            print("[PREPARE_SEARCH] LIFT DOWN")
         except Exception as e:
-            print(f"[PREPARE_PICKUP] LIFT DOWN failed: {e}")
+            print(f"[PREPARE_SEARCH] LIFT DOWN failed: {e}")
             self._status = PrimitiveStatus.FAILED
             return self._status
 
-        print("[PREPARE_PICKUP] complete")
+        print("[PREPARE_SEARCH] complete")
 
         self._status = PrimitiveStatus.SUCCEEDED
         return self._status

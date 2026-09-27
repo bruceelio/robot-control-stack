@@ -4,49 +4,40 @@ import time
 import inspect
 
 from behaviors.base import Behavior, BehaviorStatus
-from behaviors.global_search import GlobalSearchStub
-from behaviors.recover_lost_target import RecoverLostTarget
-
 from navigation.height_model import HeightModel
-
 from policies.vision_grace_period import VisionGracePeriod
-
 from primitives.base import PrimitiveStatus
-from primitives.manipulation import LiftDown
 
-from skills.manipulation.prepare_pickup import PreparePickup
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
 from skills.navigation.approach_target_servo import ApproachTargetServo
-
-from skills.perception.select_target import SelectTarget
 from skills.perception.track_object import TrackObject
 
 from log_trace import next_run, trace
 
+
 class ApproachObject(Behavior):
-    """
-    Pickup-only pipeline:
 
-  SELECT -> PREPARE_PICKUP -> ALIGN -> APPROACHING
-         -> FINAL_PICKUP -> SUCCEEDED
-
-    Adds:
-      - Active scanning while SELECT is running (SearchRotate)
-      - SELECT stall watchdog that escalates to GLOBAL_SEARCH instead of hanging forever
-    """
-
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        pose_bearing_allowed: bool = False,
+    ):
         super().__init__()
 
         self.config = None
         self.kind = None
 
+
+
+        self.pose_bearing_allowed = bool(
+            pose_bearing_allowed
+        )
+
         self.phase = "SELECT"
         self.target = None
+        self.servo_method = None
 
-        self._prepare_view_skill = None
-        self._prepare_pickup_skill = None
         # Navigation handoff geometry for PickupObject.
         self.final_distance_mm = None
         self.final_bearing_deg = None
@@ -55,8 +46,10 @@ class ApproachObject(Behavior):
         # The concrete marker id we actually approached (if any)
         self.acquired_target_id = None
 
-        # SELECT skill
-        self._select_skill = None
+        # Failure handoff to the autonomous state machine.
+        self.failure_reason = None
+        self.lost_target_id = None
+        self.lost_target_kind = None
 
         # ALIGN skill
         self._align_skill = None
@@ -71,10 +64,7 @@ class ApproachObject(Behavior):
         self._navigation_stage = None
 
         self.height_model = HeightModel()
-        self.exclude_ids: set[int] = set()
-
         self.locked_target_id = None
-
 
         # Locked-target tracking (single source of truth for visibility/loss)
         self._tracker: TrackObject | None = None
@@ -82,23 +72,6 @@ class ApproachObject(Behavior):
 
         # Vision loss policy
         self._vision_grace: VisionGracePeriod | None = None
-
-        self._global_search_behavior: GlobalSearchStub | None = None
-
-        # Recover step (delegates full ladder)
-        self._recover_behavior: RecoverLostTarget | None = None
-        self._recover_result = None  # RecoverLostTarget.Result
-        self._recover_seed_target = None
-        self._recover_started_s: float | None = None
-        self._recover_timeout_s: float | None = None
-        self._recover_lost_target_id: int | None = None
-
-        # Track-after-recover (locks regained -> TRACK to establish stable obs)
-        self._track_after_recover_skill: TrackObject | None = None
-
-        # --- SELECT stall watchdog ---
-        self._select_started_s = None
-        self._select_stall_count = 0
 
         # Vision Settle
         self._vision_settle_until = None
@@ -115,72 +88,70 @@ class ApproachObject(Behavior):
         """
         return self.acquired_target_id
 
-    def start(self, *, config, kind=None, seed_target=None, exclude_ids=None, **_):
+    def start(
+            self,
+            *,
+            config,
+            selected_target=None,
+            selected_kind=None,
+            selected_servo_method=None,
+            **_,
+    ):
         self.run_id = next_run()
 
         print("[ACQUIRE_OBJECT] start")
         self.config = config
-        self.kind = kind or config.default_target_kind
+
+        # SelectTarget has already made the decision.
+        self.target = selected_target
+        self.kind = selected_kind
+        self.servo_method = selected_servo_method
+
         self.locked_target_id = None
 
-        self._prepare_view_skill = None
-        self._prepare_pickup_skill = None
+        initial_phase = "START_APPROACH"
+
+
         self.final_distance_mm = None
         self.final_bearing_deg = None
         self.target_is_high = None
 
-        # exclusions must be set before tracing
-        self.exclude_ids = set(exclude_ids) if exclude_ids else set()
-
         trace(
             src="ACQ",
             evt="ACQ_START",
-            phase="PREPARE_VIEW",
+            phase=initial_phase,
             run=self.run_id,
             kind=self.kind,
-            exclude=len(self.exclude_ids),
+            servo=(
+                self.servo_method.value
+                if self.servo_method is not None
+                else "none"
+            ),
         )
 
         # --- tracking & vision policy ---
-        self._tracker = TrackObject(kind=self.kind)
+        # Tracker is created after SELECT, once the actual target kind is known.
+        self._tracker = None
+
         self._vision_grace = VisionGracePeriod(
             vision_grace_s=self.config.vision_grace_period_s
         )
 
-        # tracker reset for this run
-        self._tracker.reset(locked_target_id=None, kind=self.kind)
         self.track = None
 
-        self.phase = "PREPARE_VIEW"
-        self.target = None
+        self.phase = initial_phase
         self.acquired_target_id = None
+        self.failure_reason = None
+        self.lost_target_id = None
+        self.lost_target_kind = None
+
 
         # Reset height model for each acquire run
         self.height_model = HeightModel()
 
-        # SELECT starts only after PREPARE_VIEW has cleared the camera.
-        self._select_skill = None
-
         self._align_skill = None
         self._approach_skill = None
         self._navigation_stage = None
-        self._search_rotate_skill = None
-
-        self._global_search_behavior = None
-
-        # recover reset
-        self._recover_behavior = None
-        self._recover_result = None
-        self._recover_seed_target = None
-        self._recover_started_s = None
-        self._recover_timeout_s = None
-        self._recover_lost_target_id = None
-
-        self._track_after_recover_skill = None
-
-        # --- SELECT stall watchdog reset (IMPORTANT: must be before return) ---
-        self._select_started_s = None
-        self._select_stall_count = 0
 
         # --- Vision settle / fresh observation gate reset ---
         self._vision_settle_until = None
@@ -196,8 +167,10 @@ class ApproachObject(Behavior):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
 
-        if self.phase == "PREPARE_VIEW":
-            return self._prepare_view(lvl2)
+        if self.phase == "START_APPROACH":
+            return self._start_selected_target()
+
+
 
         # Defensive: ensure tracker & policy exist
         if self._tracker is None:
@@ -232,26 +205,11 @@ class ApproachObject(Behavior):
             lost=snap.lost_count,
         )
 
-        if self.phase == "SELECT":
-            return self._select(perception, motion_backend)
-
-        if self.phase == "PREPARE_PICKUP":
-            return self._prepare_pickup(lvl2, motion_backend)
-
         if self.phase == "ALIGN":
             return self._align(lvl2, motion_backend)
 
         if self.phase == "APPROACHING":
             return self._approach(lvl2, perception, motion_backend)
-
-        if self.phase == "RECOVER_LOST_TARGET":
-            return self._recover_lost_target(perception, localisation, motion_backend)
-
-        if self.phase == "TRACK_AFTER_RECOVER":
-            return self._track_after_recover(perception, motion_backend)
-
-        if self.phase == "GLOBAL_SEARCH":
-            return self._global_search(perception, motion_backend)
 
         return self.status
 
@@ -259,263 +217,83 @@ class ApproachObject(Behavior):
     # Helpers: phase transitions
     # -------------------------
 
-    def _enter_select(self, *, motion_backend=None, reason: str = ""):
+    def _fail_target_lost(
+            self,
+            *,
+            motion_backend=None,
+            reason: str = "",
+    ):
 
-        if reason:
-            print(f"[ACQUIRE_OBJECT] -> SELECT ({reason})")
+        self._safe_stop(
+            self._approach_skill,
+            motion_backend=motion_backend,
+        )
+        self._approach_skill = None
 
-        # stop any scan / select primitives
-        self._safe_stop(self._select_skill, motion_backend=motion_backend)
-        self._select_skill = None
+        self.failure_reason = "target_lost"
+        self.lost_target_id = self.locked_target_id
+        self.lost_target_kind = self.kind
 
-        # clear targeting
-        self.target = None
-        self.locked_target_id = None
-
-        # reset tracker unlocked
-        if self._tracker is not None:
-            self._tracker.reset(locked_target_id=None, kind=self.kind)
-        self.track = None
-
-        # reset watchdog
-        self._select_started_s = time.time()
-        self._select_stall_count = 0
-
-        # enter phase
-        self.phase = "SELECT"
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="SELECT",
-            run=self.run_id,
-            lock=self.locked_target_id or "none",
+        print(
+            "[APPROACH_OBJECT][TARGET_LOST] "
+            f"id={self.lost_target_id} "
+            f"kind={self.lost_target_kind} "
+            f"reason={reason}"
         )
 
-    def _enter_global_search(self, *, motion_backend=None, reason: str = ""):
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="GLOBAL_SEARCH",
-            run=self.run_id,
-            lock=self.locked_target_id or "none",
-        )
+        self.status = BehaviorStatus.FAILED
+        return self.status
 
-        if reason:
-            print(f"[ACQUIRE_OBJECT] -> GLOBAL_SEARCH ({reason})")
+    def _start_selected_target(self):
 
-        self._safe_stop(self._select_skill, motion_backend=motion_backend)
-        self._select_skill = None
-
-        self.target = None
-        self.locked_target_id = None
-
-        if self._tracker is not None:
-            self._tracker.reset(locked_target_id=None, kind=self.kind)
-        self.track = None
-
-        self.phase = "GLOBAL_SEARCH"
-        self._global_search_behavior = None
-
-    # -------------------------
-    # Phase: PREPARE_VIEW
-    # -------------------------
-
-    def _prepare_view(self, lvl2):
-
-        if self._prepare_view_skill is None:
-            print("[ACQUIRE_OBJECT][PREPARE_VIEW] lowering lift")
-
-            self._prepare_view_skill = LiftDown(
-                settle_time=0.0,
-            )
-
-            try:
-                self._prepare_view_skill.start(
-                    lvl2=lvl2,
-                )
-            except Exception as e:
-                print(
-                    f"[ACQUIRE_OBJECT][PREPARE_VIEW] "
-                    f"LIFT DOWN failed: {e}"
-                )
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-        st = self._prepare_view_skill.update()
-
-        if st == PrimitiveStatus.RUNNING:
-            return self.status
-
-        if st == PrimitiveStatus.FAILED:
+        if (
+            self.target is None
+            or self.kind is None
+            or self.servo_method is None
+        ):
             print(
-                "[ACQUIRE_OBJECT][PREPARE_VIEW] "
-                "LIFT DOWN failed"
+                "[APPROACH_OBJECT] "
+                "missing selected target, kind, or servo method"
             )
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        print(
-            "[ACQUIRE_OBJECT][PREPARE_VIEW] "
-            "lift down complete -> SELECT"
-        )
-
-        self._prepare_view_skill = None
-
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="SELECT",
-            run=self.run_id,
-            lock="none",
-        )
-
-        self.phase = "SELECT"
-        self._select_started_s = None
-        self._select_stall_count = 0
-
-        return self.status
-
-    # -------------------------
-    # Phase: SELECT
-    # -------------------------
-
-    def _select(self, perception, motion_backend):
-
-        if self._select_skill is None:
-            self._select_skill = SelectTarget(
-                kind=self.kind,
-                max_age_s=self.config.vision_loss_timeout_s,
-                log_every_s=1.0,
-                label="ACQUIRE_OBJECT][SELECT",
+        try:
+            self.locked_target_id = int(
+                self.target.get("id")
             )
-            self._select_skill.start(
-                seed_target=None,
-                exclude_ids=self.exclude_ids,
-            )
-
-            # entering SELECT fresh -> reset watchdog
-            self._select_started_s = time.time()
-            self._select_stall_count = 0
-
-        st = self._select_skill.update(perception=perception)
-
-        if st == PrimitiveStatus.RUNNING:
-            now = time.time()
-
-            # Start a rotate-scan if not already running
-
-
-            # Hard timeout since SELECT started -> escalate
-            select_timeout_s = float(getattr(self.config, "select_timeout_s", 0.8))
-            max_stalls = int(getattr(self.config, "select_max_stalls_before_escalate", 2))
-
-            if self._select_started_s is None:
-                self._select_started_s = now
-
-            elapsed = now - self._select_started_s
-
-            if elapsed > select_timeout_s or self._select_stall_count >= max_stalls:
-                print(
-                    f"[ACQUIRE_OBJECT][SELECT] STALLED elapsed={elapsed:.2f}s "
-                    f"timeout={select_timeout_s:.2f}s stalls={self._select_stall_count}/{max_stalls} "
-                    f"-> GLOBAL_SEARCH"
-                )
-                self._enter_global_search(
-                    motion_backend=motion_backend,
-                    reason="select_stalled",
-                )
-                return self.status
-
-            return self.status
-
-        if st == PrimitiveStatus.FAILED:
-            print("[ACQUIRE_OBJECT][SELECT] SelectTarget FAILED -> GLOBAL_SEARCH")
-            self._enter_global_search(
-                motion_backend=motion_backend,
-                reason="select_failed",
-            )
-            return self.status
-
-        # SUCCEEDED
-        self.target = self._select_skill.selected_target
-        if self.target is None:
-            # Treat as stall-ish; restart SELECT cleanly
-            print("[ACQUIRE_OBJECT][SELECT] SUCCEEDED but selected_target is None -> SELECT")
-            self._enter_select(motion_backend=motion_backend, reason="no_selected_target")
-            return self.status
+        except (TypeError, ValueError):
+            self.locked_target_id = None
 
         self.height_model.reset()
 
-        # --- LOCK ---
-        try:
-            self.locked_target_id = int(self.target.get("id"))
-        except Exception:
-            self.locked_target_id = None
-
-        print(f"[ACQUIRE_OBJECT][LOCK] locked_target_id={self.locked_target_id}")
-
-        # Seed tracker with the lock for consistent visibility/loss decisions downstream
-        if self._tracker is not None:
-            self._tracker.reset(locked_target_id=self.locked_target_id, kind=self.kind)
-
         print(
-            f"[ACQUIRE_OBJECT][SELECT] target found "
-            f"id={self.target.get('id', 'REL')} "
+            "[APPROACH_OBJECT] "
+            f"target id={self.locked_target_id} "
+            f"kind={self.kind} "
             f"dist={self.target['distance']:.0f} "
             f"bearing={self.target['bearing']:.1f}"
         )
 
-        # Stop scanning now that we have a target
-
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="PREPARE_PICKUP",
-            run=self.run_id,
-            lock=self.locked_target_id or "none",
+        self._tracker = TrackObject(
+            kind=self.kind
         )
 
-        self.phase = "PREPARE_PICKUP"
-        self._prepare_pickup_skill = None
+        self._tracker.reset(
+            locked_target_id=self.locked_target_id,
+            kind=self.kind,
+        )
 
-        return self.status
+        self.track = None
 
-    # -------------------------
-    # Phase: PREPARE_PICKUP
-    # -------------------------
-
-    def _prepare_pickup(self, lvl2, motion_backend):
-
-        if self._prepare_pickup_skill is None:
-            self._prepare_pickup_skill = PreparePickup()
-
-            st = self._prepare_pickup_skill.start(
-                lvl2=lvl2,
-            )
-        else:
-            st = self._prepare_pickup_skill.update(
-                lvl2=lvl2,
-            )
-
-        if st == PrimitiveStatus.RUNNING:
-            return self.status
-
-        if st == PrimitiveStatus.FAILED:
-            print("[ACQUIRE_OBJECT][PREPARE_PICKUP] FAILED")
-            self.status = BehaviorStatus.FAILED
-            return self.status
-
-        print("[ACQUIRE_OBJECT][PREPARE_PICKUP] complete")
-
-        # Prefer the highest currently available approach stage.
-        #
-        # Stage 3 localisation/path navigation is future work.
-        # Stage 2 uses continuous perception/servoing.
-        # Stage 1 preserves the existing dead-reckoning path.
+        # ------------------------------------------
+        # Highest available navigation stage
+        # ------------------------------------------
 
         if self.config.servoing_enabled:
+
             print(
-                "[ACQUIRE_OBJECT][NAV] "
+                "[APPROACH_OBJECT][NAV] "
                 "Stage 2 available -> SERVO APPROACH"
             )
 
@@ -532,28 +310,25 @@ class ApproachObject(Behavior):
             self.phase = "APPROACHING"
             self._approach_skill = None
 
-            return self.status
+        else:
 
-        # Stage 2 is not available on this robot.
-        # Preserve the existing Stage 1 path through ALIGN.
+            print(
+                "[APPROACH_OBJECT][NAV] "
+                "Stage 2 unavailable -> Stage 1 DEAD_RECKONING"
+            )
 
-        print(
-            "[ACQUIRE_OBJECT][NAV] "
-            "Stage 2 unavailable -> Stage 1 DEAD_RECKONING"
-        )
+            self._navigation_stage = 1
 
-        self._navigation_stage = 1
+            trace(
+                src="ACQ",
+                evt="PHASE_ENTER",
+                phase="ALIGN",
+                run=self.run_id,
+                lock=self.locked_target_id or "none",
+            )
 
-        trace(
-            src="ACQ",
-            evt="PHASE_ENTER",
-            phase="ALIGN",
-            run=self.run_id,
-            lock=self.locked_target_id or "none",
-        )
-
-        self.phase = "ALIGN"
-        self._align_skill = None
+            self.phase = "ALIGN"
+            self._align_skill = None
 
         return self.status
 
@@ -678,6 +453,8 @@ class ApproachObject(Behavior):
                     kind=self.kind,
                     height_model=self.height_model,
                     locked_target_id=self.locked_target_id,
+                    servo_method=self.servo_method,
+                    pose_bearing_allowed=self.pose_bearing_allowed,
                 )
 
             else:
@@ -746,42 +523,16 @@ class ApproachObject(Behavior):
                     print(
                         "[VISION] no fresh post-align observation "
                         f"within {fresh_timeout_s:.2f}s "
-                        "-> RECOVER_LOST_TARGET"
+                        "-> TARGET LOST"
                     )
 
                     self._require_fresh_obs_after_settle = False
                     self._vision_settle_until = None
 
-                    self._safe_stop(
-                        self._approach_skill,
+                    return self._fail_target_lost(
                         motion_backend=motion_backend,
+                        reason="no_fresh_post_align_observation",
                     )
-                    self._approach_skill = None
-
-                    self._recover_seed_target = self.target
-                    self._recover_lost_target_id = self.locked_target_id
-                    self._recover_started_s = time.time()
-                    self._recover_timeout_s = float(
-                        getattr(
-                            self.config,
-                            "recover_total_timeout_s",
-                            8.0,
-                        )
-                    )
-
-                    trace(
-                        src="ACQ",
-                        evt="PHASE_ENTER",
-                        phase="RECOVER_LOST_TARGET",
-                        run=self.run_id,
-                        lock=self.locked_target_id or "none",
-                    )
-
-                    self.phase = "RECOVER_LOST_TARGET"
-                    self._recover_behavior = None
-                    self._recover_result = None
-
-                    return self.status
 
                 return self.status
 
@@ -873,91 +624,38 @@ class ApproachObject(Behavior):
 
         if st == PrimitiveStatus.RUNNING:
             if not snap.visible_now:
-                # 1) Small debounce (don’t react to single-frame dropouts)
+
                 grace = self._vision_grace.evaluate(
                     visible_now=snap.visible_now,
                     age_s=snap.age_s,
                 )
+
                 if not grace.lost_long_enough:
                     return self.status
 
-                # 2) After grace, allow the approach/reacquire ladder to run
-                # until we exceed the reacquire budget.
-                # We intentionally do NOT allow ApproachTarget's internal reacquire.
-                # Once grace says "lost long enough", escalate to RecoverLostTarget immediately.
-
-                print(
-                    f"[ACQUIRE_OBJECT][VISION_LOSS] age_s={snap.age_s:.2f} "
-                    f"> grace_s={grace.grace_s:.2f} "
-                    f"-> RECOVER_LOST_TARGET (direct escalate)"
+                return self._fail_target_lost(
+                    motion_backend=motion_backend,
+                    reason="vision_grace_expired",
                 )
-
-                self._safe_stop(self._approach_skill, motion_backend=motion_backend)
-                self._approach_skill = None
-
-                self._recover_seed_target = self.target
-                self._recover_lost_target_id = self.locked_target_id
-                self._recover_started_s = time.time()
-                self._recover_timeout_s = float(getattr(self.config, "recover_total_timeout_s", 8.0))
-
-                trace(
-                    src="ACQ",
-                    evt="PHASE_ENTER",
-                    phase="RECOVER_LOST_TARGET",
-                    run=self.run_id,
-                    lock=self.locked_target_id or "none",
-                )
-
-                self.phase = "RECOVER_LOST_TARGET"
-                self._recover_behavior = None
-                self._recover_result = None
-                return self.status
 
             return self.status
 
         if st == PrimitiveStatus.FAILED:
+
             if not snap.visible_now:
+
                 grace = self._vision_grace.evaluate(
                     visible_now=snap.visible_now,
                     age_s=snap.age_s,
                 )
+
                 if grace.lost_long_enough:
-                    reacquire_budget_s = float(
-                        getattr(self.config, "reacquire_target_vision_loss", self.config.vision_loss_timeout_s)
+                    return self._fail_target_lost(
+                        motion_backend=motion_backend,
+                        reason="approach_failed_target_not_visible",
                     )
 
-                    if snap.age_s < reacquire_budget_s:
-                        # Failed for some other reason while target is not visible,
-                        # but loss age hasn't exceeded the budget: don't escalate yet.
-                        return self.status
-
-                    print(
-                        f"[ACQUIRE_OBJECT][APPROACH_FAILED_VISION] age_s={snap.age_s:.2f} "
-                        f"> grace_s={grace.grace_s:.2f} and > reacquire_budget_s={reacquire_budget_s:.2f} "
-                        f"-> RECOVER_LOST_TARGET"
-                    )
-
-                    self._safe_stop(self._approach_skill, motion_backend=motion_backend)
-                    self._approach_skill = None
-
-                    self._recover_seed_target = self.target
-                    self._recover_lost_target_id = self.locked_target_id
-                    self._recover_started_s = time.time()
-                    self._recover_timeout_s = float(getattr(self.config, "recover_total_timeout_s", 8.0))
-
-                    trace(
-                        src="ACQ",
-                        evt="PHASE_ENTER",
-                        phase="RECOVER_LOST_TARGET",
-                        run=self.run_id,
-                        lock=self.locked_target_id or "none",
-                    )
-
-                    self.phase = "RECOVER_LOST_TARGET"
-                    self._recover_behavior = None
-                    self._recover_result = None
-                    return self.status
-
+            self.failure_reason = "approach_failed"
             self.status = BehaviorStatus.FAILED
             return self.status
 
@@ -1008,163 +706,6 @@ class ApproachObject(Behavior):
         self.status = BehaviorStatus.SUCCEEDED
         return self.status
 
-    # -------------------------
-    # Phase: RECOVER_LOST_TARGET
-    # -------------------------
-
-    def _recover_lost_target(self, perception, localisation, motion_backend):
-
-
-        if self._recover_started_s is not None and self._recover_timeout_s is not None:
-            if (time.time() - self._recover_started_s) > self._recover_timeout_s:
-                print("[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] overall timeout -> GLOBAL_SEARCH")
-                self._recover_behavior = None
-                self._recover_result = None
-                self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
-                return self.status
-
-        if self._recover_behavior is None:
-            self._recover_behavior = RecoverLostTarget()
-            self._recover_behavior.run_id = self.run_id
-            last_bearing = 0.0
-            last_distance = None
-            if self.track is not None:
-                if self.track.last_seen_bearing_deg is not None:
-                    last_bearing = float(self.track.last_seen_bearing_deg)
-                if self.track.last_seen_distance_mm is not None:
-                    last_distance = float(self.track.last_seen_distance_mm)
-
-            self._recover_behavior.start(
-                config=self.config,
-                kind=self.kind,
-                locked_target_id=self.locked_target_id,
-                last_bearing_deg=last_bearing,
-                last_distance_mm=last_distance,
-                motion_backend=motion_backend,  # harmless; RecoverLostTarget accepts **_
-            )
-
-        st = self._recover_behavior.update(
-            perception=perception,
-            localisation=localisation,
-            motion_backend=motion_backend,
-        )
-
-        if st == BehaviorStatus.RUNNING:
-            return self.status
-
-        if st == BehaviorStatus.SUCCEEDED:
-            res = getattr(self._recover_behavior, "result", None)
-            self._recover_result = res
-            print(f"[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] succeeded result={res}")
-
-            if getattr(res, "outcome", None) == "LOCKED_RECOVERED":
-                trace(
-                    src="ACQ",
-                    evt="PHASE_ENTER",
-                    phase="TRACK_AFTER_RECOVER",
-                    run=self.run_id,
-                    lock=self.locked_target_id or "none",
-                )
-                self.phase = "TRACK_AFTER_RECOVER"
-                self._track_after_recover_skill = None
-                return self.status
-
-            self._recover_behavior = None
-            self._recover_result = None
-            self._enter_select(motion_backend=motion_backend, reason="recover_search_recovered")
-            return self.status
-
-        print("[ACQUIRE_OBJECT][RECOVER_LOST_TARGET] failed -> GLOBAL_SEARCH")
-        self._recover_behavior = None
-        self._recover_result = None
-        self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
-        return self.status
-
-    # -------------------------
-    # Phase: TRACK_AFTER_RECOVER
-    # -------------------------
-
-    def _track_after_recover(self, perception, motion_backend):
-
-
-        if self.locked_target_id is None:
-            self._enter_select(motion_backend=motion_backend, reason="track_after_recover_no_lock")
-            return self.status
-
-        if self._track_after_recover_skill is None:
-            self._track_after_recover_skill = TrackObject(kind=self.kind)
-            self._track_after_recover_skill.reset(
-                locked_target_id=self.locked_target_id,
-                kind=self.kind,
-            )
-
-        snap = self._track_after_recover_skill.update(
-            perception_objects=getattr(perception, "objects", perception),
-            now_s=time.time(),
-            locked_target_id=self.locked_target_id,
-            kind=self.kind,
-        )
-
-        if snap.visible_now and snap.last_obs is not None:
-            self.target = snap.last_obs
-            print("[ACQUIRE_OBJECT][TRACK_AFTER_RECOVER] got fresh obs -> SELECT")
-            self._track_after_recover_skill = None
-            self._enter_select(motion_backend=motion_backend, reason="track_after_recover_ready")
-            return self.status
-
-        grace = self._vision_grace.evaluate(visible_now=snap.visible_now, age_s=snap.age_s)
-        if grace.lost_long_enough:
-            print("[ACQUIRE_OBJECT][TRACK_AFTER_RECOVER] lost again -> GLOBAL_SEARCH")
-            self._track_after_recover_skill = None
-            self._enter_global_search(motion_backend=motion_backend, reason="recover_timeout")
-            return self.status
-
-        return self.status
-
-    # -------------------------
-    # Phase: GLOBAL_SEARCH
-    # -------------------------
-
-    def _global_search(self, perception, motion_backend):
-        """
-        Delegate to GlobalSearchStub:
-          - SUCCEEDED -> SELECT
-          - FAILED -> Behavior FAILED
-        """
-
-
-        if self._global_search_behavior is None:
-            self._global_search_behavior = GlobalSearchStub()
-            self._global_search_behavior.start(
-                config=self.config,
-                kind=self.kind,
-                exclude_ids=self.exclude_ids,
-                motion_backend=motion_backend,
-            )
-
-        st = self._global_search_behavior.update(perception=perception, motion_backend=motion_backend)
-
-        if st == BehaviorStatus.RUNNING:
-            return self.status
-
-        if st == BehaviorStatus.SUCCEEDED:
-            print("[ACQUIRE_OBJECT][GLOBAL_SEARCH] succeeded -> SELECT")
-
-            self._global_search_behavior = None
-            self._enter_select(motion_backend=motion_backend, reason="global_search_succeeded")
-            return self.status
-
-        print("[ACQUIRE_OBJECT][GLOBAL_SEARCH] failed -> Behavior FAILED")
-        self.status = BehaviorStatus.FAILED
-        return self.status
-
-
     def stop(self, *, motion_backend=None, **_):
-        self._safe_stop(self._select_skill, motion_backend=motion_backend)
-        self._safe_stop(self._prepare_view_skill, motion_backend=motion_backend)
-        self._safe_stop(self._prepare_pickup_skill, motion_backend=motion_backend)
         self._safe_stop(self._align_skill, motion_backend=motion_backend)
         self._safe_stop(self._approach_skill, motion_backend=motion_backend)
-        self._safe_stop(self._recover_behavior, motion_backend=motion_backend)
-        self._safe_stop(self._track_after_recover_skill, motion_backend=motion_backend)
-        self._safe_stop(self._global_search_behavior, motion_backend=motion_backend)

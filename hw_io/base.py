@@ -1,4 +1,4 @@
-# checkout/base.py
+# hw_io/base.py
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Protocol, Iterable
@@ -33,6 +33,7 @@ class IOMap(ABC):
       io.motor["shooter"].power
       io.servo["lift"].position
       io.camera["front"].see()
+      io.usb["match_zone"].value
 
     Compatibility methods such as bumpers(), reflectance(), ultrasonics(),
     cameras(), motors, servos, and battery() remain for older code.
@@ -74,6 +75,10 @@ class IOMap(ABC):
 
     @property
     def servo(self):
+        raise NotImplementedError
+
+    @property
+    def usb(self):
         raise NotImplementedError
 
     # ---------- Sensors ----------

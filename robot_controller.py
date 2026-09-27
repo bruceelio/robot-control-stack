@@ -125,8 +125,9 @@ class Controller:
         self.localisation = Localisation()
 
         if CONFIG.io.get("usb.match_zone") is not None:
-            match_zone = self.io.usb["match_zone"]
-            self.match_zone = int(match_zone)
+            match_zone = int(
+                self.io.usb["match_zone"].value
+            )
         else:
             match_zone = 0
 

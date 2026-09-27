@@ -30,6 +30,7 @@ BEARING_SIGN = 1.0
 # Constant bearing correction.
 BEARING_OFFSET_DEG = 0.0
 
+VERTICAL_ANGLE_SIGN = -1.0
 
 # --------------------------------------------------
 # Metadata
@@ -37,6 +38,6 @@ BEARING_OFFSET_DEG = 0.0
 
 RESOLUTION = (640, 480)
 
-FOV_DEG = 60.0
+FOV_DEG = 45
 
 DESCRIPTION = "Student Robotics 2026 Webots simulated camera"

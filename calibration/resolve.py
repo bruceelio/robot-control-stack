@@ -128,6 +128,11 @@ def resolve(*, config) -> Calibration:
                 "BEARING_OFFSET_DEG",
                 0.0,
             ),
+            vertical_angle_sign=getattr(
+                camera,
+                "VERTICAL_ANGLE_SIGN",
+                1.0,
+            ),
         )
 
         meta = CameraMeta(

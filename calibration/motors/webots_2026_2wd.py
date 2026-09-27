@@ -10,19 +10,31 @@ Motion values migrated from the former SR1 calibration profile.
 # Timed Drive Calibration
 # --------------------------------------------------
 
-DRIVE_SWITCH_MM = 800
+DRIVE_SWITCH_MM = 1000
 
 # Power levels (open-loop)
-DRIVE_POWER_SHORT = 0.65
+DRIVE_POWER_SHORT = 0.30
 DRIVE_POWER_LONG = 0.85
 
 # Distance -> time calibration
 # t = m * distance_mm + b
-DRIVE_M_SHORT = 0.00133
-DRIVE_B_SHORT = 0.06
 
-DRIVE_M_LONG = 0.00092
-DRIVE_B_LONG = 0.06
+# power, m, b   (0.10, 0.00817990, -0.006319)
+# power, m, b   (0.20, 0.00402356, 0.012701)
+# power, m, b   (0.30, 0.00270106, 0.023399)
+# power, m, b   (0.40, 0.00202058, 0.032628)
+# power, m, b   (0.50, 0.00162047, 0.041880)
+# power, m, b   (0.60, 0.00134306, 0.058942)
+# power, m, b   (0.65, 0.00124038, 0.065394)
+# power, m, b   (0.75, 0.00107900, 0.069456)
+# power, m, b   (0.85, 0.00094816, 0.083846)
+
+
+DRIVE_M_SHORT = 0.00270106
+DRIVE_B_SHORT = 0.023399
+
+DRIVE_M_LONG = 0.00094816
+DRIVE_B_LONG = 0.083846
 
 
 # --------------------------------------------------
@@ -31,16 +43,21 @@ DRIVE_B_LONG = 0.06
 
 ROTATE_SWITCH_DEG = 7.6
 
-# The former SR1 calibration used one rotation model.
-# Use the same model on both sides of the divider for now.
+# power, m, b   (0.10, 0.02113341, 0.013277)
+# power, m, b   (0.20, 0.01061071, 0.016671)
+# power, m, b   (0.30, 0.00711593, 0.020910)
+# power, m, b   (0.40, 0.00503003, 0.029327)
+# power, m, b   (0.50, 0.00406417, 0.024977)
+# power, m, b   (0.60, 0.00343107, 0.027321)
 
-ROTATE_POWER_SMALL = 0.55
-ROTATE_M_SMALL = 0.00375
-ROTATE_B_SMALL = 0.0
 
-ROTATE_POWER_LARGE = 0.55
-ROTATE_M_LARGE = 0.00375
-ROTATE_B_LARGE = 0.0
+ROTATE_POWER_SMALL = 0.2
+ROTATE_M_SMALL = 0.01061071
+ROTATE_B_SMALL = 0.016671
+
+ROTATE_POWER_LARGE = 0.4
+ROTATE_M_LARGE = 0.00503003
+ROTATE_B_LARGE = 0.029327
 
 # --------------------------------------------------
 # Drive velocity calibration
@@ -49,13 +66,21 @@ ROTATE_B_LARGE = 0.0
 # Steady-state drive velocity calibration:
 # (motor_power, velocity_mm_s)
 #
-# Currently derived from the existing timed-dead_reckoning calibration.
-# Additional measured points can be added later without changing
-# the velocity backend interface.
+# Independent of timed-drive SHORT/LONG settings.
+# These initial points preserve the previous Webots velocity calibration.
+# Additional measured points should be added across the usable power range.
+
 DRIVE_VELOCITY_CURVE = (
-    (0.0, 0.0),
-    (DRIVE_POWER_SHORT, 1.0 / DRIVE_M_SHORT),
-    (DRIVE_POWER_LONG,  1.0 / DRIVE_M_LONG),
+    (0.00, 0.0),
+    (0.10, 122.3),
+    (0.20, 248.5),
+    (0.30, 370.2),
+    (0.40, 494.9),
+    (0.50, 617.1),
+    (0.60, 744.6),
+    (0.65, 806.2),
+    (0.75, 926.8),
+    (0.85, 1054.7),
 )
 
 # --------------------------------------------------

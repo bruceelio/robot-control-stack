@@ -4,17 +4,40 @@ from __future__ import annotations
 
 import math
 import time
+
+from enum import Enum
 from typing import Optional
 
-from skills.navigation.approach_target import _marker_elevation
+from skills.perception.marker_elevation import _marker_elevation
+from skills.perception.select_target import ApproachServoMethod
 from motion_backends.velocity import VelocityMotionBackend
 from navigation.servoing.servoing_controller import (
     ServoingController,
-    ServoingStatus,
 )
-from perception.robot_geometry import target_from_gripper
+from perception.robot_geometry import (
+    target_from_gripper,
+    target_xy_from_base_link,
+)
+
+from perception.pose_reference import (
+    base_pose_from_reference,
+)
 from primitives.base import Primitive, PrimitiveStatus
 
+from calibration import CALIBRATION
+
+from navigation.servoing.pose_servo_controller import (
+    PoseServoController,
+)
+
+from navigation.servoing.smooth_control_law import (
+    Pose2D,
+    SmoothControlParams,
+)
+
+class ApproachServoStrategy(Enum):
+    RANGE_BEARING = "range_bearing"
+    POSE_BEARING = "pose_bearing"
 
 class ApproachTargetServo(Primitive):
     """
@@ -40,20 +63,34 @@ class ApproachTargetServo(Primitive):
 
     FAILURE_PERCEPTION = "perception"
     FAILURE_HEIGHT = "height"
+    FAILURE_POSE_UNAVAILABLE = "pose_unavailable"
+
+    POSE_FOV_ACTIVATION_MARGIN_DEG = 3.0
 
     def __init__(
-        self,
-        *,
-        config,
-        kind: str,
-        height_model,
-        locked_target_id: Optional[int],
+            self,
+            *,
+            config,
+            kind: str,
+            height_model,
+            locked_target_id: Optional[int],
+            servo_method: ApproachServoMethod,
+            pose_bearing_allowed: bool = False,
     ):
         super().__init__()
 
         self.config = config
         self.kind = kind
         self.height_model = height_model
+        self.servo_method = servo_method
+
+        self.pose_bearing_allowed = bool(
+            pose_bearing_allowed
+        )
+
+        self.active_strategy = (
+            ApproachServoStrategy.RANGE_BEARING
+        )
 
         self.locked_target_id = (
             int(locked_target_id)
@@ -61,10 +98,14 @@ class ApproachTargetServo(Primitive):
             else None
         )
 
-        self.controller = ServoingController(
+        self.range_bearing_controller = ServoingController(
             application="approach_target",
             config=self.config,
         )
+
+        self.pose_bearing_controller = None
+        self._pose_bearing_camera_name: Optional[str] = None
+        self._pose_bearing_standoff_mm: Optional[float] = None
 
         self.velocity_backend = None
 
@@ -81,7 +122,14 @@ class ApproachTargetServo(Primitive):
         return self.locked_target_id
 
     def start(self, *, lvl2, **_):
-        self.controller.reset()
+        self.range_bearing_controller.reset()
+
+        if self.pose_bearing_controller is not None:
+            self.pose_bearing_controller.reset()
+
+        self.active_strategy = (
+            ApproachServoStrategy.RANGE_BEARING
+        )
 
         self.failure_reason = None
 
@@ -101,7 +149,9 @@ class ApproachTargetServo(Primitive):
         print(
             "[SERVO_APPROACH] start "
             f"kind={self.kind} "
-            f"target_id={self.locked_target_id}"
+            f"target_id={self.locked_target_id} "
+            f"servo={self.servo_method.value} "
+            f"pose_allowed={self.pose_bearing_allowed}"
         )
 
         return self.status
@@ -113,6 +163,242 @@ class ApproachTargetServo(Primitive):
         memory = perception.objects.get(self.kind, {})
 
         return memory.get(self.locked_target_id)
+
+    def _get_locked_pose_face(self, perception):
+        """
+        Return the best current pose-capable face observation
+        for the locked target.
+
+        Use the same face-selection rule validated by the
+        pose-servo challenge: prefer the face with the smallest
+        absolute pitch + roll.
+        """
+
+        if self.locked_target_id is None:
+            return None
+
+        object_faces = getattr(
+            perception,
+            "object_faces",
+            None,
+        )
+
+        if object_faces is None:
+            return None
+
+        kind_faces = object_faces.get(
+            self.kind,
+            {},
+        )
+
+        faces = kind_faces.get(
+            self.locked_target_id,
+            [],
+        )
+
+        if not faces:
+            return None
+
+        return min(
+            faces,
+            key=lambda face: (
+                abs(float(face["pitch_deg"]))
+                + abs(float(face["roll_deg"]))
+            ),
+        )
+
+    @staticmethod
+    def _pose_face_is_usable(face) -> bool:
+        """
+        Return True when a face contains the minimum valid
+        geometry required by Pose-Bearing control.
+
+        This is deliberately only a validity gate for now.
+        It does not yet impose empirical pose-quality limits.
+        """
+
+        if face is None:
+            return False
+
+        numeric_fields = (
+            "distance",
+            "bearing",
+            "yaw_deg",
+            "pitch_deg",
+            "roll_deg",
+        )
+
+        try:
+            for name in numeric_fields:
+                value = float(face[name])
+
+                if not math.isfinite(value):
+                    return False
+
+            camera_name = str(face["camera"]).strip()
+
+        except (KeyError, TypeError, ValueError):
+            return False
+
+        return bool(camera_name)
+
+    def _set_active_strategy(
+            self,
+            strategy: ApproachServoStrategy,
+    ) -> None:
+        """
+        Change Stage-2 servo strategy cleanly.
+
+        Controller state is reset on a strategy transition so
+        PID history and PBVS/Smooth latch state do not leak
+        across control methods.
+        """
+
+        if strategy == self.active_strategy:
+            return
+
+        previous = self.active_strategy
+
+        self.range_bearing_controller.reset()
+
+        if self.pose_bearing_controller is not None:
+            self.pose_bearing_controller.reset()
+
+        self.active_strategy = strategy
+
+        print(
+            "[SERVO_APPROACH][STRATEGY] "
+            f"{previous.value} -> {strategy.value}"
+        )
+
+    def _ensure_pose_bearing_controller(
+            self,
+            *,
+            face,
+            standoff_mm: float,
+    ) -> PoseServoController:
+        """
+        Create/configure the Pose-Bearing controller for the
+        camera which produced the selected face observation.
+
+        Rebuild if the camera changes.
+
+        If the LOW/HIGH pickup decision changes the requested
+        standoff distance, reset the controller so Smooth
+        admissibility is re-evaluated for the new target pose.
+        """
+
+        camera_name = str(face["camera"])
+
+        camera_calibration = CALIBRATION.cameras.get(
+            camera_name
+        )
+
+        if camera_calibration is None:
+            raise RuntimeError(
+                f"No calibration for camera {camera_name!r}"
+            )
+
+        camera_fov_deg = float(
+            camera_calibration.meta.fov_deg
+        )
+
+        if camera_fov_deg <= 0.0:
+            raise RuntimeError(
+                f"Camera {camera_name!r} has no usable FOV"
+            )
+
+        margin_rad = math.radians(
+            self.POSE_FOV_ACTIVATION_MARGIN_DEG
+        )
+
+        camera_half_fov_rad = math.radians(
+            camera_fov_deg / 2.0
+        )
+
+        safe_half_fov_rad = (
+            camera_half_fov_rad
+            - margin_rad
+        )
+
+        if safe_half_fov_rad <= 0.0:
+            raise RuntimeError(
+                f"Camera {camera_name!r} FOV is too small "
+                f"for {self.POSE_FOV_ACTIVATION_MARGIN_DEG:.1f}deg margin"
+            )
+
+        rebuild = (
+            self.pose_bearing_controller is None
+            or self._pose_bearing_camera_name != camera_name
+        )
+
+        if rebuild:
+            pbvs_linear_max_mps = float(
+                self.config.approach_pose_pbvs_linear_max_mps
+            )
+
+            smooth_linear_max_mps = float(
+                self.config.approach_pose_smooth_linear_max_mps
+            )
+
+            pose_angular_max_rps = float(
+                self.config.approach_pose_angular_max_rad_s
+            )
+
+            self.pose_bearing_controller = PoseServoController(
+
+
+                camera_half_fov_rad=camera_half_fov_rad,
+                fov_activation_margin_rad=margin_rad,
+                safe_half_fov_rad=safe_half_fov_rad,
+
+                smooth_params=SmoothControlParams(
+                    k_phi=3.0,
+                    linear_max_mps=smooth_linear_max_mps,
+                    angular_max_rps=pose_angular_max_rps,
+                ),
+
+                pbvs_linear_max_mps=pbvs_linear_max_mps,
+                pbvs_angular_max_rps=pose_angular_max_rps,
+
+                config=self.config,
+            )
+
+            self._pose_bearing_camera_name = camera_name
+            self._pose_bearing_standoff_mm = float(
+                standoff_mm
+            )
+
+            print(
+                "[SERVO_APPROACH][POSE] controller created "
+                f"camera={camera_name} "
+                f"fov={camera_fov_deg:.1f}deg "
+                f"safe_half="
+                f"{math.degrees(safe_half_fov_rad):.1f}deg "
+                f"standoff={standoff_mm:.0f}mm"
+            )
+
+        elif (
+            self._pose_bearing_standoff_mm is None
+            or abs(
+                self._pose_bearing_standoff_mm
+                - float(standoff_mm)
+            ) > 1e-6
+        ):
+
+            self.pose_bearing_controller.reset()
+
+            self._pose_bearing_standoff_mm = float(
+                standoff_mm
+            )
+
+            print(
+                "[SERVO_APPROACH][POSE] "
+                f"standoff changed to {standoff_mm:.0f}mm "
+                "-> controller reset"
+            )
+
+        return self.pose_bearing_controller
 
     def _update_height_model(
             self,
@@ -223,6 +509,41 @@ class ApproachTargetServo(Primitive):
             target.get("last_seen", 0.0)
         )
 
+        # --------------------------------------------------
+        # Common perception freshness policy
+        # --------------------------------------------------
+
+        age_s = now - timestamp
+
+        visible_age_s = float(
+            self.config.visible_max_age_s
+        )
+
+        fail_age_s = (
+            visible_age_s
+            + float(self.config.vision_loss_timeout_s)
+        )
+
+        if age_s > visible_age_s:
+            self.velocity_backend.stop()
+
+            if age_s <= fail_age_s:
+                print(
+                    "[SERVO_APPROACH] perception stale "
+                    f"age={age_s:.3f}s "
+                    f"waiting until {fail_age_s:.3f}s"
+                )
+                return PrimitiveStatus.RUNNING
+
+            print(
+                "[SERVO_APPROACH] perception stale "
+                f"age={age_s:.3f}s "
+                "-> Stage 2 unavailable"
+            )
+
+            self.failure_reason = self.FAILURE_PERCEPTION
+            return PrimitiveStatus.FAILED
+
         distance_mm, bearing_deg = target_from_gripper(
             observation=target,
             config=self.config,
@@ -254,55 +575,44 @@ class ApproachTargetServo(Primitive):
             self.failure_reason = self.FAILURE_HEIGHT
             return PrimitiveStatus.FAILED
 
-        result = self.controller.update(
-            distance_mm=distance_mm,
-            target_angle_rad=math.radians(bearing_deg),
-            timestamp=timestamp,
-            stop_distance_mm=commit_distance_mm,
-            now=now,
+        # --------------------------------------------------
+        # Final-pickup handoff
+        # --------------------------------------------------
+        #
+        # ApproachTargetServo owns terminal arrival.
+        #
+        # Preserve the existing Stage 2 stopping semantics:
+        #
+        #     remaining <= configured stop tolerance
+        #
+        # For example:
+        #     commit = 300 mm
+        #     tolerance = 10 mm
+        #     handoff at <= 310 mm
+        #
+        # FinalPickup then owns:
+        #     final alignment -> blind drive -> grasp.
+
+        commit_tolerance_mm = float(
+            self.config.approach_target_servo_stop_tolerance_mm
         )
 
-        if result.status == ServoingStatus.FAILED_STALE:
-            # Controller has already commanded zero velocity because the
-            # observation is too old for closed-loop driving.
-            self.velocity_backend.update(result.command)
+        remaining_distance_mm = (
+            distance_mm - commit_distance_mm
+        )
 
-            age_s = now - timestamp
-
-            # Do not abandon Stage 2 for a brief missed-tag interval.
-            # Keep stopped and wait for fresh perception to return.
-            fail_age_s = (
-                    float(self.config.visible_max_age_s)
-                    + float(self.config.vision_loss_timeout_s)
-            )
-
-            if age_s <= fail_age_s:
-                print(
-                    "[SERVO_APPROACH] perception stale "
-                    f"age={age_s:.3f}s "
-                    f"waiting until {fail_age_s:.3f}s"
-                )
-                return PrimitiveStatus.RUNNING
-
-            print(
-                "[SERVO_APPROACH] perception stale "
-                f"age={age_s:.3f}s "
-                "-> Stage 2 unavailable"
-            )
-
-            self.failure_reason = self.FAILURE_PERCEPTION
-            return PrimitiveStatus.FAILED
-
-        if result.status == ServoingStatus.SUCCESS:
-            self.velocity_backend.update(result.command)
-
-            if not self.height_model.is_committed():
-                self.failure_reason = self.FAILURE_HEIGHT
-                return PrimitiveStatus.FAILED
+        if (
+            self.height_model.is_committed()
+            and remaining_distance_mm <= commit_tolerance_mm
+        ):
+            self.velocity_backend.stop()
 
             self.final_distance_mm = float(distance_mm)
             self.final_bearing_deg = float(bearing_deg)
-            latest_height = self.height_model.last_good_is_high()
+
+            latest_height = (
+                self.height_model.last_good_is_high()
+            )
 
             self.target_is_high = (
                 latest_height
@@ -312,25 +622,255 @@ class ApproachTargetServo(Primitive):
 
             print(
                 "[SERVO_APPROACH][HANDOFF] "
-                f"approach_mode={'HIGH' if self.height_model.is_high() else 'LOW'} "
-                f"pickup_height={'HIGH' if self.target_is_high else 'LOW'} "
+                f"approach_mode="
+                f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
+                f"pickup_height="
+                f"{'HIGH' if self.target_is_high else 'LOW'} "
                 f"dist={distance_mm:.0f}mm "
                 f"bearing={bearing_deg:.1f}deg "
                 f"commit={commit_distance_mm:.0f}mm "
+                f"tolerance={commit_tolerance_mm:.0f}mm "
                 "-> FINAL_PICKUP"
             )
 
             return PrimitiveStatus.SUCCEEDED
 
-        self.velocity_backend.update(result.command)
+        # --------------------------------------------------
+        # Select Stage-2 servo strategy
+        # --------------------------------------------------
+
+        pose_face = None
+
+        if (
+                self.servo_method
+                == ApproachServoMethod.TARGET_BEARING
+        ):
+            desired_strategy = (
+                ApproachServoStrategy.RANGE_BEARING
+            )
+
+        elif (
+                self.servo_method
+                == ApproachServoMethod.POSE_BEARING
+        ):
+
+            if not self.pose_bearing_allowed:
+                print(
+                    "[SERVO_APPROACH] "
+                    "POSE_BEARING requested but "
+                    "pose bearing is not available"
+                )
+
+                self.velocity_backend.stop()
+                self.failure_reason = (
+                    self.FAILURE_POSE_UNAVAILABLE
+                )
+                return PrimitiveStatus.FAILED
+
+            candidate_pose_face = (
+                self._get_locked_pose_face(
+                    perception
+                )
+            )
+
+            if not self._pose_face_is_usable(
+                    candidate_pose_face
+            ):
+                print(
+                    "[SERVO_APPROACH] "
+                    "POSE_BEARING requested but "
+                    "no usable pose face is available"
+                )
+
+                self.velocity_backend.stop()
+                self.failure_reason = (
+                    self.FAILURE_POSE_UNAVAILABLE
+                )
+                return PrimitiveStatus.FAILED
+
+            pose_face = candidate_pose_face
+
+            desired_strategy = (
+                ApproachServoStrategy.POSE_BEARING
+            )
+
+        else:
+            raise RuntimeError(
+                "Unsupported selected servo method: "
+                f"{self.servo_method!r}"
+            )
+
+        self._set_active_strategy(
+            desired_strategy
+        )
+
+
+        # --------------------------------------------------
+        # Servo strategy routing
+        # --------------------------------------------------
+
+        active_strategy = self.active_strategy.value
+        pose_mode = None
+
+        if self.active_strategy == ApproachServoStrategy.RANGE_BEARING:
+
+            result = self.range_bearing_controller.update(
+                distance_mm=distance_mm,
+                target_angle_rad=math.radians(bearing_deg),
+                timestamp=timestamp,
+                stop_distance_mm=commit_distance_mm,
+                now=now,
+            )
+            command = result.command
+
+        elif self.active_strategy == ApproachServoStrategy.POSE_BEARING:
+
+            face = pose_face
+
+            pose_controller = (
+                self._ensure_pose_bearing_controller(
+                    face=face,
+                    standoff_mm=commit_distance_mm,
+                )
+            )
+
+            pose_timestamp = float(
+                face.get(
+                    "last_seen",
+                    timestamp,
+                )
+            )
+
+            # --------------------------------------------------
+            # Construct desired relative pose
+            # --------------------------------------------------
+            #
+            # Position reference:
+            #     centre of the locked object
+            #
+            # Orientation reference:
+            #     normal to the selected pose-capable face
+            #
+            # The object centre is therefore propagated outward
+            # along the selected face normal by the requested
+            # standoff distance.
+
+            reference_x_mm, reference_y_mm = (
+                target_xy_from_base_link(
+                    observation=target,
+                    config=self.config,
+                )
+            )
+
+            camera_name = str(face["camera"])
+
+            camera_mount = self.config.camera_mounts[
+                camera_name
+            ]
+
+            camera_yaw_rad = math.radians(
+                float(
+                    camera_mount.get(
+                        "yaw_deg",
+                        0.0,
+                    )
+                )
+            )
+
+            face_yaw_rad = math.radians(
+                float(face["yaw_deg"])
+            )
+
+            # Same face-heading convention already validated by
+            # the previous pose geometry:
+            #
+            #     desired heading = camera yaw - face yaw
+            #
+            # This points the controlled frame square toward the
+            # selected object face.
+            controlled_heading_rad = (
+                    camera_yaw_rad
+                    - face_yaw_rad
+            )
+
+            gripper_mount = self.config.gripper_mount
+
+            (
+                goal_x_mm,
+                goal_y_mm,
+                goal_heading_rad,
+            ) = base_pose_from_reference(
+                reference_x_mm=reference_x_mm,
+                reference_y_mm=reference_y_mm,
+                controlled_heading_rad=controlled_heading_rad,
+                standoff_mm=commit_distance_mm,
+                controlled_frame_x_mm=float(
+                    gripper_mount["x_mm"]
+                ),
+                controlled_frame_y_mm=float(
+                    gripper_mount["y_mm"]
+                ),
+                controlled_frame_yaw_rad=math.radians(
+                    float(
+                        gripper_mount.get(
+                            "yaw_deg",
+                            0.0,
+                        )
+                    )
+                ),
+            )
+
+            target_pose = Pose2D(
+                x_m=goal_x_mm / 1000.0,
+                y_m=goal_y_mm / 1000.0,
+                heading_rad=goal_heading_rad,
+            )
+
+            print(
+                "[SERVO_APPROACH][POSE_GOAL] "
+                f"face_dist={float(face['distance']):.0f}mm "
+                f"face_bearing={float(face['bearing']):+.2f}deg "
+                f"face_yaw={float(face['yaw_deg']):+.2f}deg "
+                f"goal_x={goal_x_mm:+.1f}mm "
+                f"goal_y={goal_y_mm:+.1f}mm "
+                f"goal_heading="
+                f"{math.degrees(goal_heading_rad):+.2f}deg "
+                f"goal_r={math.hypot(goal_x_mm, goal_y_mm):.1f}mm"
+            )
+
+            pose_result = pose_controller.update(
+                tag_id=int(self.locked_target_id),
+                observation=face,
+                target_pose=target_pose,
+                timestamp=pose_timestamp,
+            )
+
+            command = pose_result.command
+            pose_mode = pose_result.mode.value
+
+        else:
+            raise RuntimeError(
+                f"Unsupported approach servo strategy: "
+                f"{self.active_strategy!r}"
+            )
+
+        self.velocity_backend.update(command)
+
+        mode_text = (
+            f" mode={pose_mode}"
+            if pose_mode is not None
+            else ""
+        )
 
         print(
             "[SERVO_APPROACH] "
+            f"strategy={active_strategy}"
+            f"{mode_text} "
             f"dist={distance_mm:.0f}mm "
             f"bearing={bearing_deg:+.1f}deg "
             f"commit={commit_distance_mm:.0f}mm "
-            f"vx={result.command.linear_x_mps:.3f}m/s "
-            f"wz={result.command.angular_z_rps:+.3f}rad/s"
+            f"vx={command.linear_x_mps:.3f}m/s "
+            f"wz={command.angular_z_rps:+.3f}rad/s"
         )
 
         return PrimitiveStatus.RUNNING

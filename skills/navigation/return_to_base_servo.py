@@ -93,6 +93,23 @@ class ReturnToBaseServo(Primitive):
                 }
             )
 
+        # Guides from which a delivered cube may replace
+        # the arena navigation target:
+        #
+        #   - the final guide
+        #   - the guide immediately before it on either route
+        #
+        # Derived from the zone-specific return routes rather
+        # than hard-coded arena marker IDs.
+        self.terminal_replacement_guide_ids = frozenset(
+            guide_id
+            for route in self.guide_routes
+            for guide_id in (
+                route["guide_ids"][-2],
+                route["guide_ids"][-1],
+            )
+        )
+
         self.controller = ServoingController(
             application="return_to_base",
             config=self.config,
@@ -107,6 +124,8 @@ class ReturnToBaseServo(Primitive):
         self.desired_bearing_deg = 0.0
 
         self.failure_reason: Optional[str] = None
+        self.terminal_target_id: Optional[int] = None
+        self.terminal_target_kind: Optional[str] = None
 
     @property
     def active_guide_id(self) -> int:
@@ -138,6 +157,8 @@ class ReturnToBaseServo(Primitive):
         self.active_index = 0
         self.desired_bearing_deg = 0.0
         self.failure_reason = None
+        self.terminal_target_id = None
+        self.terminal_target_kind = None
 
         self.status = PrimitiveStatus.RUNNING
 
@@ -148,12 +169,202 @@ class ReturnToBaseServo(Primitive):
 
         return self.status
 
-    def update(
+    def _find_delivered_target(
         self,
         *,
-        arena_observations,
-        observation_timestamp: float,
-        **_,
+        perception,
+        delivered_ids,
+        now: float,
+    ):
+        """
+        Find the nearest currently-visible delivered cube.
+
+        This is only used when a terminal arena guide has
+        disappeared. Once selected, the cube id is latched.
+        """
+
+        if perception is None or not delivered_ids:
+            return None
+
+        delivered_ids = {
+            int(target_id)
+            for target_id in delivered_ids
+        }
+
+        max_age_s = float(
+            self.config.visible_max_age_s
+        )
+
+        candidates = []
+
+        for kind, memory in perception.objects.items():
+            for target_id in delivered_ids:
+
+                observation = memory.get(target_id)
+
+                if observation is None:
+                    continue
+
+                if (
+                    "distance" not in observation
+                    or "bearing" not in observation
+                ):
+                    continue
+
+                last_seen = float(
+                    observation.get("last_seen", 0.0)
+                )
+
+                if now - last_seen > max_age_s:
+                    continue
+
+                candidates.append(
+                    (
+                        float(observation["distance"]),
+                        str(kind),
+                        target_id,
+                        observation,
+                    )
+                )
+
+        if not candidates:
+            return None
+
+        return min(
+            candidates,
+            key=lambda item: item[0],
+        )
+
+    def _get_terminal_target(
+        self,
+        *,
+        perception,
+        now: float,
+    ):
+        """
+        Return the already-latched delivered cube if it is
+        still freshly visible.
+        """
+
+        if (
+            perception is None
+            or self.terminal_target_id is None
+            or self.terminal_target_kind is None
+        ):
+            return None
+
+        observation = perception.objects.get(
+            self.terminal_target_kind,
+            {},
+        ).get(
+            self.terminal_target_id
+        )
+
+        if observation is None:
+            return None
+
+        last_seen = float(
+            observation.get("last_seen", 0.0)
+        )
+
+        if (
+            now - last_seen
+            > float(self.config.visible_max_age_s)
+        ):
+            return None
+
+        return observation
+
+    def _update_terminal_target(
+        self,
+        *,
+        observation,
+        now: float,
+    ) -> PrimitiveStatus:
+        """
+        Servo directly toward a delivered cube.
+
+        Range and bearing are the cube's camera measurements.
+        Completion uses the LOW pickup commit distance.
+        """
+
+        distance_mm = float(
+            observation["distance"]
+        )
+
+        bearing_deg = float(
+            observation["bearing"]
+        )
+
+        timestamp = float(
+            observation.get("last_seen", 0.0)
+        )
+
+        stop_distance_mm = float(
+            self.config.final_commit_distance_mm
+        )
+
+        result = self.controller.update(
+            distance_mm=distance_mm,
+            target_angle_rad=math.radians(
+                bearing_deg
+            ),
+            target_angle_setpoint_rad=0.0,
+            timestamp=timestamp,
+            stop_distance_mm=stop_distance_mm,
+            now=now,
+        )
+
+        self.velocity_backend.update(
+            result.command
+        )
+
+        if result.status == ServoingStatus.FAILED_STALE:
+            self.velocity_backend.stop()
+
+            print(
+                "[RETURN_BASE_SERVO][DELIVERED] "
+                f"id={self.terminal_target_id} stale"
+            )
+
+            self.status = PrimitiveStatus.RUNNING
+            return self.status
+
+        if result.status == ServoingStatus.SUCCESS:
+            self.velocity_backend.stop()
+
+            print(
+                "[RETURN_BASE_SERVO][DELIVERED] "
+                f"id={self.terminal_target_id} "
+                f"distance={distance_mm:.0f}mm "
+                f"target={stop_distance_mm:.0f}mm "
+                "-> complete"
+            )
+
+            self.status = PrimitiveStatus.SUCCEEDED
+            return self.status
+
+        print(
+            "[RETURN_BASE_SERVO][DELIVERED] "
+            f"id={self.terminal_target_id} "
+            f"distance={distance_mm:.0f}mm "
+            f"stop={stop_distance_mm:.0f}mm "
+            f"bearing={bearing_deg:+.1f}deg "
+            f"vx={result.command.linear_x_mps:.3f}m/s "
+            f"wz={result.command.angular_z_rps:+.3f}rad/s"
+        )
+
+        self.status = PrimitiveStatus.RUNNING
+        return self.status
+
+    def update(
+            self,
+            *,
+            arena_observations,
+            observation_timestamp: float,
+            perception=None,
+            delivered_ids=None,
+            **_,
     ) -> PrimitiveStatus:
 
         if self.velocity_backend is None:
@@ -161,6 +372,34 @@ class ReturnToBaseServo(Primitive):
             return PrimitiveStatus.FAILED
 
         now = time.time()
+
+        # --------------------------------------------------
+        # Latched delivered-cube terminal target
+        # --------------------------------------------------
+
+        if self.terminal_target_id is not None:
+
+            observation = self._get_terminal_target(
+                perception=perception,
+                now=now,
+            )
+
+            if observation is None:
+                self.velocity_backend.stop()
+
+                print(
+                    "[RETURN_BASE_SERVO][DELIVERED] "
+                    f"id={self.terminal_target_id} "
+                    "not visible"
+                )
+
+                self.status = PrimitiveStatus.RUNNING
+                return self.status
+
+            return self._update_terminal_target(
+                observation=observation,
+                now=now,
+            )
 
         all_guide_ids = {
             tag_id
@@ -287,6 +526,41 @@ class ReturnToBaseServo(Primitive):
         observation = visible.get(guide_id)
 
         if observation is None:
+
+            if guide_id in self.terminal_replacement_guide_ids:
+
+                candidate = self._find_delivered_target(
+                    perception=perception,
+                    delivered_ids=delivered_ids,
+                    now=now,
+                )
+
+                if candidate is not None:
+                    (
+                        _,
+                        kind,
+                        target_id,
+                        observation,
+                    ) = candidate
+
+                    self.terminal_target_id = target_id
+                    self.terminal_target_kind = kind
+
+                    # New physical target and new bearing setpoint:
+                    # discard controller history from the arena guide.
+                    self.controller.reset()
+
+                    print(
+                        "[RETURN_BASE_SERVO][TERMINAL_HANDOFF] "
+                        f"guide={guide_id} -> "
+                        f"delivered {kind} id={target_id}"
+                    )
+
+                    return self._update_terminal_target(
+                        observation=observation,
+                        now=now,
+                    )
+
             self.velocity_backend.stop()
 
             print(
@@ -327,7 +601,9 @@ class ReturnToBaseServo(Primitive):
                 ]
 
             if (
-                    guide_distance_mm
+                    guide_id
+                    not in self.terminal_replacement_guide_ids
+                    and guide_distance_mm
                     <= GUIDE_HANDOFF_GUARD_DISTANCE_MM
                     and next_id not in visible
             ):

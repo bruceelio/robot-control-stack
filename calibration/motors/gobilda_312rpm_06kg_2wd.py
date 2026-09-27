@@ -51,13 +51,16 @@ ROTATE_B_LARGE = -0.0413
 # Steady-state drive velocity calibration:
 # (motor_power, velocity_mm_s)
 #
-# Currently derived from the existing timed-dead_reckoning calibration.
-# Additional measured points can be added later without changing
-# the velocity backend interface.
+# Independent of timed-drive SHORT/LONG settings.
+#
+# These initial points are seeded from the previous timed-drive
+# calibration and preserve existing velocity/servoing behaviour.
+# Replace/add points here as measured steady-state velocity data
+# becomes available.
 DRIVE_VELOCITY_CURVE = (
-    (0.0, 0.0),
-    (DRIVE_POWER_SHORT, 1.0 / DRIVE_M_SHORT),
-    (DRIVE_POWER_LONG,  1.0 / DRIVE_M_LONG),
+    (0.00,   0.0),
+    (0.20, 237.5),
+    (0.35, 480.8),
 )
 
 

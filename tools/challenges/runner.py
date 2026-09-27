@@ -44,4 +44,17 @@ def run_challenge(challenge, controller):
         from tools.challenges.servoing_return_to_base import run
         return run(controller)
 
+    if challenge == Challenge.SERVOING_POSE:
+        from tools.challenges.servoing_pose import run
+        return run(controller)
+
+    if challenge == Challenge.DRIVE_CALIBRATION:
+        from tools.challenges.drive_calibration import run
+        return run(controller)
+
+    if challenge == Challenge.ROTATE_CALIBRATION:
+        from tools.challenges.rotate_calibration import run
+        return run(controller)
+
+
     raise RuntimeError(f"Unsupported challenge: {challenge}")

@@ -101,6 +101,15 @@ class CurrentReading:
         return self._getter()
 
 
+class ValueReading:
+    def __init__(self, getter: Callable[[], Any]):
+        self._getter = getter
+
+    @property
+    def value(self) -> Any:
+        return self._getter()
+
+
 class EncoderReading:
     def __init__(self, getter: Callable[[], Dict[str, Any]]):
         self._getter = getter
@@ -512,10 +521,11 @@ class Mega2560IO(IOMap):
             },
         )
 
-        self._usb = ReadOnlyCollection(
-            {
-                "match_zone": self._read_match_zone,
-            }
+        self._usb = NamedIndexedCollection(
+            ordered_items=[],
+            named_items={
+                "match_zone": ValueReading(self._read_match_zone),
+            },
         )
 
     def _init_actuators(self):

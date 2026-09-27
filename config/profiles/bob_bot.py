@@ -214,6 +214,7 @@ BASE_DRIVE_FACTOR = 1.0
 # Physical left/right servo mirroring is handled by the hardware backend.
 GRIPPER_OPEN_POSITION = 1.0
 GRIPPER_GRAB_POSITION = -0.55
+LIFT_CARRY_POSITION = -0.8
 
 # ==================================================
 # 3. AUTONOMOUS / PERCEPTION TUNING
@@ -243,10 +244,22 @@ APPROACH_TARGET_SERVO_ANGULAR_KD = 0.0
 APPROACH_TARGET_SERVO_DERIVATIVE_MODE = "error"
 
 # ApproachTargetServo limits / policy
-APPROACH_TARGET_SERVO_LINEAR_MAX_MM_S = 300.0
-APPROACH_TARGET_SERVO_ANGULAR_MAX_RAD_S = 0.35
+
+
 APPROACH_TARGET_SERVO_DRIVE_CUTOFF_DEG = 60.0
 APPROACH_TARGET_SERVO_STOP_TOLERANCE_MM = 10.0
+
+# ApproachTargetServo strategy-specific velocity limits
+#
+# Range-Bearing is limited primarily by robot/camera performance.
+# Pose-Bearing controllers may impose additional algorithm-specific limits.
+
+APPROACH_RANGE_LINEAR_MAX_MPS = 0.90
+APPROACH_RANGE_ANGULAR_MAX_RAD_S = 0.35
+
+APPROACH_POSE_PBVS_LINEAR_MAX_MPS = 0.90
+APPROACH_POSE_SMOOTH_LINEAR_MAX_MPS = 0.60
+APPROACH_POSE_ANGULAR_MAX_RAD_S = 0.35
 
 # -------------------------
 # Post-Pickup Realignment

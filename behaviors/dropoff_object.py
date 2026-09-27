@@ -105,12 +105,12 @@ Post-dropoff clearance remains owned by PostDropoffRealign.
                 # guide_side="left" is the 18 -> 19 route.
                 # Turn clockwise/right, into the arena.
                 if self.arrival_side == "left":
-                    angle_deg = -70.0
+                    angle_deg = -45.0
 
                 # guide_side="right" is the opposite return route.
                 # Turn counter-clockwise/left, into the arena.
                 else:
-                    angle_deg = 70.0
+                    angle_deg = 45.0
 
                 print(
                     "[DROPOFF_OBJECT] "

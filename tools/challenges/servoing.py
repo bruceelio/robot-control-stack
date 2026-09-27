@@ -11,11 +11,15 @@ from perception import (
     sense,
     get_visible_targets,
 )
+from perception.robot_geometry import target_from_gripper
 
 from navigation.servoing.servoing_controller import (
     ServoingController,
     ServoingStatus,
 )
+
+from behaviors.init_escape import InitEscape
+from skills.navigation.approach_target import _marker_elevation
 
 from navigation.velocity_arbiter import (
     VelocityArbiter,
@@ -32,7 +36,7 @@ from motion_backends.velocity import VelocityMotionBackend
 # Conservative first test.
 # Stop well short of the target until the complete control chain
 # has been proven in simulation.
-STOP_DISTANCE_MM = 250.0
+STOP_DISTANCE_MM = 0.0
 
 # Small delay between control updates.
 LOOP_DELAY_S = 0.02
@@ -73,6 +77,37 @@ def run(controller):
 
     print("\n=== SERVOING CHALLENGE ===")
 
+    print("[SERVOING] running InitEscape")
+
+    escape = InitEscape()
+    escape.start(
+        config=CONFIG,
+        motion_backend=controller.motion_backend,
+    )
+
+    while True:
+        status = escape.update(
+            lvl2=controller.lvl2,
+            localisation=controller.localisation,
+            motion_backend=controller.motion_backend,
+        )
+
+        if status.name == "SUCCEEDED":
+            break
+
+        if status.name == "FAILED":
+            raise RuntimeError(
+                "InitEscape failed during servoing challenge"
+            )
+
+        controller.io.sleep(LOOP_DELAY_S)
+
+    print("[SERVOING] InitEscape complete")
+
+    controller.io.sleep(
+        CONFIG.camera_settle_time
+    )
+
     if not CONFIG.servoing_enabled:
         raise RuntimeError(
             "Servoing is disabled for the selected robot profile."
@@ -80,7 +115,10 @@ def run(controller):
 
     target_kind = CONFIG.default_target_kind
 
-    servoing = ServoingController()
+    servoing = ServoingController(
+        application="approach_target",
+        config=controller.config,
+    )
 
     velocity_arbiter = VelocityArbiter()
 
@@ -141,11 +179,51 @@ def run(controller):
                     controller.io.sleep(LOOP_DELAY_S)
                     continue
 
-                target = targets[0]
+                wanted_elevation = CONFIG.default_target_elevation
+
+                matching_targets = []
+
+                for candidate in targets:
+                    pitch, src = _marker_elevation(
+                        candidate.get("marker", candidate),
+                    )
+
+                    if src == "none":
+                        continue
+
+                    if (
+                            wanted_elevation == "high"
+                            and pitch <= float(CONFIG.marker_pitch_high_deg)
+                    ):
+                        matching_targets.append(candidate)
+
+                    elif (
+                            wanted_elevation == "low"
+                            and pitch >= float(CONFIG.marker_pitch_low_deg)
+                    ):
+                        matching_targets.append(candidate)
+
+                if not matching_targets:
+                    velocity_motion.stop()
+
+                    print(
+                        f"[SERVOING] waiting for visible "
+                        f"{wanted_elevation} {target_kind} target"
+                    )
+
+                    controller.io.sleep(LOOP_DELAY_S)
+                    continue
+
+                target = min(
+                    matching_targets,
+                    key=lambda t: float(t["distance"]),
+                )
+
                 selected_id = int(target["id"])
 
                 print(
                     f"[SERVOING] selected "
+                    f"{CONFIG.default_target_elevation} "
                     f"{target_kind} id={selected_id}"
                 )
 
@@ -172,12 +250,13 @@ def run(controller):
                 )
                 break
 
-            distance_mm = float(
-                target["distance"]
+            distance_mm, bearing_deg = target_from_gripper(
+                observation=target,
+                config=controller.config,
             )
 
             target_angle_rad = math.radians(
-                float(target["bearing"])
+                bearing_deg
             )
 
             timestamp = float(
@@ -222,7 +301,8 @@ def run(controller):
             print(
                 f"[SERVOING] "
                 f"id={selected_id} "
-                f"dist={distance_mm:.0f}mm "
+                f"camera_dist={float(target['distance']):.0f}mm "
+                f"gripper_dist={distance_mm:.0f}mm "
                 f"angle={math.degrees(target_angle_rad):+.1f}deg "
                 f"v={velocity_command.linear_x_mps:.3f}m/s "
                 f"w={velocity_command.angular_z_rps:+.3f}rad/s "

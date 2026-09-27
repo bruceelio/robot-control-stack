@@ -24,6 +24,13 @@ def corrected_bearing_deg(
 
     return bearing
 
+def corrected_vertical_angle_rad(
+    marker: Any,
+    cam_cal: Any,
+) -> float:
+    raw = float(marker.position.vertical_angle)
+
+    return raw * cam_cal.optical.vertical_angle_sign
 
 def build_vision_message(
     *,

@@ -304,11 +304,22 @@ class Level2:
         servo = self.io.servo["lift"]
 
         try:
-            servo.position = -0.8
+            if self.config is None:
+                raise RuntimeError(
+                    "Level2.LIFT_CARRY requires robot configuration"
+                )
+
+            position = self.config.lift_carry_position
+
+            print(
+                f"[Level2] LIFT_CARRY position={position}"
+            )
+
+            servo.position = position
 
             t_end = time.time() + 1.0
             while time.time() < t_end:
-                servo.position = -0.8
+                servo.position = position
                 self.io.sleep(0.05)
 
         except Exception as e:

@@ -25,3 +25,12 @@ DISTORTION_COEFFICIENTS = (-0.332, 0.119, 0.0, 0.0, -0.021)
 PNP_CAMERA_PARAMS = (349.2, 348.5, 335.0, 212.2)
 PNP_DISTORTION_COEFFICIENTS = (-0.332, 0.119, 0.0, 0.0, -0.021)
 
+# --------------------------------------------------
+# Metadata
+# --------------------------------------------------
+
+RESOLUTION = (640, 400)
+
+FOV_DEG = 85.0          # Not tested
+
+DESCRIPTION = "Arducam OV9281 full-FOV 640x400 processing calibration"

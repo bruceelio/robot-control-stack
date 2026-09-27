@@ -39,6 +39,9 @@ class Challenge(Enum):
     SERVOING = auto()
     SERVOING_ARENA_TAG = auto()
     SERVOING_RETURN_TO_BASE = auto()
+    SERVOING_POSE = auto()
+    DRIVE_CALIBRATION = auto()
+    ROTATE_CALIBRATION = auto()
 
 class MatchZoneSource(Enum):
     AUTO = "auto"
@@ -90,14 +93,22 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.STOPPING
 # CHALLENGE = Challenge.SERVOING
 # CHALLENGE = Challenge.SERVOING_ARENA_TAG
-CHALLENGE = Challenge.SERVOING_RETURN_TO_BASE
+# CHALLENGE = Challenge.SERVOING_RETURN_TO_BASE
+CHALLENGE = Challenge.SERVOING_POSE
+# CHALLENGE = Challenge.DRIVE_CALIBRATION
+# CHALLENGE = Challenge.ROTATE_CALIBRATION
 
 # =========================
 # Default Target
 # =========================
 
+# DEFAULT_TARGET_KIND = None
 # DEFAULT_TARGET_KIND = "acidic"
 DEFAULT_TARGET_KIND = "basic"
+
+# DEFAULT_TARGET_ELEVATION = None
+# DEFAULT_TARGET_ELEVATION = "high"
+DEFAULT_TARGET_ELEVATION = "low"
 
 # =========================
 # Match / Starting Zone
@@ -111,4 +122,4 @@ MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
 MATCH_ZONE_FIXED = 0
 USB_MATCH_ZONE_FILE = "zone.txt"
 
-START_SLOT = 3  # 1: Simulation Start; 2:   ; 3: corner start diag run
+START_SLOT = 1  # 1: Simulation Start; 2:   ; 3: corner start diag run

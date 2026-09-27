@@ -30,6 +30,7 @@ class Config:
     gripper_from_camera: dict
     gripper_open_position: float
     gripper_grab_position: float
+    lift_carry_position: float
 
     io: dict[str, str | None]
 
@@ -51,7 +52,8 @@ class Config:
     arena_size: int
 
     # Strategy
-    default_target_kind: str
+    default_target_kind: str | None
+    default_target_elevation: str | None
     match_zone_source: str
     match_zone_fixed: int
     usb_match_zone_file: str
@@ -81,10 +83,16 @@ class Config:
 
     approach_target_servo_derivative_mode: str
 
-    approach_target_servo_linear_max_mm_s: float
-    approach_target_servo_angular_max_rad_s: float
+
     approach_target_servo_drive_cutoff_deg: float
     approach_target_servo_stop_tolerance_mm: float
+
+    approach_range_linear_max_mps: float
+    approach_range_angular_max_rad_s: float
+
+    approach_pose_pbvs_linear_max_mps: float
+    approach_pose_smooth_linear_max_mps: float
+    approach_pose_angular_max_rad_s: float
 
     # PostPickupRealign
     post_pickup_reverse_mm: int
@@ -233,6 +241,7 @@ RESOLVE_MAP = {
     "gripper_from_camera": ("computed", "gripper_from_camera"),
     "gripper_open_position": ("profile", "GRIPPER_OPEN_POSITION"),
     "gripper_grab_position": ("profile", "GRIPPER_GRAB_POSITION"),
+    "lift_carry_position": ("profile", "LIFT_CARRY_POSITION"),
 
     # Servoing
     "servoing_enabled": ("profile", "SERVOING_ENABLED"),
@@ -244,6 +253,7 @@ RESOLVE_MAP = {
 
     # Strategy
     "default_target_kind": ("strategy", "DEFAULT_TARGET_KIND"),
+    "default_target_elevation": ("strategy", "DEFAULT_TARGET_ELEVATION"),
     "match_zone_source": ("strategy", "MATCH_ZONE_SOURCE"),
     "match_zone_fixed": ("strategy", "MATCH_ZONE_FIXED"),
     "usb_match_zone_file": ("strategy", "USB_MATCH_ZONE_FILE"),
@@ -289,14 +299,23 @@ RESOLVE_MAP = {
     "approach_target_servo_derivative_mode":
         ("profile", "APPROACH_TARGET_SERVO_DERIVATIVE_MODE"),
 
-    "approach_target_servo_linear_max_mm_s":
-        ("profile", "APPROACH_TARGET_SERVO_LINEAR_MAX_MM_S"),
-    "approach_target_servo_angular_max_rad_s":
-        ("profile", "APPROACH_TARGET_SERVO_ANGULAR_MAX_RAD_S"),
+
     "approach_target_servo_drive_cutoff_deg":
         ("profile", "APPROACH_TARGET_SERVO_DRIVE_CUTOFF_DEG"),
     "approach_target_servo_stop_tolerance_mm":
         ("profile", "APPROACH_TARGET_SERVO_STOP_TOLERANCE_MM"),
+
+    "approach_range_linear_max_mps":
+        ("profile", "APPROACH_RANGE_LINEAR_MAX_MPS"),
+    "approach_range_angular_max_rad_s":
+     ("profile", "APPROACH_RANGE_ANGULAR_MAX_RAD_S"),
+
+    "approach_pose_pbvs_linear_max_mps":
+        ("profile", "APPROACH_POSE_PBVS_LINEAR_MAX_MPS"),
+    "approach_pose_smooth_linear_max_mps":
+        ("profile", "APPROACH_POSE_SMOOTH_LINEAR_MAX_MPS"),
+    "approach_pose_angular_max_rad_s":
+        ("profile", "APPROACH_POSE_ANGULAR_MAX_RAD_S"),
 
     # PostPickupRealign
     "post_pickup_reverse_mm": ("profile", "POST_PICKUP_REVERSE_MM"),

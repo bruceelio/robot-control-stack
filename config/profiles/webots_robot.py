@@ -52,7 +52,7 @@ IO = {
     "limit.lift_high":                    None,
     "limit.lift_low":                     None,
 
-    "match_zone.main":                    None,
+    "usb.match_zone":                     "sr2026sim",
 
     "motor.collector":                    None,
     "motor.drive_front_left":             "sr2026sim",
@@ -165,8 +165,6 @@ DRIVE_TRACK_WIDTH_MM = 280      # estimated via sim protos
 MOTOR_POLARITY = [1, 1]
 MOTION_BACKEND = "timed"
 
-
-
 # Base calibration
 BASE_ROTATE_FACTOR = 1.0
 BASE_DRIVE_FACTOR = 1.0
@@ -178,6 +176,7 @@ BASE_DRIVE_FACTOR = 1.0
 # Logical gripper positions in the canonical -1.0 ... +1.0 servo range.
 GRIPPER_OPEN_POSITION = 1.0
 GRIPPER_GRAB_POSITION = -1.0
+LIFT_CARRY_POSITION = 0.0           #lift can't be down low or blocks sim camera
 
 SURFACE_MULTIPLIERS = {
     "simulation": {"rotate": 1.00, "drive": 1.00},
@@ -187,11 +186,14 @@ SURFACE_MULTIPLIERS = {
 GRAB_DISTANCE_MM = 0.0   # not currently in code?
 
 # InitEscape
-INIT_ESCAPE_DRIVE_MM = 250
-INIT_ESCAPE_ROTATE_DEG = -36.0
+# (1000,-60): will target high acidic
+# (250, -45); will targer low basic
+
+INIT_ESCAPE_DRIVE_MM = 250          # typical 250
+INIT_ESCAPE_ROTATE_DEG = -45.0      # typical 45
 
 # -------------------------
-# Approach Target (not tested)
+# Approach Target (not optimized)
 # -------------------------
 
 # ApproachTargetServo PID tuning
@@ -206,17 +208,25 @@ APPROACH_TARGET_SERVO_ANGULAR_KD = 0.0
 APPROACH_TARGET_SERVO_DERIVATIVE_MODE = "error"
 
 # ApproachTargetServo limits / policy
-APPROACH_TARGET_SERVO_LINEAR_MAX_MM_S = 900.0
-APPROACH_TARGET_SERVO_ANGULAR_MAX_RAD_S = 0.8
+
 APPROACH_TARGET_SERVO_DRIVE_CUTOFF_DEG = 60.0
 APPROACH_TARGET_SERVO_STOP_TOLERANCE_MM = 10.0
 
+# ApproachTargetServo strategy-specific velocity limits
+
+APPROACH_RANGE_LINEAR_MAX_MPS = 0.90
+APPROACH_RANGE_ANGULAR_MAX_RAD_S = 0.35
+
+APPROACH_POSE_PBVS_LINEAR_MAX_MPS = 0.90
+APPROACH_POSE_SMOOTH_LINEAR_MAX_MPS = 0.60
+APPROACH_POSE_ANGULAR_MAX_RAD_S = 0.35
+
 # PostPickupRealign
-POST_PICKUP_REVERSE_MM = 120
+POST_PICKUP_REVERSE_MM = 160
 POST_PICKUP_ROTATE_DEG = -150.0
 
 # -------------------------
-# Return To Base  (not tested)
+# Return To Base  (not optimized)
 # -------------------------
 
 # ReturnToBaseServo PID tuning
@@ -231,15 +241,15 @@ RETURN_TO_BASE_SERVO_ANGULAR_KD = 0.0
 RETURN_TO_BASE_SERVO_DERIVATIVE_MODE = "error"
 
 # ReturnToBaseServo limits / policy
-RETURN_TO_BASE_SERVO_LINEAR_MAX_MM_S = 900.0
+RETURN_TO_BASE_SERVO_LINEAR_MAX_MM_S = 600.0
 RETURN_TO_BASE_SERVO_ANGULAR_MAX_RAD_S = 0.8
 RETURN_TO_BASE_SERVO_DRIVE_SLOWDOWN_START_DEG = 5.0
 RETURN_TO_BASE_SERVO_DRIVE_CUTOFF_DEG = 40.0
 RETURN_TO_BASE_SERVO_STOP_TOLERANCE_MM = 10.0
 
 # PostDropoffRealign
-POST_DROPOFF_REVERSE_MM = 120
-POST_DROPOFF_ROTATE_DEG = -90
+POST_DROPOFF_REVERSE_MM = 160
+POST_DROPOFF_ROTATE_DEG = -70
 
 # RecoverLocalisation
 RECOVER_STEP_DEG = 15.0
@@ -252,7 +262,7 @@ MAX_ROTATE_DEG = 180.0
 MIN_DRIVE_MM = 5.0          # only for seek_and_collect
 MAX_DRIVE_MM = 2500.0
 MOTOR_POWER_MAX = 0.8
-MOTOR_POWER_MIN = 0.10
+MOTOR_POWER_MIN = 0.01
 
 # Vision / perception
 CAMERA_SETTLE_TIME = 0.5
@@ -262,7 +272,7 @@ MARKER_HEIGHT_MAX_DISTANCE_MM = 2000
 # These are actual radians (so AI doesn't implode on itself)
 MARKER_PITCH_HIGH_DEG = -0.052                # 0.0523598776 is 3 degrees
 MARKER_PITCH_LOW_DEG = -0.02
-HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low are will never commit
+HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low or will never commit
 MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 
 
@@ -274,11 +284,11 @@ VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 BAND_B_MIN_DISTANCE_MM = 200            # minimum drive distance on Band B approach
 
 FINAL_APPROACH_DIRECT_RANGE_MM = 700    # added distance from commit for ranging (> final)
-FINAL_COMMIT_DISTANCE_MM = 700          # from here we go blind (650 or so)
+FINAL_COMMIT_DISTANCE_MM = 300          # from here we go blind (WeBots low servoing - 228)
 FINAL_APPROACH_BACKUP_MM = 200
 
 FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit for ranging
-FINAL_COMMIT_DISTANCE_HIGH_MM = 1100            # from here we go blind
+FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high servoing - 848
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35
 FINAL_APPROACH_MARKER_PUSH = 13

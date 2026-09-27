@@ -11,12 +11,10 @@ from typing import Dict, Tuple
 
 @dataclass(frozen=True)
 class CameraOptical:
-    """
-    Optical / perception corrections.
-    """
     distance_scale: float
     bearing_sign: float
     bearing_offset_deg: float
+    vertical_angle_sign: float
 
 
 @dataclass(frozen=True)
