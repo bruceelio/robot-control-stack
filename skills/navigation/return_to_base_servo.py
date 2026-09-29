@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import math
 import time
+
+from dataclasses import dataclass
 from typing import Optional, Sequence
 
+from policies.vision_grace_period import VisionGracePeriod
 from motion_backends.velocity import VelocityMotionBackend
 from perception.robot_geometry import (
     target_from_camera,
@@ -16,7 +19,7 @@ from navigation.servoing.servoing_controller import (
     ServoingStatus,
 )
 from primitives.base import Primitive, PrimitiveStatus
-from config.arena import return_guide_routes
+from config.arena import marker_poses
 
 
 GUIDE_BEARING_OFFSET_DEG = 20.0
@@ -29,8 +32,25 @@ GUIDE_STOP_DISTANCE_MM = 0.0
 FINAL_GUIDE_BEARING_DEG = 0.0
 FINAL_GUIDE_STOP_DISTANCE_MM = 762.5
 
+# Maximum absolute arena approach angle for direct final-guide servo.
+#
+# 0 deg  = directly in front of marker
+# 90 deg = alongside the marker's wall
+#
+# More side-on approaches are left to the higher-level return behaviour,
+# which may hand off to wall following when wall-entry geometry is suitable.
+FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG = 75.0
+
 GUIDE_HANDOFF_GUARD_DISTANCE_MM = 700.0
 
+@dataclass(frozen=True)
+class FinalGuideState:
+    guide_id: int
+    visible: bool
+
+    distance_mm: Optional[float]
+    camera_bearing_deg: Optional[float]
+    approach_deg: Optional[float]
 
 class ReturnToBaseServo(Primitive):
     """
@@ -50,6 +70,7 @@ class ReturnToBaseServo(Primitive):
 
     FAILURE_PERCEPTION = "perception"
     FAILURE_GUIDE_HANDOFF = "guide_handoff"
+    FAILURE_NO_ROUTE_GUIDE = "no_route_guide"
 
     def __init__(
             self,
@@ -63,6 +84,9 @@ class ReturnToBaseServo(Primitive):
             raise ValueError("guide_routes must not be empty")
 
         self.config = config
+        self.arena_marker_poses = marker_poses(
+            int(self.config.arena_size)
+        )
 
         self.guide_routes = []
 
@@ -125,7 +149,17 @@ class ReturnToBaseServo(Primitive):
 
         self.failure_reason: Optional[str] = None
         self.terminal_target_id: Optional[int] = None
+
+        # Stage 2 return-guide perception recovery state.
+        self.recovery_guide_id: Optional[int] = None
+
+        # Debounce short losses of the currently-active guide.
+        self._guide_vision_grace = None
+        self._active_guide_last_seen_s: Optional[float] = None
+
         self.terminal_target_kind: Optional[str] = None
+        self.final_guide_visible = False
+        self.final_guide_approach_deg: Optional[float] = None
 
     @property
     def active_guide_id(self) -> int:
@@ -144,6 +178,78 @@ class ReturnToBaseServo(Primitive):
             self.selected_route_index
         ]["guide_side"]
 
+    def observe_final_guide(
+        self,
+        *,
+        arena_observations,
+        robot_pose,
+    ) -> Optional[FinalGuideState]:
+        """
+        Observe the selected route's final guide without
+        commanding any robot motion.
+
+        This remains usable while another navigation skill,
+        such as FollowWall, owns the drivetrain.
+        """
+
+        if (
+            self.selected_route_index is None
+            or not self.guide_ids
+        ):
+            return None
+
+        guide_id = self.final_guide_id
+
+        observation = next(
+            (
+                obs
+                for obs in arena_observations
+                if int(obs.get("id", -1))
+                == int(guide_id)
+            ),
+            None,
+        )
+
+        if observation is None:
+            return FinalGuideState(
+                guide_id=guide_id,
+                visible=False,
+                distance_mm=None,
+                camera_bearing_deg=None,
+                approach_deg=None,
+            )
+
+        distance_mm, _ = target_from_base_link(
+            observation=observation,
+            config=self.config,
+        )
+
+        _, camera_bearing_deg = target_from_camera(
+            observation=observation,
+        )
+
+        approach_deg = (
+            self._final_guide_approach_angle_deg(
+                guide_id=guide_id,
+                robot_pose=robot_pose,
+            )
+        )
+
+        if approach_deg is not None:
+            approach_deg = abs(
+                float(approach_deg)
+            )
+
+        return FinalGuideState(
+            guide_id=guide_id,
+            visible=True,
+            distance_mm=float(distance_mm),
+            camera_bearing_deg=float(
+                camera_bearing_deg
+            ),
+            approach_deg=approach_deg,
+        )
+
     def start(self, *, lvl2, **_):
         self.controller.reset()
 
@@ -159,6 +265,17 @@ class ReturnToBaseServo(Primitive):
         self.failure_reason = None
         self.terminal_target_id = None
         self.terminal_target_kind = None
+        self.final_guide_visible = False
+        self.final_guide_approach_deg = None
+
+        self.recovery_guide_id = None
+        self._active_guide_last_seen_s = None
+
+        self._guide_vision_grace = VisionGracePeriod(
+            vision_grace_s=float(
+                self.config.vision_grace_period_s
+            )
+        )
 
         self.status = PrimitiveStatus.RUNNING
 
@@ -364,6 +481,7 @@ class ReturnToBaseServo(Primitive):
             observation_timestamp: float,
             perception=None,
             delivered_ids=None,
+            robot_pose=None,
             **_,
     ) -> PrimitiveStatus:
 
@@ -427,11 +545,30 @@ class ReturnToBaseServo(Primitive):
             ):
                 guide_ids = route["guide_ids"]
 
+
+
                 visible_indices = [
                     index
                     for index, tag_id in enumerate(guide_ids)
                     if tag_id in visible
                 ]
+
+                final_index = len(guide_ids) - 1
+
+                if final_index in visible_indices:
+                    final_approach_deg = (
+                        self._final_guide_approach_angle_deg(
+                            guide_id=guide_ids[final_index],
+                            robot_pose=robot_pose,
+                        )
+                    )
+
+                    if (
+                            final_approach_deg is not None
+                            and abs(final_approach_deg)
+                            > FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG
+                    ):
+                        visible_indices.remove(final_index)
 
                 if not visible_indices:
                     continue
@@ -449,28 +586,27 @@ class ReturnToBaseServo(Primitive):
             if not candidates:
                 self.velocity_backend.stop()
 
-                print(
-                    "[RETURN_BASE_SERVO] "
-                    "no return-route guide visible"
+                self.failure_reason = (
+                    self.FAILURE_NO_ROUTE_GUIDE
                 )
 
-                self.status = PrimitiveStatus.RUNNING
+                print(
+                    "[RETURN_BASE_SERVO] "
+                    "no return-route guide visible "
+                    "-> FAILED no_route_guide"
+                )
+
+                self.status = PrimitiveStatus.FAILED
                 return self.status
 
-            _, route_index = max(candidates)
+            visible_index, route_index = max(candidates)
 
             route = self.guide_routes[route_index]
 
             self.selected_route_index = route_index
             self.guide_ids = route["guide_ids"]
 
-            self.active_index = max(
-                index
-                for index, tag_id in enumerate(
-                    self.guide_ids
-                )
-                if tag_id in visible
-            )
+            self.active_index = visible_index
 
             if route["guide_side"] == "left":
                 self.desired_bearing_deg = (
@@ -494,6 +630,24 @@ class ReturnToBaseServo(Primitive):
         # Progress through selected tag chain
         # --------------------------------------------------
 
+        final_guide_state = (
+            self.observe_final_guide(
+                arena_observations=arena_observations,
+                robot_pose=robot_pose,
+            )
+        )
+
+        self.final_guide_visible = (
+                final_guide_state is not None
+                and final_guide_state.visible
+        )
+
+        self.final_guide_approach_deg = (
+            None
+            if final_guide_state is None
+            else final_guide_state.approach_deg
+        )
+
         visible_indices = [
             index
             for index in range(
@@ -503,10 +657,31 @@ class ReturnToBaseServo(Primitive):
             if self.guide_ids[index] in visible
         ]
 
+        final_index = len(self.guide_ids) - 1
+
+        if (
+                final_index in visible_indices
+                and self.final_guide_approach_deg is not None
+                and self.final_guide_approach_deg
+                > FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG
+        ):
+            visible_indices.remove(final_index)
+
+            print(
+                "[RETURN_BASE_SERVO][FINAL_DECISION] "
+                f"guide={self.final_guide_id} "
+                f"approach="
+                f"{self.final_guide_approach_deg:.1f}deg "
+                f"direct_max="
+                f"{FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG:.1f}deg "
+                "-> defer final handoff"
+            )
+
         if visible_indices:
             new_index = max(visible_indices)
 
             if new_index != self.active_index:
+
                 old_id = self.active_guide_id
 
                 self.active_index = new_index
@@ -524,6 +699,16 @@ class ReturnToBaseServo(Primitive):
         # --------------------------------------------------
 
         observation = visible.get(guide_id)
+
+        if observation is not None:
+            self._active_guide_last_seen_s = now
+
+            # Reset/refresh the shared vision-grace policy while
+            # the required guide is healthy.
+            self._guide_vision_grace.evaluate(
+                visible_now=True,
+                age_s=0.0,
+            )
 
         if observation is None:
 
@@ -563,12 +748,48 @@ class ReturnToBaseServo(Primitive):
 
             self.velocity_backend.stop()
 
-            print(
-                "[RETURN_BASE_SERVO] "
-                f"guide={guide_id} not visible"
+            if self._active_guide_last_seen_s is None:
+                guide_loss_age_s = float("inf")
+            else:
+                guide_loss_age_s = max(
+                    0.0,
+                    now - self._active_guide_last_seen_s,
+                )
+
+            grace = self._guide_vision_grace.evaluate(
+                visible_now=False,
+                age_s=guide_loss_age_s,
             )
 
-            self.status = PrimitiveStatus.RUNNING
+            if not grace.lost_long_enough:
+                print(
+                    "[RETURN_BASE_SERVO] "
+                    f"guide={guide_id} temporarily not visible "
+                    f"age={guide_loss_age_s:.2f}s "
+                    f"grace={grace.grace_s:.2f}s"
+                )
+
+                self.status = PrimitiveStatus.RUNNING
+                return self.status
+
+            self.failure_reason = (
+                self.FAILURE_NO_ROUTE_GUIDE
+            )
+
+            # We lost the current guide after already establishing the
+            # route. For now recovery may accept any useful route guide;
+            # ReturnToBaseServo will select the furthest-progressed
+            # visible guide when it restarts.
+            self.recovery_guide_id = None
+
+            print(
+                "[RETURN_BASE_SERVO] "
+                f"guide={guide_id} not visible "
+                f"for {guide_loss_age_s:.2f}s "
+                "-> FAILED no_route_guide"
+            )
+
+            self.status = PrimitiveStatus.FAILED
             return self.status
 
 
@@ -621,19 +842,22 @@ class ReturnToBaseServo(Primitive):
                     self.FAILURE_GUIDE_HANDOFF
                 )
 
+                # Unlike generic perception loss, this failure tells recovery
+                # exactly which guide Stage 2 needs next.
+                self.recovery_guide_id = int(next_id)
+
                 self.status = PrimitiveStatus.FAILED
                 return self.status
 
+
+
+
         if guide_id == self.final_guide_id:
-            # Final guide:
+            # Final approach:
             #
-            # Distance remains base_link referenced so the robot stops
-            # at the correct delivery distance.
-            #
-            # Steering is camera referenced so the final guide remains
-            # centred in the camera rather than on the robot centreline.
-            # This works regardless of which side of the robot the
-            # camera is mounted on.
+            # Once sufficiently frontal to the final guide,
+            # centre it in the camera and use its real range
+            # to drive to the delivery distance.
             distance_mm = guide_distance_mm
 
             stop_distance_mm = (
@@ -728,6 +952,8 @@ class ReturnToBaseServo(Primitive):
                 f"wz={result.command.angular_z_rps:+.3f}rad/s"
             )
 
+
+
         else:
             next_id = self.guide_ids[
                 self.active_index + 1
@@ -746,6 +972,119 @@ class ReturnToBaseServo(Primitive):
             )
 
         self.status = PrimitiveStatus.RUNNING
+        return self.status
+
+    def _final_guide_approach_angle_deg(
+        self,
+        *,
+        guide_id: int,
+        robot_pose,
+    ) -> float | None:
+        """
+        Angle between the marker's inward-facing normal and
+        the marker->robot direction.
+
+        0 deg:
+            robot is directly in front of the marker.
+
+        90 deg:
+            robot is approximately alongside the marker's wall.
+
+        Position is sufficient; robot heading is not required.
+        """
+
+        if (
+            robot_pose is None
+            or not getattr(
+                robot_pose,
+                "position_valid",
+                False,
+            )
+        ):
+            return None
+
+        marker_pose = self.arena_marker_poses.get(
+            int(guide_id)
+        )
+
+        if marker_pose is None:
+            return None
+
+        marker_x_mm = (
+            float(marker_pose["x_m"]) * 1000.0
+        )
+        marker_y_mm = (
+            float(marker_pose["y_m"]) * 1000.0
+        )
+
+        marker_to_robot_x = (
+            float(robot_pose.x)
+            - marker_x_mm
+        )
+        marker_to_robot_y = (
+            float(robot_pose.y)
+            - marker_y_mm
+        )
+
+        distance_mm = math.hypot(
+            marker_to_robot_x,
+            marker_to_robot_y,
+        )
+
+        if distance_mm <= 1e-6:
+            return 0.0
+
+        marker_yaw_rad = float(
+            marker_pose["yaw_rad"]
+        )
+
+        inward_x = math.cos(
+            marker_yaw_rad
+        )
+        inward_y = math.sin(
+            marker_yaw_rad
+        )
+
+        cosine = (
+            marker_to_robot_x * inward_x
+            + marker_to_robot_y * inward_y
+        ) / distance_mm
+
+        cosine = max(
+            -1.0,
+            min(1.0, cosine),
+        )
+
+        return math.degrees(
+            math.acos(cosine)
+        )
+
+    def resume(self):
+        """
+        Resume the existing selected return route after another
+        navigation skill has temporarily owned the drivetrain.
+
+        Route selection and guide progress are preserved.
+        """
+
+        if self.velocity_backend is None:
+            raise RuntimeError(
+                "ReturnToBaseServo cannot resume before start()"
+            )
+
+        # Discard PID/controller history from before the handoff,
+        # but preserve the selected route and active guide.
+        self.controller.reset()
+
+        self.status = PrimitiveStatus.RUNNING
+
+        print(
+            "[RETURN_BASE_SERVO][RESUME] "
+            f"route={self.selected_route_index} "
+            f"side={self.selected_guide_side} "
+            f"guide={self.active_guide_id}"
+        )
+
         return self.status
 
     def stop(self, **_):

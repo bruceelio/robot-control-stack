@@ -7,6 +7,10 @@ from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
 from primitives.manipulation import LiftMiddle
 
+from perception.providers.pickup_range_resolver import (
+    resolve_pickup_range,
+)
+
 from skills.navigation.align_to_target import AlignToTarget
 from skills.manipulation.grasp_object import GraspObject
 from skills.manipulation.verify_grip import VerifyGrip
@@ -105,7 +109,46 @@ class PickupObject(Behavior):
 
         return self.status
 
-    def update(self, *, lvl2, motion_backend, **_):
+    def update(
+            self,
+            *,
+            lvl2,
+            motion_backend,
+            io=None,
+            **_,
+    ):
+
+        pickup_range = None
+
+        if io is not None:
+            pickup_range = resolve_pickup_range(
+                config=self.config,
+                io=io,
+            )
+
+        pickup_range = None
+
+        if io is not None:
+            pickup_range = resolve_pickup_range(
+                config=self.config,
+                io=io,
+            )
+
+        if (
+            pickup_range is not None
+            and self._step in ("DRIVE", "GRASP", "VERIFY")
+        ):
+            print(
+                "[PICKUP_RANGE] "
+                f"step={self._step} "
+                f"left={None if pickup_range.left is None else pickup_range.left.distance_mm} "
+                f"centre={None if pickup_range.centre is None else pickup_range.centre.distance_mm} "
+                f"right={None if pickup_range.right is None else pickup_range.right.distance_mm}"
+            )
+
+        # --------------------------------------------------
+        # Final alignment
+        # --------------------------------------------------
 
         # --------------------------------------------------
         # Final alignment

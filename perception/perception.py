@@ -118,6 +118,14 @@ class Perception:
         self.io = io
         self.objects = {"acidic": {}, "basic": {}}
 
+        # All corrected object observations from the current frame.
+        # Unlike self.objects, duplicate detections with the same tag ID
+        # are preserved here.
+        self.current_object_observations = {
+            "acidic": {},
+            "basic": {},
+        }
+
         # All object-face observations from the latest scan only.
         # Unlike objects, these are not aged or retained between scans.
         self.object_faces = {"acidic": {}, "basic": {}}
@@ -153,6 +161,12 @@ def sense(
 ):
     now = time.time()
     _FRAME_ORDER_BUFFER.clear()
+
+    perception.current_object_observations = {
+        "acidic": {},
+        "basic": {},
+    }
+
     age_objects(perception)
 
     if stop_robot:
@@ -387,6 +401,27 @@ def update_objects(
             cam,
         )
         bearing_rad = math.radians(bearing_deg)
+
+        # Preserve every corrected range/bearing observation from this
+        # frame before the normal ID-keyed object memory collapses
+        # duplicate IDs.
+        frame_memory = (
+            perception.current_object_observations[kind]
+        )
+
+        frame_memory.setdefault(
+            int(m.id),
+            [],
+        ).append(
+            {
+                "id": int(m.id),
+                "kind": kind,
+                "distance": float(dist),
+                "bearing": float(bearing_deg),
+                "last_seen": float(now),
+                "camera": camera_name,
+            }
+        )
 
         # If we don't have a usable heading, keep targets in robot-relative coordinates
         if robot_pose is None or len(robot_pose) < 3 or robot_pose[2] is None:

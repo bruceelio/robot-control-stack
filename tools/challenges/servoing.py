@@ -7,10 +7,7 @@ import time
 
 from config import CONFIG
 
-from perception import (
-    sense,
-    get_visible_targets,
-)
+from perception import sense
 from perception.robot_geometry import target_from_gripper
 
 from navigation.servoing.servoing_controller import (
@@ -19,6 +16,7 @@ from navigation.servoing.servoing_controller import (
 )
 
 from behaviors.init_escape import InitEscape
+from skills.perception.select_target import SelectTarget
 from skills.navigation.approach_target import _marker_elevation
 
 from navigation.velocity_arbiter import (
@@ -40,6 +38,35 @@ STOP_DISTANCE_MM = 0.0
 
 # Small delay between control updates.
 LOOP_DELAY_S = 0.02
+
+# Ultrasonic diagnostics are deliberately slower than the servoing loop.
+# Reading all four sensors every control cycle could disturb control timing.
+ULTRASONIC_LOG_INTERVAL_S = 0.25
+
+def _read_ultrasonics(io) -> dict[str, float | None]:
+    readings = {}
+
+    for name in ("front", "left", "right", "back"):
+        try:
+            if not CONFIG.has_io("ultrasonic", name):
+                continue
+        except KeyError:
+            continue
+
+        try:
+            value = io.ultrasonic[name]
+            readings[name] = None if value is None else float(value)
+        except Exception:
+            readings[name] = None
+
+    return readings
+
+
+def _format_mm(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+
+    return f"{value:.0f}mm"
 
 
 # ==================================================
@@ -66,8 +93,7 @@ def run(controller):
           ↓
         drivetrain
 
-    The nearest visible target of CONFIG.default_target_kind is
-    selected once and then retained for the duration of the test.
+      The nearest visible target of CONFIG.default_target_kind is
 
     Servoing stops when:
 
@@ -113,7 +139,7 @@ def run(controller):
             "Servoing is disabled for the selected robot profile."
         )
 
-    target_kind = CONFIG.default_target_kind
+
 
     servoing = ServoingController(
         application="approach_target",
@@ -128,7 +154,26 @@ def run(controller):
         calibration=controller.calibration,
     )
 
+    select_target = SelectTarget(
+        max_age_s=CONFIG.visible_max_age_s,
+
+        required_kind=None,
+        preferred_kind=CONFIG.default_target_kind,
+        preferred_elevation=CONFIG.default_target_elevation,
+
+        marker_pitch_high_deg=CONFIG.marker_pitch_high_deg,
+        marker_pitch_low_deg=CONFIG.marker_pitch_low_deg,
+
+        timeout_s=None,
+        label="SERVOING_SELECT_TARGET",
+    )
+
+    select_target.start()
+
     selected_id: int | None = None
+    selected_kind: str | None = None
+
+    last_ultrasonic_log_s = 0.0
 
     try:
         while True:
@@ -161,70 +206,37 @@ def run(controller):
 
             if selected_id is None:
 
-                targets = get_visible_targets(
-                    controller.perception,
-                    target_kind,
+                selection_status = select_target.update(
+                    perception=controller.perception,
                     now=now_s,
-                    max_age_s=CONFIG.visible_max_age_s,
                 )
 
-                if not targets:
+                if selection_status.name != "SUCCEEDED":
                     velocity_motion.stop()
 
-                    print(
-                        f"[SERVOING] waiting for visible "
-                        f"{target_kind} target"
+                    controller.io.sleep(
+                        LOOP_DELAY_S
                     )
-
-                    controller.io.sleep(LOOP_DELAY_S)
                     continue
 
-                wanted_elevation = CONFIG.default_target_elevation
+                target = select_target.selected_target
+                selected_id = select_target.selected_target_id
+                selected_kind = select_target.selected_kind
 
-                matching_targets = []
-
-                for candidate in targets:
-                    pitch, src = _marker_elevation(
-                        candidate.get("marker", candidate),
+                if (
+                        target is None
+                        or selected_id is None
+                        or selected_kind is None
+                ):
+                    raise RuntimeError(
+                        "SelectTarget succeeded without a complete target"
                     )
-
-                    if src == "none":
-                        continue
-
-                    if (
-                            wanted_elevation == "high"
-                            and pitch <= float(CONFIG.marker_pitch_high_deg)
-                    ):
-                        matching_targets.append(candidate)
-
-                    elif (
-                            wanted_elevation == "low"
-                            and pitch >= float(CONFIG.marker_pitch_low_deg)
-                    ):
-                        matching_targets.append(candidate)
-
-                if not matching_targets:
-                    velocity_motion.stop()
-
-                    print(
-                        f"[SERVOING] waiting for visible "
-                        f"{wanted_elevation} {target_kind} target"
-                    )
-
-                    controller.io.sleep(LOOP_DELAY_S)
-                    continue
-
-                target = min(
-                    matching_targets,
-                    key=lambda t: float(t["distance"]),
-                )
-
-                selected_id = int(target["id"])
 
                 print(
                     f"[SERVOING] selected "
-                    f"{CONFIG.default_target_elevation} "
-                    f"{target_kind} id={selected_id}"
+                    f"{select_target.selected_elevation} "
+                    f"{selected_kind} "
+                    f"id={selected_id}"
                 )
 
             # --------------------------------------------------
@@ -239,7 +251,7 @@ def run(controller):
             target = (
                 controller.perception
                 .objects
-                .get(target_kind, {})
+                .get(selected_kind, {})
                 .get(selected_id)
             )
 
@@ -262,6 +274,52 @@ def run(controller):
             timestamp = float(
                 target["last_seen"]
             )
+
+            # --------------------------------------------------
+            # Ultrasonic diagnostics
+            # --------------------------------------------------
+
+            if (
+                now_s - last_ultrasonic_log_s
+                >= ULTRASONIC_LOG_INTERVAL_S
+            ):
+                ultrasonic = _read_ultrasonics(
+                    controller.io
+                )
+
+                if ultrasonic:
+                    front_mm = ultrasonic.get("front")
+
+                    # Servoing distance is radial distance from the gripper
+                    # to the selected target.  Its forward component is the
+                    # more useful comparison with a forward-facing sensor.
+                    target_forward_mm = (
+                        distance_mm
+                        * math.cos(target_angle_rad)
+                    )
+
+                    if front_mm is None:
+                        front_delta_text = (
+                            "front_minus_target=n/a"
+                        )
+                    else:
+                        front_delta_text = (
+                            f"front_minus_target="
+                            f"{front_mm - target_forward_mm:+.0f}mm"
+                        )
+
+                    print(
+                        f"[SERVOING][ULTRASONIC] "
+                        f"front={_format_mm(front_mm)} "
+                        f"left={_format_mm(ultrasonic.get('left'))} "
+                        f"right={_format_mm(ultrasonic.get('right'))} "
+                        f"back={_format_mm(ultrasonic.get('back'))} "
+                        f"target_forward={target_forward_mm:.0f}mm "
+                        f"{front_delta_text} "
+                        f"target_angle={bearing_deg:+.1f}deg"
+                    )
+
+                last_ultrasonic_log_s = now_s
 
             # --------------------------------------------------
             # Servoing controller

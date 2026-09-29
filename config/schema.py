@@ -41,6 +41,7 @@ class Config:
     encoder_sign: dict
     encoder_wheel_diameter_mm: dict
     camera_mounts: dict
+    range_sensor_mounts: dict
 
 
     # Servoing
@@ -237,6 +238,7 @@ RESOLVE_MAP = {
     "encoder_sign": ("profile", "ENCODER_SIGN"),
     "encoder_wheel_diameter_mm": ("profile", "ENCODER_WHEEL_DIAMETER_MM"),
     "camera_mounts": ("profile", "CAMERA_MOUNTS"),
+    "range_sensor_mounts": ("computed", "range_sensor_mounts"),
     "gripper_mount": ("profile", "GRIPPER_MOUNT"),
     "gripper_from_camera": ("computed", "gripper_from_camera"),
     "gripper_open_position": ("profile", "GRIPPER_OPEN_POSITION"),
@@ -464,6 +466,11 @@ def resolve(*, arena, profile, strategy) -> Config:
         "rotate_factor": rotate_factor,
         "drive_factor": drive_factor,
         "encoders": getattr(profile, "ENCODERS", {}),
+        "range_sensor_mounts": getattr(
+            profile,
+            "RANGE_SENSOR_MOUNTS",
+            {},
+        ),
         "gripper_from_camera": {
             "x_mm": gripper_mount["x_mm"] - front_cam["x_mm"],
             "y_mm": gripper_mount["y_mm"] - front_cam["y_mm"],

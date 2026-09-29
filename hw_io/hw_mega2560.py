@@ -482,12 +482,18 @@ class Mega2560IO(IOMap):
             }
         )
 
-        self._ultrasonic = ReadOnlyCollection(
+        self._tof = ReadOnlyCollection(
             {
-                "front_left": lambda: self._read_number(self.mega.ultrasonic_read("front_left")),
-                "front_right": lambda: self._read_number(self.mega.ultrasonic_read("front_right")),
+                "front_left": lambda: self._read_number(
+                    self.mega.ultrasonic_read("front_left")
+                ),
+                "front_right": lambda: self._read_number(
+                    self.mega.ultrasonic_read("front_right")
+                ),
             }
         )
+
+        self._ultrasonic = ReadOnlyCollection({})
 
         self._limit = ReadOnlyCollection(
             {
@@ -873,6 +879,10 @@ class Mega2560IO(IOMap):
         return self._reflectance.as_dict()
 
     @property
+    def tof(self):
+        return self._tof
+
+    @property
     def ultrasonic(self):
         return self._ultrasonic
 
@@ -923,6 +933,7 @@ class Mega2560IO(IOMap):
         return {
             "bumper": self.bumpers(),
             "reflectance": self.reflectance_values(),
+            "tof": self._tof.as_dict(),
             "ultrasonic": self.ultrasonics(),
             "limit": {
                 "lift_high": self.limit["lift_high"],

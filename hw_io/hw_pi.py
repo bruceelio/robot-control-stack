@@ -16,6 +16,14 @@ class PiReadOnlyCollection:
     def keys(self):
         return self._getters.keys()
 
+class MatchZoneReading:
+    def __init__(self, getter):
+        self._getter = getter
+
+    @property
+    def value(self) -> int:
+        return int(self._getter())
+
 
 class PiBackend:
     """
@@ -30,9 +38,11 @@ class PiBackend:
         self.usb_media = UsbMediaClient()
 
         self._camera = {}
-        self._usb = PiReadOnlyCollection({
-            "match_zone": self._read_match_zone,
-        })
+        self._usb = {
+            "match_zone": MatchZoneReading(
+                self._read_match_zone
+            ),
+        }
 
         self._detect_cameras()
 

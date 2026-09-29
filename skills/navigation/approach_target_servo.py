@@ -164,6 +164,102 @@ class ApproachTargetServo(Primitive):
 
         return memory.get(self.locked_target_id)
 
+    def _get_terminal_target_bearing_geometry(
+            self,
+            perception,
+            *,
+            commit_distance_mm: float,
+            tolerance_mm: float,
+    ):
+        """
+        Resolve duplicate observations of the locked target only when
+        TARGET_BEARING is entering its final-pickup region.
+
+        If multiple detections of the same tag ID are present in the
+        current frame, choose the observation whose gripper-relative
+        bearing is closest to zero.
+
+        Outside the terminal region, normal target tracking is unchanged.
+        """
+
+        if (
+                self.servo_method
+                != ApproachServoMethod.TARGET_BEARING
+        ):
+            return None
+
+        frame_memory = getattr(
+            perception,
+            "current_object_observations",
+            None,
+        )
+
+        if frame_memory is None:
+            return None
+
+        candidates = (
+            frame_memory
+            .get(self.kind, {})
+            .get(self.locked_target_id, [])
+        )
+
+        if len(candidates) < 2:
+            return None
+
+        geometries = []
+
+        for observation in candidates:
+            try:
+                candidate_distance_mm, candidate_bearing_deg = (
+                    target_from_gripper(
+                        observation=observation,
+                        config=self.config,
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            geometries.append(
+                (
+                    float(candidate_distance_mm),
+                    float(candidate_bearing_deg),
+                )
+            )
+
+        if len(geometries) < 2:
+            return None
+
+        terminal_limit_mm = (
+            float(commit_distance_mm)
+            + float(tolerance_mm)
+        )
+
+        # Do nothing until at least one duplicate observation says
+        # we have reached the normal final-handoff region.
+        if not any(
+                distance <= terminal_limit_mm
+                for distance, _ in geometries
+        ):
+            return None
+
+        selected_distance_mm, selected_bearing_deg = min(
+            geometries,
+            key=lambda geometry: abs(geometry[1]),
+        )
+
+        print(
+            "[SERVO_APPROACH][FINAL_SELECT] "
+            f"id={self.locked_target_id} "
+            f"candidates={len(geometries)} "
+            f"selected_dist={selected_distance_mm:.0f}mm "
+            f"selected_bearing={selected_bearing_deg:+.1f}deg"
+        )
+
+        return (
+            selected_distance_mm,
+            selected_bearing_deg,
+        )
+
     def _get_locked_pose_face(self, perception):
         """
         Return the best current pose-capable face observation
@@ -557,6 +653,21 @@ class ApproachTargetServo(Primitive):
 
         commit_distance_mm = self._commit_distance_mm()
 
+        commit_tolerance_mm = float(
+            self.config.approach_target_servo_stop_tolerance_mm
+        )
+
+        terminal_geometry = (
+            self._get_terminal_target_bearing_geometry(
+                perception,
+                commit_distance_mm=commit_distance_mm,
+                tolerance_mm=commit_tolerance_mm,
+            )
+        )
+
+        if terminal_geometry is not None:
+            distance_mm, bearing_deg = terminal_geometry
+
         # Same safety rule as Stage 1:
         # UNKNOWN may approach using LOW geometry,
         # but may not cross the LOW commit point.
@@ -593,9 +704,6 @@ class ApproachTargetServo(Primitive):
         # FinalPickup then owns:
         #     final alignment -> blind drive -> grasp.
 
-        commit_tolerance_mm = float(
-            self.config.approach_target_servo_stop_tolerance_mm
-        )
 
         remaining_distance_mm = (
             distance_mm - commit_distance_mm

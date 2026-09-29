@@ -73,8 +73,13 @@ IO = {
     "servo.lift":                         "sr2026sim",
     "servo.shooter_feed":                 None,
 
-    "ultrasonic.front_left":              None,
-    "ultrasonic.front_right":             None,
+    "tof.front_left":                     None,
+    "tof.front_right":                    None,
+
+    "ultrasonic.back":                    "sr2026sim",
+    "ultrasonic.front":                   "sr2026sim",
+    "ultrasonic.left":                    "sr2026sim",
+    "ultrasonic.right":                   "sr2026sim",
 
     "voltage.battery":                    "sr2026sim",
 }
@@ -113,7 +118,7 @@ ENCODER_SIGN = {}
 
 ENCODER_WHEEL_DIAMETER_MM = {}
 
-BATTERY_VOLTAGE_NOMINAL = 14.17
+BATTERY_VOLTAGE_NOMINAL = 12.0
 
 # -------------------------
 # Physical Geometry
@@ -142,6 +147,17 @@ GRIPPER_MOUNT = {
     "roll_deg": 0.0,
     "pitch_deg": 0.0,
     "yaw_deg": 0.0,
+}
+
+RANGE_SENSOR_MOUNTS = {
+    "ultrasonic.front": {
+        "x_mm": 0.0,
+        "y_mm": 0.0,
+        "z_mm": 0.0,
+        "roll_deg": 0.0,
+        "pitch_deg": 0.0,
+        "yaw_deg": 0.0,
+    },
 }
 
 # -------------------------
@@ -189,8 +205,8 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 250          # typical 250
-INIT_ESCAPE_ROTATE_DEG = -45.0      # typical 45
+INIT_ESCAPE_DRIVE_MM = 2750          # typical 250
+INIT_ESCAPE_ROTATE_DEG = -75      # typical 45
 
 # -------------------------
 # Approach Target (not optimized)

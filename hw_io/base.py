@@ -25,6 +25,7 @@ class IOMap(ABC):
     Preferred direct-access convention:
       io.bumper["front_left"]
       io.reflectance["centre"]
+      io.tof["front_left"]
       io.ultrasonic["front"]
       io.current["gripper_right"].amps
       io.voltage["battery"].volts
@@ -47,6 +48,10 @@ class IOMap(ABC):
 
     @property
     def reflectance(self):
+        raise NotImplementedError
+
+    @property
+    def tof(self):
         raise NotImplementedError
 
     @property

@@ -1,5 +1,9 @@
 # navigation/servoing/servoing_controller.py
 
+# Future refactor as: RangeBearingController
+#     input: r, beta
+#     output: v, omega
+
 from __future__ import annotations
 
 import math

@@ -56,5 +56,8 @@ def run_challenge(challenge, controller):
         from tools.challenges.rotate_calibration import run
         return run(controller)
 
+    if challenge == Challenge.WALL_FOLLOWING:
+        from tools.challenges.wall_following import run
+        return run(controller)
 
     raise RuntimeError(f"Unsupported challenge: {challenge}")

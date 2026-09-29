@@ -304,6 +304,18 @@ class SR2026IO(IOMap):
     PIN_BUMPER_FRONT_LEFT = 10
     PIN_BUMPER_FRONT_RIGHT = 11
 
+    PIN_ULTRASONIC_FRONT_TRIG = 2
+    PIN_ULTRASONIC_FRONT_ECHO = 3
+
+    PIN_ULTRASONIC_LEFT_TRIG = 4
+    PIN_ULTRASONIC_LEFT_ECHO = 5
+
+    PIN_ULTRASONIC_RIGHT_TRIG = 6
+    PIN_ULTRASONIC_RIGHT_ECHO = 7
+
+    PIN_ULTRASONIC_BACK_TRIG = 8
+    PIN_ULTRASONIC_BACK_ECHO = 9
+
     PIN_REFLECTANCE_LEFT = A0
     PIN_REFLECTANCE_CENTRE = A1
     PIN_REFLECTANCE_RIGHT = A2
@@ -440,6 +452,30 @@ class SR2026IO(IOMap):
 
         return float(value)
 
+    def _ultrasound_measure(
+        self,
+        trigger_pin: int,
+        echo_pin: int,
+    ) -> Optional[float]:
+        if self.arduino is None:
+            return None
+
+        measure = getattr(
+            self.arduino,
+            "ultrasound_measure",
+            None,
+        )
+
+        if not callable(measure):
+            return None
+
+        value = measure(
+            trigger_pin,
+            echo_pin,
+        )
+
+        return None if value is None else float(value)
+
     # --------------------------------------------------
     # Camera
     # --------------------------------------------------
@@ -480,8 +516,28 @@ class SR2026IO(IOMap):
             }
         )
 
-        # Webots/SR2026 profile currently declares no ultrasonic devices.
-        self._ultrasonic = ReadOnlyCollection({})
+        self._tof = ReadOnlyCollection({})
+
+        self._ultrasonic = ReadOnlyCollection(
+            {
+                "back": lambda: self._ultrasound_measure(
+                    self.PIN_ULTRASONIC_BACK_TRIG,
+                    self.PIN_ULTRASONIC_BACK_ECHO,
+                ),
+                "front": lambda: self._ultrasound_measure(
+                    self.PIN_ULTRASONIC_FRONT_TRIG,
+                    self.PIN_ULTRASONIC_FRONT_ECHO,
+                ),
+                "left": lambda: self._ultrasound_measure(
+                    self.PIN_ULTRASONIC_LEFT_TRIG,
+                    self.PIN_ULTRASONIC_LEFT_ECHO,
+                ),
+                "right": lambda: self._ultrasound_measure(
+                    self.PIN_ULTRASONIC_RIGHT_TRIG,
+                    self.PIN_ULTRASONIC_RIGHT_ECHO,
+                ),
+            }
+        )
 
         self._voltage = NamedIndexedCollection(
             ordered_items=[],
@@ -658,6 +714,10 @@ class SR2026IO(IOMap):
         return self._reflectance
 
     @property
+    def tof(self):
+        return self._tof
+
+    @property
     def ultrasonic(self):
         return self._ultrasonic
 
@@ -759,6 +819,7 @@ class SR2026IO(IOMap):
         return {
             "bumper": self.bumpers(),
             "reflectance": self.reflectance_values(),
+            "tof": self._tof.as_dict(),
             "ultrasonic": self.ultrasonics(),
             "voltage": {
                 "battery": self.voltage["battery"].volts,

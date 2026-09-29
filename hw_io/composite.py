@@ -119,6 +119,10 @@ class CompositeIO(IOMap):
         return self._collection("reflectance")
 
     @property
+    def tof(self):
+        return self._collection("tof")
+
+    @property
     def ultrasonic(self):
         return self._collection("ultrasonic")
 
@@ -241,6 +245,7 @@ class CompositeIO(IOMap):
         return {
             "bumper": self.bumpers(),
             "reflectance": self.reflectance_values(),
+            "tof": self.tof.as_dict(),
             "ultrasonic": self.ultrasonics(),
             "limit": self.limit.as_dict(),
             "voltage": {

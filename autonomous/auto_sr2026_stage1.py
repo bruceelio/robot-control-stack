@@ -396,6 +396,7 @@ class AutoSR2026Stage1:
             status = self.behavior.update(
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
+                io=controller.io,
             )
 
             if status.name == "SUCCEEDED":
@@ -523,6 +524,8 @@ class AutoSR2026Stage1:
             status = self.behavior.update(
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
+                io=controller.io,
+                localisation=controller.localisation,
                 perception=controller.perception,
                 delivered_ids=self.delivered_ids,
                 arena_observations=controller.latest_arena_observations,

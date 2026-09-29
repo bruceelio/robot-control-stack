@@ -78,8 +78,13 @@ IO = {
     "servo.lift":                         "mega2560alt",
     "servo.shooter_feed":                 None,
 
-    "ultrasonic.front_left":              None,
-    "ultrasonic.front_right":             None,
+    "tof.front_left":                     None,
+    "tof.front_right":                    None,
+
+    "ultrasonic.back":                    None,
+    "ultrasonic.front":                   None,
+    "ultrasonic.left":                    None,
+    "ultrasonic.right":                   None,
 
     "usb.match_zone":                     "mega2560alt",
 
