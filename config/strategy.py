@@ -43,6 +43,8 @@ class Challenge(Enum):
     DRIVE_CALIBRATION = auto()
     ROTATE_CALIBRATION = auto()
     WALL_FOLLOWING = auto()
+    LIFT_ULTRASONIC_SWEEP = auto()
+    LIFT_VISION_SWEEP = auto()
 
 class MatchZoneSource(Enum):
     AUTO = "auto"
@@ -94,11 +96,13 @@ STARTUP_SCRIPT = StartupScript.NONE
 # CHALLENGE = Challenge.STOPPING
 # CHALLENGE = Challenge.SERVOING
 # CHALLENGE = Challenge.SERVOING_ARENA_TAG
-CHALLENGE = Challenge.SERVOING_RETURN_TO_BASE
+# CHALLENGE = Challenge.SERVOING_RETURN_TO_BASE
 # CHALLENGE = Challenge.SERVOING_POSE
 # CHALLENGE = Challenge.DRIVE_CALIBRATION
 # CHALLENGE = Challenge.ROTATE_CALIBRATION
 # CHALLENGE = Challenge.WALL_FOLLOWING
+# CHALLENGE = Challenge.LIFT_ULTRASONIC_SWEEP
+CHALLENGE = Challenge.LIFT_VISION_SWEEP
 
 # =========================
 # Default Target

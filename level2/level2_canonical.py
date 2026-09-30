@@ -19,7 +19,6 @@ Result:
 
 from __future__ import annotations
 
-import time
 from typing import Optional
 
 from hw_io.base import IOMap
@@ -126,17 +125,69 @@ class Level2:
             f"L={left_power} R={right_power} duration={duration}"
         )
 
+        t_drive_requested = self.io.time()
+        t_power_applied = None
+
         try:
             self.DRIVE_POWER(
                 left_power=left_power,
                 right_power=right_power,
             )
 
+            t_power_applied = self.io.time()
+
             if duration is not None:
-                self.SLEEP(duration)
+                observer = getattr(self, "_timed_drive_observer", None)
+
+                if observer is None:
+                    # Normal timed drive: existing behaviour.
+                    self.SLEEP(duration)
+
+
+                else:
+
+                    # Sample the bumpers without extending the drive.
+                    deadline_s = self.io.time() + float(duration)
+
+                    observer()
+
+                    while True:
+                        remaining_s = deadline_s - self.io.time()
+
+                        if remaining_s <= 0.0:
+                            break
+
+                        step_s = min(0.064, remaining_s)
+                        self.io.sleep(step_s)
+
+                        if self.io.time() < deadline_s:
+                            observer()
+
 
         finally:
+
+            t_stop_requested = self.io.time()
+
             self.DRIVE_STOP()
+
+            t_stopped = self.io.time()
+
+            if duration is not None and t_power_applied is not None:
+                print(
+
+                    f"[DRIVE TIMING] "
+
+                    f"requested={duration:.3f}s "
+
+                    f"command={t_power_applied - t_drive_requested:.3f}s "
+
+                    f"active={t_stop_requested - t_power_applied:.3f}s "
+
+                    f"stop={t_stopped - t_stop_requested:.3f}s "
+
+                    f"total={t_stopped - t_drive_requested:.3f}s"
+
+                )
 
     def ROTATE(self, angle_deg: float):
         """
@@ -262,8 +313,8 @@ class Level2:
         try:
             servo.position = -1
 
-            t_end = time.time() + 1.0
-            while time.time() < t_end:
+            t_end = self.io.time() + 1.0
+            while self.io.time() < t_end:
                 servo.position = -1
                 self.io.sleep(0.05)
 
@@ -290,8 +341,8 @@ class Level2:
         try:
             servo.position = 1
 
-            t_end = time.time() + 1.0
-            while time.time() < t_end:
+            t_end = self.io.time() + 1.0
+            while self.io.time() < t_end:
                 servo.position = 1
                 self.io.sleep(0.05)
 
@@ -317,8 +368,8 @@ class Level2:
 
             servo.position = position
 
-            t_end = time.time() + 1.0
-            while time.time() < t_end:
+            t_end = self.io.time() + 1.0
+            while self.io.time() < t_end:
                 servo.position = position
                 self.io.sleep(0.05)
 

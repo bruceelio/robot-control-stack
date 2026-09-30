@@ -66,6 +66,8 @@ class CompositeIO(IOMap):
 
         self._category_routes: dict[str, dict[str, Any]] = {}
 
+        self._service_routes: dict[str, Any] = {}
+
         for semantic_name, backend_name in self._io_config.items():
             if backend_name is None:
                 continue
@@ -76,9 +78,19 @@ class CompositeIO(IOMap):
                     f"{backend_name!r}, but it was not created"
                 )
 
-            category, name = semantic_name.split(".", 1)
-
             backend = self._backends[backend_name]
+
+            if semantic_name in ("time", "sleep"):
+                if not callable(getattr(backend, semantic_name, None)):
+                    raise RuntimeError(
+                        f"Backend {backend_name!r} does not provide "
+                        f"{semantic_name!r}"
+                    )
+
+                self._service_routes[semantic_name] = backend
+                continue
+
+            category, name = semantic_name.split(".", 1)
 
             collection = getattr(backend, category, None)
             if collection is None:
@@ -225,17 +237,59 @@ class CompositeIO(IOMap):
     def battery_sensor(self):
         return self.battery()
 
+    def time(self) -> float:
+        backend = self._service_routes.get("time")
+
+        if backend is None:
+            return super().time()
+
+        return float(backend.time())
+
     def sleep(self, secs: float) -> None:
-        # Prefer a backend-provided sleep because the Mega implementation,
-        # for example, maintains its heartbeat while sleeping.
-        for backend in self._backends.values():
-            sleep_fn = getattr(backend, "sleep", None)
+        sleep_backend = self._service_routes.get("sleep")
 
-            if callable(sleep_fn):
-                sleep_fn(secs)
-                return
+        # Preserve compatibility with profiles that have not yet
+        # configured an explicit sleep provider.
+        if sleep_backend is None:
+            for backend in self._backends.values():
+                sleep_fn = getattr(backend, "sleep", None)
 
-        time.sleep(secs)
+                if callable(sleep_fn):
+                    sleep_fn(secs)
+                    return
+
+            time.sleep(secs)
+            return
+
+        # Allow hardware backends to perform periodic servicing
+        # while the selected backend controls the actual sleep.
+        service_backends = [
+            backend
+            for backend in self._backends.values()
+            if callable(getattr(backend, "service", None))
+        ]
+
+        if not service_backends:
+            sleep_backend.sleep(secs)
+            return
+
+        end = self.time() + max(0.0, float(secs))
+
+        while True:
+            remaining = end - self.time()
+
+            if remaining <= 0.0:
+                break
+
+            for backend in service_backends:
+                backend.service()
+
+            remaining = end - self.time()
+
+            if remaining <= 0.0:
+                break
+
+            sleep_backend.sleep(min(0.05, remaining))
 
     # --------------------------------------------------
     # Unified sensor snapshot

@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Protocol, Iterable
 
+import time
+
 
 class DigitalOutputs(Protocol):
     def names(self) -> Iterable[str]: ...
@@ -137,6 +139,12 @@ class IOMap(ABC):
     @abstractmethod
     def battery(self) -> Dict[str, Optional[float]]:
         raise NotImplementedError
+
+    # ---------- Time ----------
+
+    def time(self) -> float:
+        """Return the backend's monotonic or robot time in seconds."""
+        return time.monotonic()
 
     # ---------- Sleep ----------
 

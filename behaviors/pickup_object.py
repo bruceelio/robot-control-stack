@@ -1,52 +1,131 @@
 # behaviors/pickup_object.py
+"""Final pickup following the vision-based approach handoff.
+
+LOW:
+    fresh single/two-face alignment -> low pickup height -> drive THROUGH
+    -> pre-grasp range/contact diagnostics -> grab -> low retreat height
+    -> reverse full commanded commitment -> ultrasonic at low retreat
+    -> robot-specific carry height.
+
+HIGH:
+    high pickup height -> marker alignment -> blind commitment -> grab
+    -> high retreat height -> reverse full commanded commitment
+    -> lower to low retreat height -> same ultrasonic verification
+    -> robot-specific carry height.
+
+The ultrasonic and ToFs do NOT control the final LOW drive. Bumpers remain
+contact diagnostics, NOT grip verification. All lift positions and verification
+limits come from resolved per-robot config.
+"""
 
 from __future__ import annotations
+
+import math
+import statistics
+import time
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
-from primitives.manipulation import LiftMiddle
+from primitives.manipulation.grab import Grab
 
-from perception.providers.pickup_range_resolver import (
-    resolve_pickup_range,
-)
-
+from perception.providers.pickup_face_resolver import resolve_pickup_faces
+from perception.providers.pickup_range_resolver import resolve_pickup_range
 from skills.navigation.align_to_target import AlignToTarget
 from skills.manipulation.grasp_object import GraspObject
-from skills.manipulation.verify_grip import VerifyGrip
 
 
 class PickupObject(Behavior):
-    """
-    Final pickup behavior after ApproachObject reaches its handoff distance.
+    # The current successful blind-drive calibration is retained:
+    # final_drive_mm = handoff distance + final_approach_marker_push.
+    # Small timed rotations overshot in Webots. Avoid chasing residual
+    # midpoint errors: make at most one two-face correction.
+    LOW_TWO_FACE_TOLERANCE_DEG = 6.0
+    LOW_TWO_FACE_MAX_ROTATE_DEG = 25.0
+    LOW_SINGLE_FACE_TOLERANCE_DEG = 1.0
+    LOW_FACE_DISCOVERY_S = 0.20
+    LOW_FACE_WAIT_TIMEOUT_S = 0.60
 
-    Sequence:
-        1. HIGH target: move lift to middle
-        2. Final alignment
-        3. Blind final drive
-        4. Grasp
-        5. Verify grip
+    LOW_READY_SAMPLES = 3
+    LOW_READY_MAX_TICKS = 5
+    LOW_READY_SETTLE_S = 0.10
+    LOW_READY_MAX_SPREAD_MM = 10.0
+    # Even before exact calibration, a metre-away return cannot be
+    # the cube pressed into the gripper. This is a conservative guard.
+    LOW_READY_GROSS_MAX_MM = 250.0
 
-    distance_mm and bearing_deg are expected to already be
-    gripper-relative target geometry.
-    """
+    # Not calibrated yet. Set both limits in the robot configuration ONLY
+    # after logging the ultrasonic reading for successful pressed-up cubes:
+    # pickup_low_ready_ultrasonic_min_mm = ...
+    # pickup_low_ready_ultrasonic_max_mm = ...
+    #
+    # An unset window means "log/calibrate; do not reject the grasp".
+    LOW_READY_ULTRASONIC_MIN_MM = None
+    LOW_READY_ULTRASONIC_MAX_MM = None
+
+    # Bump switches are configured by the active robot profile, not by
+    # robot identity. SR2026 simulator asserts True on physical contact.
+    # Both must read True in the same sample during or after the push.
+    #
+    # Optional, separately calibrated common window for fitted ToFs.
+    # With two fitted ToFs BOTH must pass; we never average their readings.
+    LOW_READY_TOF_MIN_MM = None
+    LOW_READY_TOF_MAX_MM = None
+
+    LOW_RECOVERY_EXTRA_MM = 100.0
+
+    # LOW pickup contact alignment.
+    #
+    # A single bumper may legitimately arrive one or two sensor samples
+    # before the other, so do not react immediately.
+    LOW_BUMPER_GRACE_S = 0.15
+
+    # If only one bumper remains pressed after the grace period, make a
+    # strong pivot toward the contacted side.
+    LOW_BUMPER_CORRECTION_MAX_S = 0.40
+
+    # Sampling interval during the bounded post-drive correction.
+    LOW_BUMPER_SAMPLE_S = 0.05
+
+    # Once both bumpers contact, drive straight briefly to seat the cube.
+    LOW_BUMPER_SEAT_S = 0.08
 
     def __init__(self):
         super().__init__()
-
         self.config = None
-
+        self.target_id = None
         self.distance_mm = 0.0
         self.bearing_deg = 0.0
         self.target_is_high = False
         self.final_drive_mm = 0.0
 
         self._step = None
-
         self._align = None
         self._drive = None
+        self._recovery = None
         self._grasp = None
-        self._verify = None
+        self._retreat = None
+        self.grip_verified = None  # True, False, or None (not configured)
+        self.grip_measurement_mm = None
+
+        self._align_started_s = None
+        self._last_align_end_s = None
+        self._legacy_aligned = False
+
+        self._ready_started_s = None
+        self._ready_ticks = 0
+        self._ready_samples = {"centre": [], "left": [], "right": []}
+        self._recovery_reason = None
+        self.ready_measurement_mm = None  # Median of pressed-up raw ultrasonic samples.
+        self._pickup_lvl2 = None
+        self._bumper_io = None
+        self._bumper_seen = {"front_left": False, "front_right": False}
+        self._bumper_both_contact = False
+        self._bumper_samples = 0
+        self._bumper_single_side = None
+        self._bumper_single_since_s = None
+        self._bumper_correction_active = False
+        self._bumper_correction_used = False
 
     def start(
         self,
@@ -57,200 +136,1276 @@ class PickupObject(Behavior):
         distance_mm: float,
         bearing_deg: float,
         target_is_high: bool,
+        target_id: int | None = None,
         **_,
     ):
         self.config = config
         self.status = BehaviorStatus.RUNNING
-
+        self.target_id = None if target_id is None else int(target_id)
         self.distance_mm = float(distance_mm)
         self.bearing_deg = float(bearing_deg)
         self.target_is_high = bool(target_is_high)
 
-        marker_push_mm = float(
-            getattr(config, "final_approach_marker_push", 50.0)
-        )
-
-        self.final_drive_mm = max(
-            0.0,
-            self.distance_mm + marker_push_mm,
-        )
+        # Resolved from the active robot profile via config/schema.py.
+        push_mm = float(config.final_approach_marker_push)
+        self.final_drive_mm = max(0.0, self.distance_mm + push_mm)
+        if not math.isfinite(self.final_drive_mm) or self.final_drive_mm <= 0.0:
+            raise ValueError("pickup final commitment must be finite and > 0 mm")
 
         self._align = None
         self._drive = None
+        self._recovery = None
         self._grasp = None
-        self._verify = None
-
-        # Preserve current behaviour:
-        # HIGH target moves lift before final alignment/drive.
-        if self.target_is_high:
-            try:
-                prep_lift = LiftMiddle(settle_time=0.0)
-                prep_lift.start(lvl2=lvl2)
-                print("[[PICKUP_OBJECT]] LIFT MIDDLE")
-            except Exception as e:
-                print(f"[[PICKUP_OBJECT]] LIFT MIDDLE failed: {e}")
+        self._retreat = None
+        self.grip_verified = None
+        self.grip_measurement_mm = None
+        self._align_started_s = time.time()
+        self._last_align_end_s = None
+        self._legacy_aligned = False
+        self._ready_started_s = None
+        self._ready_ticks = 0
+        self._ready_samples = {"centre": [], "left": [], "right": []}
+        self._recovery_reason = None
+        self.ready_measurement_mm = None
+        self._pickup_lvl2 = lvl2
+        self._bumper_io = getattr(lvl2, "io", None)
+        self._bumper_seen = {"front_left": False, "front_right": False}
+        self._bumper_both_contact = False
+        self._bumper_samples = 0
+        self._bumper_single_side = None
+        self._bumper_single_since_s = None
+        self._bumper_correction_active = False
+        self._bumper_correction_used = False
 
         print(
-            f"[[PICKUP_OBJECT]] start "
-            f"high={self.target_is_high} "
-            f"dist={self.distance_mm:.0f}mm "
-            f"bearing={self.bearing_deg:.1f}deg "
-            f"final_drive={self.final_drive_mm:.0f}mm"
+            f"[[PICKUP_OBJECT]] start id={self.target_id} "
+            f"high={self.target_is_high} dist={self.distance_mm:.0f}mm "
+            f"bearing={self.bearing_deg:+.1f}deg "
+            f"commitment={self.final_drive_mm:.0f}mm"
         )
 
-        self._align = AlignToTarget(
-            bearing_deg=self.bearing_deg,
-            tolerance_deg=0.0,
-            max_rotate_deg=float(config.max_rotate_deg),
-        )
-        self._align.start(motion_backend=motion_backend)
-
-        self._step = "ALIGN"
+        if self.target_is_high:
+            # The high position is camera-compatible for the HIGH align.
+            if not self._command_lift(lvl2, "lift_high_pickup_position",
+                                      "HIGH_PICKUP"):
+                return self.status
+            self._start_align(
+                bearing_deg=self.bearing_deg,
+                tolerance_deg=0.0,
+                motion_backend=motion_backend,
+                next_step="ALIGN_HIGH",
+            )
+        else:
+            # Keep the camera clear while resolving one/two faces. Lower
+            # to LOW_PICKUP only AFTER final vision alignment.
+            self._step = "ALIGN_SELECT"
 
         return self.status
 
-    def update(
+    def _command_lift(self, lvl2, config_attr, label):
+        """Command a named robot-profile position through canonical IO."""
+        try:
+            position = float(getattr(self.config, config_attr))
+            if not math.isfinite(position) or not -1.0 <= position <= 1.0:
+                raise ValueError(f"{config_attr} out of servo range: {position}")
+            io = lvl2.io
+            io.servo["lift"].position = position
+            settle_s = float(self.config.pickup_lift_settle_s)
+            if not math.isfinite(settle_s) or settle_s < 0.0:
+                raise ValueError("invalid pickup_lift_settle_s")
+            print(f"[PICKUP_LIFT][{label}] position={position:+.2f} "
+                  f"settle={settle_s:.2f}s")
+            if settle_s > 0.0:
+                io.sleep(settle_s)
+            return True
+        except (AttributeError, KeyError, TypeError, ValueError,
+                RuntimeError) as exc:
+            print(f"[PICKUP_LIFT][{label}] FAILED: {exc}")
+            self.status = BehaviorStatus.FAILED
+            return False
+
+    def _start_retreat(self, *, lvl2, motion_backend):
+        position = ("lift_high_retreat_position" if self.target_is_high
+                    else "lift_low_retreat_position")
+        if not self._command_lift(lvl2, position, "RETREAT"):
+            return self.status
+        print(f"[PICKUP_RETREAT] reverse full commitment "
+              f"{-self.final_drive_mm:.1f}mm")
+        self._retreat = Drive(distance_mm=-self.final_drive_mm)
+        self._retreat.start(motion_backend=motion_backend)
+        self._step = "RETREAT"
+        return PrimitiveStatus.RUNNING
+
+    def _finish_after_retreat(
             self,
             *,
             lvl2,
-            motion_backend,
-            io=None,
-            **_,
+            io,
+            perception,
+            now_s,
     ):
+        """Verify at LOW_RETREAT on both paths, then restore camera view."""
+        if not self.target_is_high:
+            print("[PICKUP_LIFT][VERIFY] already at LOW_RETREAT")
+        elif not self._command_lift(lvl2, "lift_low_retreat_position",
+                                    "HIGH_TO_VERIFY"):
+            return self.status
 
-        pickup_range = None
+        # --------------------------------------------------
+        # Post-retreat verification
+        #
+        # Only positive evidence may fail the pickup:
+        #   1. ultrasonic clearly says the gripper is empty, or
+        #   2. fresh vision sees the selected cube left behind.
+        #
+        # Anything inconclusive defaults to success.
+        # --------------------------------------------------
 
-        if io is not None:
-            pickup_range = resolve_pickup_range(
-                config=self.config,
-                io=io,
+        self.grip_verified = None
+
+        verify_enabled = bool(
+            self.config.pickup_grip_verify_enabled
+        )
+
+        # --------------------------------------------------
+        # Ultrasonic evidence
+        # --------------------------------------------------
+
+        if verify_enabled and self._fitted("centre"):
+            if io is None:
+                io = lvl2.io
+
+            readings = []
+
+            n = int(
+                self.config.pickup_grip_verify_samples
+            )
+            min_valid = int(
+                self.config.pickup_grip_verify_min_valid_samples
             )
 
-        pickup_range = None
+            if n <= 0 or not 0 < min_valid <= n:
+                raise ValueError(
+                    "invalid pickup grip sample configuration"
+                )
 
-        if io is not None:
-            pickup_range = resolve_pickup_range(
-                config=self.config,
-                io=io,
+            low = float(
+                self.config.pickup_grip_verify_min_mm
             )
+            high = float(
+                self.config.pickup_grip_verify_max_mm
+            )
+            spread_limit = float(
+                self.config.pickup_grip_verify_max_spread_mm
+            )
+            delay_s = float(
+                self.config.pickup_grip_verify_sample_delay_s
+            )
+
+            for index in range(n):
+                try:
+                    observation = resolve_pickup_range(
+                        config=self.config,
+                        io=io,
+                    )
+                    reading = self._raw_valid_mm(
+                        observation,
+                        "centre",
+                    )
+                except (
+                    AttributeError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                    RuntimeError,
+                ) as exc:
+                    print(
+                        f"[PICKUP_GRIP][READ] {exc}"
+                    )
+                    reading = None
+
+                print(
+                    f"[PICKUP_GRIP][SAMPLE] "
+                    f"{index + 1}/{n} "
+                    f"ultrasonic_mm={reading}"
+                )
+
+                if reading is not None:
+                    readings.append(reading)
+
+                if index + 1 < n and delay_s > 0.0:
+                    io.sleep(delay_s)
+
+            self.grip_measurement_mm = (
+                statistics.median(readings)
+                if readings
+                else None
+            )
+
+            spread = (
+                max(readings) - min(readings)
+                if readings
+                else None
+            )
+
+            held = (
+                len(readings) >= min_valid
+                and low
+                <= self.grip_measurement_mm
+                <= high
+                and spread <= spread_limit
+            )
+
+            gross_failure_mm = float(getattr(
+                self.config,
+                "pickup_low_ready_gross_max_mm",
+                self.LOW_READY_GROSS_MAX_MM,
+            ))
+
+            clearly_empty = (
+                len(readings) >= min_valid
+                and all(
+                    reading > gross_failure_mm
+                    for reading in readings
+                )
+            )
+
+            if held:
+                self.grip_verified = True
+                evidence = "HELD"
+
+            elif clearly_empty:
+                self.grip_verified = False
+                evidence = "EMPTY"
+
+            else:
+                evidence = "INCONCLUSIVE"
+
+            print(
+                f"[PICKUP_GRIP][RESULT] "
+                f"valid={len(readings)}/{n} "
+                f"median_mm={self.grip_measurement_mm} "
+                f"spread_mm={spread} "
+                f"expected=({low},{high}) "
+                f"evidence={evidence}"
+            )
+
+        elif verify_enabled:
+            print(
+                "[PICKUP_GRIP] ultrasonic not fitted "
+                "-> vision verification only"
+            )
+
+        else:
+            print(
+                "[PICKUP_GRIP] ultrasonic verification disabled "
+                "-> vision verification only"
+            )
+
+        # --------------------------------------------------
+        # Vision evidence
+        #
+        # Only needed when ultrasonic has NOT already
+        # positively confirmed held/empty.
+        #
+        # A cube left behind should be approximately:
+        #
+        #     final commitment + 100 mm buffer
+        #
+        # from the robot after retreat.
+        #
+        # Accept +/- 100 mm around that known geometry.
+        # --------------------------------------------------
 
         if (
-            pickup_range is not None
-            and self._step in ("DRIVE", "GRASP", "VERIFY")
+            self.grip_verified is None
+            and perception is not None
+            and self.target_id is not None
         ):
-            print(
-                "[PICKUP_RANGE] "
-                f"step={self._step} "
-                f"left={None if pickup_range.left is None else pickup_range.left.distance_mm} "
-                f"centre={None if pickup_range.centre is None else pickup_range.centre.distance_mm} "
-                f"right={None if pickup_range.right is None else pickup_range.right.distance_mm}"
+            target = None
+
+            for memory in perception.objects.values():
+                candidate = memory.get(self.target_id)
+
+                if candidate is None:
+                    continue
+
+                last_seen = float(
+                    candidate.get("last_seen", 0.0)
+                )
+
+                if (
+                    now_s - last_seen
+                    > float(self.config.visible_max_age_s)
+                ):
+                    continue
+
+                if "distance" not in candidate:
+                    continue
+
+                target = candidate
+                break
+
+            expected_mm = (
+                self.final_drive_mm
+                + self.LOW_RECOVERY_EXTRA_MM
             )
 
-        # --------------------------------------------------
-        # Final alignment
-        # --------------------------------------------------
+            min_expected_mm = expected_mm - 100.0
+            max_expected_mm = expected_mm + 100.0
+
+            if target is not None:
+                distance_mm = float(
+                    target["distance"]
+                )
+
+                if (
+                    min_expected_mm
+                    <= distance_mm
+                    <= max_expected_mm
+                ):
+                    self.grip_verified = False
+
+                    print(
+                        "[PICKUP_GRIP][VISION] "
+                        f"id={self.target_id} "
+                        f"distance={distance_mm:.0f}mm "
+                        f"expected_left_behind="
+                        f"{expected_mm:.0f}+/-100mm "
+                        "-> CONFIRMED FAILED"
+                    )
+
+                else:
+                    print(
+                        "[PICKUP_GRIP][VISION] "
+                        f"id={self.target_id} "
+                        f"distance={distance_mm:.0f}mm "
+                        "outside left-behind position "
+                        "-> inconclusive"
+                    )
+
+            else:
+                print(
+                    "[PICKUP_GRIP][VISION] "
+                    f"id={self.target_id} not freshly visible "
+                    "-> no failure evidence"
+                )
+
+        # Always restore the carry height before leaving PickupObject,
+        # including a failed verification: camera visibility is needed for
+        # either realignment or target reacquisition.
+        if not self._command_lift(lvl2, "lift_carry_position", "CARRY"):
+            return self.status
+
+        self.status = (BehaviorStatus.FAILED if self.grip_verified is False
+                       else BehaviorStatus.SUCCEEDED)
+        print(f"[PICKUP_OBJECT] {'complete' if self.status == BehaviorStatus.SUCCEEDED else 'FAILED'} "
+              f"id={self.target_id} grip_verified={self.grip_verified} "
+              f"held_ultrasonic_mm={self.grip_measurement_mm} "
+              f"pressed_ultrasonic_mm={self.ready_measurement_mm} "
+              f"bumper_both_contact={self._bumper_both_contact}")
+        return self.status
+
+    def _start_align(
+        self,
+        *,
+        bearing_deg,
+        tolerance_deg,
+        motion_backend,
+        next_step,
+    ):
+        self._align = AlignToTarget(
+            bearing_deg=float(bearing_deg),
+            tolerance_deg=float(tolerance_deg),
+            max_rotate_deg=min(
+                float(self.config.max_rotate_deg),
+                self.LOW_TWO_FACE_MAX_ROTATE_DEG
+                if next_step == "ALIGN_TWO_FACES"
+                else float(self.config.max_rotate_deg),
+            ),
+        )
+        self._align.start(motion_backend=motion_backend)
+        self._step = next_step
+
+    def _face_observations(
+        self,
+        *,
+        perception,
+        face_observations,
+        now_s,
+    ):
+        # face_observations is an optional test/integration override. Each
+        # observation must already be camera-corrected and fresh.
+        if face_observations is not None:
+            faces = list(face_observations)
+        else:
+            faces = resolve_pickup_faces(
+                perception=perception,
+                target_id=self.target_id,
+                max_age_s=float(self.config.visible_max_age_s),
+                now_s=now_s,
+            )
+
+        out = []
+        for face in faces:
+            if int(face["id"]) != self.target_id:
+                continue
+
+            # Never reuse a frame captured before a corrective rotation.
+            timestamp = face.get("timestamp")
+            if (
+                timestamp is not None
+                and self._last_align_end_s is not None
+                and float(timestamp) < self._last_align_end_s
+            ):
+                continue
+
+            bearing = float(face["bearing_deg"])
+            if math.isfinite(bearing):
+                out.append(bearing)
+
+        return sorted(out)
+
+    def _bumper_fitted(self, name):
+        """Use only the capability map from the resolved robot configuration."""
+        has_io = getattr(self.config, "has_io", None)
+        if callable(has_io):
+            try:
+                return bool(has_io("bumper", name))
+            except KeyError:
+                return False  # An older or non-SR profile has no such key.
+        return bool(getattr(self.config, "io", {}).get(f"bumper.{name}"))
+
+    def _sample_bumpers(self, *, phase, count_for_contact=False):
+        """Log each fitted input. Only a simultaneous pair confirms contact.
+
+        This deliberately reads via the canonical io.bumper collection rather
+        than via raw Arduino pins; Bobbot is gated out by resolved config.
+        """
+        fitted = {
+            name: self._bumper_fitted(name)
+            for name in ("front_left", "front_right")
+        }
+        if not any(fitted.values()):
+            return
+
+        io = self._bumper_io
+        bumpers = getattr(io, "bumper", None)
+        readings = {}
+        for name, present in fitted.items():
+            if not present:
+                readings[name] = None
+                continue
+            if bumpers is None:
+                readings[name] = None
+                continue
+            try:
+                raw = bumpers[name]
+                readings[name] = None if raw is None else bool(raw)
+            except (KeyError, AttributeError, TypeError, RuntimeError) as exc:
+                print(f"[PICKUP_BUMPER][READ] {name} unavailable: {exc}")
+                readings[name] = None
+
+        left = readings["front_left"]
+        right = readings["front_right"]
+        both = left is True and right is True
+        if count_for_contact:
+            self._bumper_samples += 1
+            for name in self._bumper_seen:
+                self._bumper_seen[name] |= readings[name] is True
+            self._bumper_both_contact |= both
+        print(
+            f"[PICKUP_BUMPER][{phase}] "
+            f"left={left} right={right} both={both} "
+            f"confirmed={self._bumper_both_contact}"
+        )
+        return readings
+
+    def _bumper_summary(self):
+        if not (self._bumper_fitted("front_left")
+                or self._bumper_fitted("front_right")):
+            return
+        print(
+            "[PICKUP_BUMPER][SUMMARY] "
+            f"id={self.target_id} "
+            f"left_seen={self._bumper_seen['front_left']} "
+            f"right_seen={self._bumper_seen['front_right']} "
+            f"both_simultaneously={self._bumper_both_contact} "
+            f"correction_used={self._bumper_correction_used} "
+            f"contact_samples={self._bumper_samples}"
+        )
+
+    def _bumper_now(self):
+        io = self._bumper_io
+        clock = None if io is None else getattr(io, "time", None)
+
+        if callable(clock):
+            return float(clock())
+
+        return time.monotonic()
+
+    def _pickup_contact_power(self, motion_backend):
+        """
+        Recover the normal forward power selected by the timed backend for
+        this particular pickup distance.
+
+        Contact alignment is currently intended for profiles which expose
+        both front bumpers (Webots at present).
+        """
+        cal = getattr(motion_backend, "cal", None)
+        if cal is None:
+            raise RuntimeError(
+                "Pickup bumper alignment requires timed motion calibration"
+            )
+
+        if abs(self.final_drive_mm) < float(cal.drive_switch_mm):
+            power = cal.drive_power_short
+        else:
+            power = cal.drive_power_long
+
+        return abs(float(power))
+
+    def _bumper_contact_control_sample(
+        self,
+        *,
+        lvl2,
+        nominal_power,
+        phase,
+    ):
+        """
+        Sample the two front bumpers and apply LOW-pickup contact steering.
+
+        States:
+          neither -> straight
+          one only -> grace, then strong pivot toward that bumper
+          both     -> equalise motors
+        """
+        readings = self._sample_bumpers(
+            phase=phase,
+            count_for_contact=True,
+        )
+
+        if readings is None:
+            return "unavailable"
+
+        left = readings["front_left"]
+        right = readings["front_right"]
+        now_s = self._bumper_now()
 
         # --------------------------------------------------
-        # Final alignment
+        # Both bumpers: aligned enough. Return to straight.
         # --------------------------------------------------
+        if left is True and right is True:
+            if self._bumper_correction_active:
+                lvl2.DRIVE_POWER(
+                    left_power=nominal_power,
+                    right_power=nominal_power,
+                )
+                print(
+                    "[PICKUP_BUMPER][EQUALISE] "
+                    f"both contact -> "
+                    f"L={nominal_power:.2f} "
+                    f"R={nominal_power:.2f}"
+                )
 
-        if self._step == "ALIGN":
-            st = self._align.update(
+            self._bumper_correction_active = False
+            self._bumper_single_side = None
+            self._bumper_single_since_s = None
+            return "both"
+
+        # --------------------------------------------------
+        # Determine whether exactly one bumper is pressed.
+        # Require the opposite sensor to explicitly report False;
+        # do not steer on an unavailable/None reading.
+        # --------------------------------------------------
+        if left is True and right is False:
+            side = "left"
+
+        elif right is True and left is False:
+            side = "right"
+
+        elif left is False and right is False:
+            if self._bumper_correction_active:
+                lvl2.DRIVE_POWER(
+                    left_power=nominal_power,
+                    right_power=nominal_power,
+                )
+                print(
+                    "[PICKUP_BUMPER][STRAIGHT] "
+                    "contact lost -> restore equal power"
+                )
+
+            self._bumper_correction_active = False
+            self._bumper_single_side = None
+            self._bumper_single_since_s = None
+            return "none"
+
+        else:
+            # One or both sensor readings are unavailable.
+            # Do not turn based on incomplete information.
+            if self._bumper_correction_active:
+                lvl2.DRIVE_POWER(
+                    left_power=nominal_power,
+                    right_power=nominal_power,
+                )
+
+            self._bumper_correction_active = False
+            self._bumper_single_side = None
+            self._bumper_single_since_s = None
+            return "unknown"
+
+        # --------------------------------------------------
+        # First observation of one-sided contact:
+        # continue straight for the grace period.
+        # --------------------------------------------------
+        if self._bumper_single_side != side:
+            self._bumper_single_side = side
+            self._bumper_single_since_s = now_s
+
+            if self._bumper_correction_active:
+                lvl2.DRIVE_POWER(
+                    left_power=nominal_power,
+                    right_power=nominal_power,
+                )
+                self._bumper_correction_active = False
+
+            print(
+                "[PICKUP_BUMPER][GRACE] "
+                f"{side}=True other=False "
+                f"grace={self.LOW_BUMPER_GRACE_S:.2f}s"
+            )
+            return "grace"
+
+        elapsed_s = now_s - self._bumper_single_since_s
+
+        if elapsed_s < self.LOW_BUMPER_GRACE_S:
+            return "grace"
+
+        # --------------------------------------------------
+        # Persistent one-sided contact:
+        # pivot strongly TOWARD the contacted bumper.
+        #
+        # Right bumper -> stop right wheel -> swing right.
+        # Left bumper  -> stop left wheel  -> swing left.
+        # --------------------------------------------------
+        if not self._bumper_correction_active:
+            if side == "right":
+                left_power = nominal_power
+                right_power = 0.0
+            else:
+                left_power = 0.0
+                right_power = nominal_power
+
+            lvl2.DRIVE_POWER(
+                left_power=left_power,
+                right_power=right_power,
+            )
+
+            self._bumper_correction_active = True
+            self._bumper_correction_used = True
+
+            print(
+                "[PICKUP_BUMPER][CORRECT] "
+                f"side={side} "
+                f"single_for={elapsed_s:.3f}s "
+                f"L={left_power:.2f} "
+                f"R={right_power:.2f}"
+            )
+
+        return "correcting"
+
+    def _run_bumper_alignment_extension(
+        self,
+        *,
+        lvl2,
+        nominal_power,
+    ):
+        """
+        If the normal calibrated drive ends with only one bumper contacting,
+        allow a bounded pickup-specific continuation.
+
+        This is deliberately NOT part of generic Level2.DRIVE().
+        """
+        if self._bumper_both_contact:
+            return
+
+        if self._bumper_single_side is None:
+            return
+
+        io = self._bumper_io
+        if io is None:
+            return
+
+        print(
+            "[PICKUP_BUMPER][EXTEND] "
+            f"side={self._bumper_single_side} "
+            f"max={self.LOW_BUMPER_CORRECTION_MAX_S:.2f}s"
+        )
+
+        # Level2's normal timed drive has just stopped. Resume straight while
+        # any remaining grace period expires.
+        self._bumper_correction_active = False
+
+        lvl2.DRIVE_POWER(
+            left_power=nominal_power,
+            right_power=nominal_power,
+        )
+
+        deadline_s = (
+            self._bumper_now()
+            + self.LOW_BUMPER_CORRECTION_MAX_S
+        )
+
+        try:
+            while self._bumper_now() < deadline_s:
+                state = self._bumper_contact_control_sample(
+                    lvl2=lvl2,
+                    nominal_power=nominal_power,
+                    phase="ALIGN",
+                )
+
+                if state == "both":
+                    print(
+                        "[PICKUP_BUMPER][SEAT] "
+                        f"both contact -> straight "
+                        f"{self.LOW_BUMPER_SEAT_S:.2f}s"
+                    )
+
+                    lvl2.DRIVE_POWER(
+                        left_power=nominal_power,
+                        right_power=nominal_power,
+                    )
+
+                    io.sleep(self.LOW_BUMPER_SEAT_S)
+
+                    self._sample_bumpers(
+                        phase="SEAT_END",
+                        count_for_contact=True,
+                    )
+                    return
+
+                if state in ("none", "unknown", "unavailable"):
+                    print(
+                        "[PICKUP_BUMPER][EXTEND] "
+                        "contact lost/unavailable -> stop correction"
+                    )
+                    return
+
+                remaining_s = deadline_s - self._bumper_now()
+
+                if remaining_s <= 0.0:
+                    break
+
+                io.sleep(
+                    min(
+                        self.LOW_BUMPER_SAMPLE_S,
+                        remaining_s,
+                    )
+                )
+
+            print(
+                "[PICKUP_BUMPER][CORRECT_TIMEOUT] "
+                f"both_contact={self._bumper_both_contact}"
+            )
+
+        finally:
+            lvl2.DRIVE_STOP()
+
+    def _start_commitment(self, motion_backend):
+        self._drive = Drive(distance_mm=self.final_drive_mm)
+        self._sample_bumpers(phase="BEFORE_DRIVE")
+
+        lvl2 = getattr(motion_backend, "lvl2", None)
+
+        bumper_names = (
+            "front_left",
+            "front_right",
+        )
+
+        any_bumper_fitted = any(
+            self._bumper_fitted(name)
+            for name in bumper_names
+        )
+
+        bumper_pair_fitted = all(
+            self._bumper_fitted(name)
+            for name in bumper_names
+        )
+
+        nominal_power = None
+
+        if bumper_pair_fitted:
+            nominal_power = self._pickup_contact_power(
+                motion_backend
+            )
+
+        previous_observer = None
+
+        if lvl2 is not None and any_bumper_fitted:
+            previous_observer = getattr(
+                lvl2,
+                "_timed_drive_observer",
+                None,
+            )
+
+            if bumper_pair_fitted:
+                lvl2._timed_drive_observer = lambda: (
+                    self._bumper_contact_control_sample(
+                        lvl2=lvl2,
+                        nominal_power=nominal_power,
+                        phase="DURING_DRIVE",
+                    )
+                )
+
+            else:
+                # A profile with only one fitted bumper may still log it,
+                # but cannot perform two-bumper alignment.
+                lvl2._timed_drive_observer = lambda: (
+                    self._sample_bumpers(
+                        phase="DURING_DRIVE",
+                        count_for_contact=True,
+                    )
+                )
+
+        try:
+            self._drive.start(
                 motion_backend=motion_backend
             )
 
+        finally:
+            if lvl2 is not None and any_bumper_fitted:
+                lvl2._timed_drive_observer = previous_observer
+
+        # Level2 has stopped the normal calibrated drive at this point.
+        end_readings = self._sample_bumpers(
+            phase="END_DRIVE",
+            count_for_contact=True,
+        )
+
+        # It is possible for first contact to occur on the very last sample.
+        # Seed the grace timer here so that case can still use the bounded
+        # alignment extension.
+        if (
+                bumper_pair_fitted
+                and not self._bumper_both_contact
+                and self._bumper_single_side is None
+                and end_readings is not None
+        ):
+            left = end_readings["front_left"]
+            right = end_readings["front_right"]
+
+            if left is True and right is False:
+                self._bumper_single_side = "left"
+                self._bumper_single_since_s = self._bumper_now()
+
+            elif right is True and left is False:
+                self._bumper_single_side = "right"
+                self._bumper_single_since_s = self._bumper_now()
+
+        if (
+                bumper_pair_fitted
+                and lvl2 is not None
+                and not self._bumper_both_contact
+                and self._bumper_single_side is not None
+        ):
+            self._run_bumper_alignment_extension(
+                lvl2=lvl2,
+                nominal_power=nominal_power,
+            )
+
+        print(
+            "[[PICKUP_OBJECT]] final drive-through commitment "
+            f"d={self.final_drive_mm:.1f}mm"
+        )
+
+        self._step = "DRIVE"
+        return PrimitiveStatus.RUNNING
+
+    def _start_grasp(self, lvl2):
+        # New pickup path owns the selected retreat height. Keep the old
+        # Grab -> LiftUp default for other GraspObject callers.
+        self._grasp = Grab()
+        self._grasp.start(lvl2=lvl2, config=self.config)
+        self._step = "GRASP"
+        return PrimitiveStatus.RUNNING
+
+    def _start_recovery(self, *, motion_backend, reason):
+        self._recovery_reason = str(reason)
+        distance_mm = self.final_drive_mm + self.LOW_RECOVERY_EXTRA_MM
+        print(
+            f"[[PICKUP_OBJECT]][RECOVER] {self._recovery_reason}; "
+            f"reverse={distance_mm:.1f}mm"
+        )
+        self._recovery = Drive(distance_mm=-distance_mm)
+        self._recovery.start(motion_backend=motion_backend)
+        self._step = "RECOVER_PICKUP"
+        return PrimitiveStatus.RUNNING
+
+    def _fitted(self, channel):
+        cat, name = {
+            "centre": ("ultrasonic", "front"),
+            "left": ("tof", "front_left"),
+            "right": ("tof", "front_right"),
+        }[channel]
+        has_io = getattr(self.config, "has_io", None)
+        if callable(has_io):
+            try:
+                return bool(has_io(cat, name))
+            except KeyError:
+                return False
+        return bool(getattr(self.config, "io", {}).get(f"{cat}.{name}"))
+
+    @staticmethod
+    def _raw_valid_mm(observation, channel):
+        reading = None if observation is None else getattr(observation, channel, None)
+        if reading is None or not reading.valid or reading.distance_mm is None:
+            return None
+        value = float(reading.distance_mm)
+        return value if math.isfinite(value) and value > 0.0 else None
+
+    def _window(self, category):
+        prefix = (
+            "pickup_low_ready_ultrasonic"
+            if category == "ultrasonic"
+            else "pickup_low_ready_tof"
+        )
+        fallback_low = (
+            self.LOW_READY_ULTRASONIC_MIN_MM
+            if category == "ultrasonic"
+            else self.LOW_READY_TOF_MIN_MM
+        )
+        fallback_high = (
+            self.LOW_READY_ULTRASONIC_MAX_MM
+            if category == "ultrasonic"
+            else self.LOW_READY_TOF_MAX_MM
+        )
+        minimum = getattr(self.config, prefix + "_min_mm", fallback_low)
+        maximum = getattr(self.config, prefix + "_max_mm", fallback_high)
+        if minimum is None and maximum is None:
+            return None
+        if minimum is None or maximum is None:
+            raise ValueError(f"{prefix}: configure BOTH min_mm and max_mm")
+        low, high = float(minimum), float(maximum)
+        if not 0.0 < low <= high or not all(map(math.isfinite, (low, high))):
+            raise ValueError(f"{prefix}: invalid calibrated window")
+        return low, high
+
+    def _confirm_ready(self, *, lvl2, io, motion_backend, now_s):
+        if now_s - self._ready_started_s < self.LOW_READY_SETTLE_S:
+            return PrimitiveStatus.RUNNING
+
+        centre_fitted = self._fitted("centre")
+        left_fitted = self._fitted("left")
+        right_fitted = self._fitted("right")
+
+        if not (centre_fitted or left_fitted or right_fitted):
+            self._sample_bumpers(phase="READY_NO_RANGE", count_for_contact=True)
+            self._bumper_summary()
+            if self._bumper_both_contact:
+                print("[PICKUP_BUMPER] simultaneous contact observed (diagnostic only)")
+            print("[PICKUP_READY] no range hardware -> unverified grasp")
+            return self._start_grasp(lvl2)
+
+        # These are *pressed-up* measurements, not final-approach commands.
+        observation = (
+            resolve_pickup_range(config=self.config, io=io)
+            if io is not None else None
+        )
+        self._ready_ticks += 1
+        self._sample_bumpers(
+            phase=f"READY_{self._ready_ticks}",
+            count_for_contact=True,
+        )
+        for channel in self._ready_samples:
+            if self._fitted(channel):
+                value = self._raw_valid_mm(observation, channel)
+                if value is not None:
+                    self._ready_samples[channel].append(value)
+
+        print(
+            "[PICKUP_READY][SAMPLE] "
+            f"tick={self._ready_ticks} "
+            f"centre={self._raw_valid_mm(observation, 'centre')} "
+            f"left={self._raw_valid_mm(observation, 'left')} "
+            f"right={self._raw_valid_mm(observation, 'right')}"
+        )
+
+        if (
+            self._ready_ticks < self.LOW_READY_SAMPLES
+            and self._ready_ticks < self.LOW_READY_MAX_TICKS
+        ):
+            return PrimitiveStatus.RUNNING
+
+        for channel, readings in self._ready_samples.items():
+            if readings:
+                median = statistics.median(readings)
+                print(
+                    "[PICKUP_READY][CALIBRATE] "
+                    f"channel={channel} readings={readings} "
+                    f"median={median:.1f}mm "
+                    f"spread={max(readings) - min(readings):.1f}mm"
+                )
+                if channel == "centre":
+                    self.ready_measurement_mm = median
+            elif self._fitted(channel):
+                print(f"[PICKUP_READY][CALIBRATE] channel={channel} no return")
+
+        self._bumper_summary()
+        if self._bumper_both_contact:
+            # Diagnostic only for the first Webots trials. Do not override
+            # existing ultrasonic checks or alter the pickup decision yet.
+            print("[PICKUP_BUMPER] simultaneous contact observed (diagnostic only)")
+
+        print(
+            "[PICKUP_READY] range/contact diagnostics complete "
+            "-> grasp; final decision is post-retreat"
+        )
+        return self._start_grasp(lvl2)
+
+    def update(
+        self,
+        *,
+        lvl2,
+        motion_backend,
+        io=None,
+        perception=None,
+        face_observations=None,
+        **_,
+    ):
+        if self.status != BehaviorStatus.RUNNING:
+            return self.status
+
+        now_s = time.time()
+        if io is not None:
+            self._bumper_io = io
+
+        if self._step == "ALIGN_TWO_FACE_CONFIRM":
+            # The bisector was computed from both faces *before* the turn.
+            # Do not try to rebalance it: the rotation can hide one face,
+            # and small timed corrections can overshoot. Require only a
+            # fresh observation of the same cube after the turn.
+            faces = self._face_observations(
+                perception=perception,
+                face_observations=face_observations,
+                now_s=now_s,
+            )
+            if len(faces) > 2:
+                print("[[PICKUP_OBJECT]][ALIGN] ambiguous: >2 faces for ID")
+                self.status = BehaviorStatus.FAILED
+                return self.status
+            if faces:
+                print(
+                    "[PICKUP_ALIGN][TWO_FACES] one-turn alignment complete; "
+                    f"fresh_target_faces={len(faces)} "
+                    "-> final drive-through"
+                )
+                return self._start_commitment(motion_backend)
+
+            if now_s - self._align_started_s <= self.LOW_FACE_WAIT_TIMEOUT_S:
+                return PrimitiveStatus.RUNNING
+
+            print(
+                "[[PICKUP_OBJECT]][ALIGN] no fresh sighting of selected "
+                "cube after two-face turn; aborting before commitment"
+            )
+            self.status = BehaviorStatus.FAILED
+            return self.status
+
+        if self._step == "ALIGN_SELECT":
+            # A target ID plus current perception are needed to distinguish
+            # two faces. Legacy callers without ID keep single-marker
+            # alignment, and receive an explicit diagnostic.
+            if self.target_id is None:
+                if not self._legacy_aligned:
+                    self._legacy_aligned = True
+                    print(
+                        "[[PICKUP_OBJECT]][ALIGN] no target_id; "
+                        "legacy single-marker bearing"
+                    )
+                    self._start_align(
+                        bearing_deg=self.bearing_deg,
+                        tolerance_deg=self.LOW_SINGLE_FACE_TOLERANCE_DEG,
+                        motion_backend=motion_backend,
+                        next_step="ALIGN_LEGACY",
+                    )
+                    return PrimitiveStatus.RUNNING
+                return self._start_commitment(motion_backend)
+
+            if perception is None and face_observations is None:
+                print(
+                    "[[PICKUP_OBJECT]][ALIGN] missing perception / "
+                    "face_observations for target_id"
+                )
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+            faces = self._face_observations(
+                perception=perception,
+                face_observations=face_observations,
+                now_s=now_s,
+            )
+
+            if len(faces) > 2:
+                print("[[PICKUP_OBJECT]][ALIGN] ambiguous: >2 faces for ID")
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+            if not faces:
+                if now_s - self._align_started_s <= self.LOW_FACE_WAIT_TIMEOUT_S:
+                    return PrimitiveStatus.RUNNING
+                print("[[PICKUP_OBJECT]][ALIGN] fresh target faces unavailable")
+                self.status = BehaviorStatus.FAILED
+                return self.status
+
+            if len(faces) == 2:
+                midpoint = (faces[0] + faces[1]) / 2.0
+                tolerance_deg = float(getattr(
+                    self.config,
+                    "pickup_low_two_face_tolerance_deg",
+                    self.LOW_TWO_FACE_TOLERANCE_DEG,
+                ))
+                if not math.isfinite(tolerance_deg) or tolerance_deg < 0.0:
+                    raise ValueError("invalid pickup two-face tolerance")
+                print(
+                    "[PICKUP_ALIGN][TWO_FACES] "
+                    f"bearings=({faces[0]:+.2f},{faces[1]:+.2f})deg "
+                    f"midpoint={midpoint:+.2f}deg "
+                    f"tolerance={tolerance_deg:.1f}deg"
+                )
+
+                if abs(midpoint) <= tolerance_deg:
+                    print("[[PICKUP_OBJECT]][ALIGN] two faces within tolerance")
+                    return self._start_commitment(motion_backend)
+
+                max_rotate = min(
+                    float(self.config.max_rotate_deg),
+                    self.LOW_TWO_FACE_MAX_ROTATE_DEG,
+                )
+                if abs(midpoint) > max_rotate:
+                    print("[[PICKUP_OBJECT]][ALIGN] bisector turn too large")
+                    self.status = BehaviorStatus.FAILED
+                    return self.status
+
+                self._start_align(
+                    bearing_deg=midpoint,
+                    tolerance_deg=tolerance_deg,
+                    motion_backend=motion_backend,
+                    next_step="ALIGN_TWO_FACES",
+                )
+                return PrimitiveStatus.RUNNING
+
+            # One face, and no two-face geometry has been identified.
+            # Wait briefly for the second face before starting the drive.
+            if now_s - self._align_started_s < self.LOW_FACE_DISCOVERY_S:
+                return PrimitiveStatus.RUNNING
+
+            bearing = faces[0]
+            if abs(bearing) <= self.LOW_SINGLE_FACE_TOLERANCE_DEG:
+                print("[[PICKUP_OBJECT]][ALIGN] single face centred")
+                return self._start_commitment(motion_backend)
+
+            self._start_align(
+                bearing_deg=bearing,
+                tolerance_deg=self.LOW_SINGLE_FACE_TOLERANCE_DEG,
+                motion_backend=motion_backend,
+                next_step="ALIGN_SINGLE",
+            )
+            return PrimitiveStatus.RUNNING
+
+        if self._step in (
+            "ALIGN_LEGACY", "ALIGN_SINGLE", "ALIGN_TWO_FACES", "ALIGN_HIGH"
+        ):
+            st = self._align.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.RUNNING:
                 return st
-
             if st == PrimitiveStatus.FAILED:
                 print("[[PICKUP_OBJECT]] alignment FAILED")
                 self.status = BehaviorStatus.FAILED
                 return self.status
 
-            print("[[PICKUP_OBJECT]] alignment complete")
+            if self._step in ("ALIGN_LEGACY", "ALIGN_HIGH"):
+                print("[[PICKUP_OBJECT]] alignment complete")
+                return self._start_commitment(motion_backend)
 
-            self._drive = Drive(
-                distance_mm=self.final_drive_mm
+            # The two-face path does not iterate. A fresh sighting of
+            # either face is enough after its one bounded rotation.
+            self._last_align_end_s = now_s
+            self._align_started_s = now_s
+            self._align = None
+            self._step = (
+                "ALIGN_TWO_FACE_CONFIRM"
+                if self._step == "ALIGN_TWO_FACES"
+                else "ALIGN_SELECT"
             )
-            self._drive.start(
-                motion_backend=motion_backend
-            )
-
-            self._step = "DRIVE"
             return PrimitiveStatus.RUNNING
 
-        # --------------------------------------------------
-        # Blind final drive
-        # --------------------------------------------------
-
         if self._step == "DRIVE":
-            st = self._drive.update(
-                motion_backend=motion_backend
-            )
-
+            st = self._drive.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.RUNNING:
                 return st
-
             if st == PrimitiveStatus.FAILED:
                 print("[[PICKUP_OBJECT]] final drive FAILED")
                 self.status = BehaviorStatus.FAILED
                 return self.status
 
-            print("[[PICKUP_OBJECT]] final drive complete")
+            print("[[PICKUP_OBJECT]] final drive-through complete")
 
-            self._grasp = GraspObject()
-            self._grasp.start(
-                lvl2=lvl2,
-                config=self.config,
-            )
+            if self.target_is_high:
+                return self._start_grasp(lvl2)
 
-            self._step = "GRASP"
+            self._ready_started_s = now_s
+            self._ready_ticks = 0
+            self._ready_samples = {"centre": [], "left": [], "right": []}
+            self._step = "CONFIRM_GRASP_READY"
             return PrimitiveStatus.RUNNING
 
-        # --------------------------------------------------
-        # Grasp
-        # --------------------------------------------------
+        if self._step == "CONFIRM_GRASP_READY":
+            return self._confirm_ready(
+                lvl2=lvl2,
+                io=io,
+                motion_backend=motion_backend,
+                now_s=now_s,
+            )
+
+        if self._step == "RECOVER_PICKUP":
+            st = self._recovery.update(motion_backend=motion_backend)
+            if st == PrimitiveStatus.RUNNING:
+                return st
+            if st == PrimitiveStatus.FAILED:
+                print("[[PICKUP_OBJECT]][RECOVER] reverse FAILED")
+            else:
+                print("[[PICKUP_OBJECT]][RECOVER] reverse complete; reacquire cube")
+            self.status = BehaviorStatus.FAILED
+            return self.status
 
         if self._step == "GRASP":
             st = self._grasp.update(lvl2=lvl2)
-
             if st == PrimitiveStatus.RUNNING:
                 return st
-
             if st == PrimitiveStatus.FAILED:
                 print("[[PICKUP_OBJECT]] GraspObject FAILED")
                 self.status = BehaviorStatus.FAILED
                 return self.status
 
             print("[[PICKUP_OBJECT]] GraspObject complete")
+            return self._start_retreat(lvl2=lvl2,
+                                       motion_backend=motion_backend)
 
-            self._verify = VerifyGrip()
-            self._verify.start(
-                lvl2=lvl2,
-                config=self.config,
-            )
-
-            self._step = "VERIFY"
-            return PrimitiveStatus.RUNNING
-
-        # --------------------------------------------------
-        # Verify
-        # --------------------------------------------------
-
-        if self._step == "VERIFY":
-            st = self._verify.update(lvl2=lvl2)
-
+        if self._step == "RETREAT":
+            st = self._retreat.update(motion_backend=motion_backend)
             if st == PrimitiveStatus.RUNNING:
                 return st
-
             if st == PrimitiveStatus.FAILED:
-                print("[[PICKUP_OBJECT]] VerifyGrip FAILED")
+                print("[PICKUP_RETREAT] FAILED")
                 self.status = BehaviorStatus.FAILED
                 return self.status
-
-            print("[PICKUP_OBJECT] complete")
-            self.status = BehaviorStatus.SUCCEEDED
-            return self.status
+            print("[PICKUP_RETREAT] complete")
+            return self._finish_after_retreat(
+                lvl2=lvl2,
+                io=io,
+                perception=perception,
+                now_s=now_s,
+            )
 
         self.status = BehaviorStatus.FAILED
         return self.status
@@ -259,12 +1414,12 @@ class PickupObject(Behavior):
         for child in (
             self._align,
             self._drive,
+            self._recovery,
             self._grasp,
-            self._verify,
+            self._retreat,
         ):
             if child is None:
                 continue
-
             try:
                 if motion_backend is not None:
                     child.stop(motion_backend=motion_backend)

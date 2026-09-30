@@ -1,5 +1,7 @@
 # hw_io/hw_pi.py
 
+import time
+
 from config import CONFIG
 from hw_io.cameras.async_camera_proxy import AsyncCameraProxy
 from hw_io.cameras.resolve import resolve_camera
@@ -128,3 +130,9 @@ class PiBackend:
             f"Unknown MATCH_ZONE_SOURCE: "
             f"{CONFIG.match_zone_source}"
         )
+
+    def time(self) -> float:
+        return time.monotonic()
+
+    def sleep(self, secs: float) -> None:
+        time.sleep(max(0.0, float(secs)))

@@ -60,4 +60,12 @@ def run_challenge(challenge, controller):
         from tools.challenges.wall_following import run
         return run(controller)
 
+    if challenge == Challenge.LIFT_ULTRASONIC_SWEEP:
+        from tools.challenges.lift_ultrasonic_sweep import run
+        return run(controller)
+
+    if challenge == Challenge.LIFT_VISION_SWEEP:
+        from tools.challenges.lift_vision_sweep import run
+        return run(controller)
+
     raise RuntimeError(f"Unsupported challenge: {challenge}")

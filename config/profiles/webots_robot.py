@@ -82,7 +82,11 @@ IO = {
     "ultrasonic.right":                   "sr2026sim",
 
     "voltage.battery":                    "sr2026sim",
+
+    "time":                               "sr2026sim",
+    "sleep":                              "sr2026sim",
 }
+
 
 
 # -------------------------
@@ -194,6 +198,34 @@ GRIPPER_OPEN_POSITION = 1.0
 GRIPPER_GRAB_POSITION = -1.0
 LIFT_CARRY_POSITION = 0.0           #lift can't be down low or blocks sim camera
 
+# -------------------------
+# Pickup lift positions
+# -------------------------
+
+LIFT_LOW_PICKUP_POSITION = -1.0
+LIFT_LOW_RETREAT_POSITION = -0.75
+
+LIFT_HIGH_PICKUP_POSITION = 0.0
+LIFT_HIGH_RETREAT_POSITION = 1.0
+
+# LIFT_CARRY_POSITION is defined above.
+
+# -------------------------
+# Pickup grip verification
+# -------------------------
+
+PICKUP_LIFT_SETTLE_S = 0.6
+
+PICKUP_GRIP_VERIFY_ENABLED = True
+
+PICKUP_GRIP_VERIFY_MIN_MM = 25.0
+PICKUP_GRIP_VERIFY_MAX_MM = 100.0
+
+PICKUP_GRIP_VERIFY_SAMPLES = 3
+PICKUP_GRIP_VERIFY_MIN_VALID_SAMPLES = 2
+PICKUP_GRIP_VERIFY_MAX_SPREAD_MM = 10.0
+PICKUP_GRIP_VERIFY_SAMPLE_DELAY_S = 0.1
+
 SURFACE_MULTIPLIERS = {
     "simulation": {"rotate": 1.00, "drive": 1.00},
 }
@@ -205,8 +237,8 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 2750          # typical 250
-INIT_ESCAPE_ROTATE_DEG = -75      # typical 45
+INIT_ESCAPE_DRIVE_MM = 350          # typical 250
+INIT_ESCAPE_ROTATE_DEG = -45      # typical 45
 
 # -------------------------
 # Approach Target (not optimized)
@@ -307,7 +339,7 @@ FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit
 FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high servoing - 848
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35
-FINAL_APPROACH_MARKER_PUSH = 13
+FINAL_APPROACH_MARKER_PUSH = 35
 
 # ReacquireTarget
 REACQUIRE_TARGET_VISION_LOSS = 20

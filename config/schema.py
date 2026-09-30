@@ -32,6 +32,22 @@ class Config:
     gripper_grab_position: float
     lift_carry_position: float
 
+    # Pickup lift positions
+    lift_low_pickup_position: float
+    lift_low_retreat_position: float
+    lift_high_pickup_position: float
+    lift_high_retreat_position: float
+
+    # Grip verification
+    pickup_lift_settle_s: float
+    pickup_grip_verify_enabled: bool
+    pickup_grip_verify_min_mm: float | None
+    pickup_grip_verify_max_mm: float | None
+    pickup_grip_verify_samples: int
+    pickup_grip_verify_min_valid_samples: int
+    pickup_grip_verify_max_spread_mm: float
+    pickup_grip_verify_sample_delay_s: float
+
     io: dict[str, str | None]
 
     cameras: dict
@@ -244,6 +260,28 @@ RESOLVE_MAP = {
     "gripper_open_position": ("profile", "GRIPPER_OPEN_POSITION"),
     "gripper_grab_position": ("profile", "GRIPPER_GRAB_POSITION"),
     "lift_carry_position": ("profile", "LIFT_CARRY_POSITION"),
+
+    # Pickup lift positions
+    "lift_low_pickup_position": ("profile", "LIFT_LOW_PICKUP_POSITION"),
+    "lift_low_retreat_position": ("profile", "LIFT_LOW_RETREAT_POSITION"),
+    "lift_high_pickup_position": ("profile", "LIFT_HIGH_PICKUP_POSITION"),
+    "lift_high_retreat_position": ("profile", "LIFT_HIGH_RETREAT_POSITION"),
+
+    # Grip verification
+    "pickup_lift_settle_s": ("profile", "PICKUP_LIFT_SETTLE_S"),
+    "pickup_grip_verify_enabled": ("profile", "PICKUP_GRIP_VERIFY_ENABLED"),
+    "pickup_grip_verify_min_mm": ("profile", "PICKUP_GRIP_VERIFY_MIN_MM"),
+    "pickup_grip_verify_max_mm": ("profile", "PICKUP_GRIP_VERIFY_MAX_MM"),
+    "pickup_grip_verify_samples": ("profile", "PICKUP_GRIP_VERIFY_SAMPLES"),
+    "pickup_grip_verify_min_valid_samples": (
+        "profile", "PICKUP_GRIP_VERIFY_MIN_VALID_SAMPLES"
+    ),
+    "pickup_grip_verify_max_spread_mm": (
+        "profile", "PICKUP_GRIP_VERIFY_MAX_SPREAD_MM"
+    ),
+    "pickup_grip_verify_sample_delay_s": (
+        "profile", "PICKUP_GRIP_VERIFY_SAMPLE_DELAY_S"
+    ),
 
     # Servoing
     "servoing_enabled": ("profile", "SERVOING_ENABLED"),

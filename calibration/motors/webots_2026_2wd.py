@@ -41,7 +41,7 @@ DRIVE_B_LONG = 0.083846
 # Timed Rotation Calibration
 # --------------------------------------------------
 
-ROTATE_SWITCH_DEG = 7.6
+ROTATE_SWITCH_DEG = 10
 
 # power, m, b   (0.10, 0.02113341, 0.013277)
 # power, m, b   (0.20, 0.01061071, 0.016671)
@@ -52,8 +52,8 @@ ROTATE_SWITCH_DEG = 7.6
 
 
 ROTATE_POWER_SMALL = 0.2
-ROTATE_M_SMALL = 0.01061071
-ROTATE_B_SMALL = 0.016671
+ROTATE_M_SMALL = 0.0065        #  initial calibration: 0.01061071
+ROTATE_B_SMALL = 0.008
 
 ROTATE_POWER_LARGE = 0.4
 ROTATE_M_LARGE = 0.00503003

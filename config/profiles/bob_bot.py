@@ -216,6 +216,34 @@ GRIPPER_OPEN_POSITION = 1.0
 GRIPPER_GRAB_POSITION = -0.55
 LIFT_CARRY_POSITION = -0.8
 
+# -------------------------
+# Pickup lift positions
+# -------------------------
+
+LIFT_LOW_PICKUP_POSITION = -1.0
+LIFT_LOW_RETREAT_POSITION = 1.0
+
+LIFT_HIGH_PICKUP_POSITION = 0.0
+LIFT_HIGH_RETREAT_POSITION = 1.0
+
+# LIFT_CARRY_POSITION is defined above.
+
+# -------------------------
+# Pickup grip verification
+# -------------------------
+
+PICKUP_LIFT_SETTLE_S = 1.0
+
+PICKUP_GRIP_VERIFY_ENABLED = False
+
+PICKUP_GRIP_VERIFY_MIN_MM = None
+PICKUP_GRIP_VERIFY_MAX_MM = None
+
+PICKUP_GRIP_VERIFY_SAMPLES = 3
+PICKUP_GRIP_VERIFY_MIN_VALID_SAMPLES = 2
+PICKUP_GRIP_VERIFY_MAX_SPREAD_MM = 10.0
+PICKUP_GRIP_VERIFY_SAMPLE_DELAY_S = 0.1
+
 # ==================================================
 # 3. AUTONOMOUS / PERCEPTION TUNING
 # ==================================================
@@ -490,4 +518,7 @@ IO = {
     "usb.match_zone":                     "pi",
 
     "voltage.battery":                    "mega2560",
+
+    "time":                               "pi",
+    "sleep":                              "pi",
 }

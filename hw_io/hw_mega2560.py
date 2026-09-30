@@ -970,6 +970,9 @@ class Mega2560IO(IOMap):
     def battery_sensor(self):
         return self.battery()
 
+    def service(self) -> None:
+        self._heartbeat_if_due()
+
     def sleep(self, secs: float) -> None:
         end = time.monotonic() + secs
 

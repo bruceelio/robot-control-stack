@@ -89,6 +89,9 @@ IO = {
     "usb.match_zone":                     "mega2560alt",
 
     "voltage.battery":                    "mega2560alt",
+
+    "time":                               "pi",
+    "sleep":                              "pi",
 }
 
 

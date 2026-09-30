@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from localisation.providers.base import PoseProvider, PoseObservation
 
@@ -29,6 +29,8 @@ class CommandedMotionProvider(PoseProvider):
     def __init__(self):
         super().__init__("commanded_motion", base_weight=0.25)
 
+        self._clock_fn: Callable[[], float] | None = None
+
         self._x = 0.0
         self._y = 0.0
         self._heading = None
@@ -47,6 +49,15 @@ class CommandedMotionProvider(PoseProvider):
     # Lifecycle
     # --------------------------------------------------
 
+    def set_clock(self, clock_fn: Callable[[], float]) -> None:
+        """Use the robot clock for motion propagation and elapsed time."""
+        self._clock_fn = clock_fn
+
+    def _motion_time(self, fallback_now_s: float) -> float:
+        if self._clock_fn is not None:
+            return float(self._clock_fn())
+        return float(fallback_now_s)
+
     def reseed(self, pose) -> None:
         if pose.position_valid:
             self._x = pose.x
@@ -62,7 +73,7 @@ class CommandedMotionProvider(PoseProvider):
             self._heading = None
             self._heading_valid = False
 
-        self._last_reseed_s = pose.timestamp
+        self._last_reseed_s = self._motion_time(pose.timestamp)
 
         self._distance_since_reseed_mm = 0.0
         self._rotation_since_reseed_deg = 0.0
@@ -84,23 +95,25 @@ class CommandedMotionProvider(PoseProvider):
     # --------------------------------------------------
 
     def begin_drive(self, *, distance_mm: float, duration_s: float, now_s: float):
-        self._advance(now_s)
+        motion_now_s = self._motion_time(now_s)
+        self._advance(motion_now_s)
 
         self._active = _Segment(
             kind="drive",
-            start_s=now_s,
+            start_s=motion_now_s,
             duration_s=max(1e-6, duration_s),
             total_drive_mm=distance_mm,
         )
 
         print(
             f"[CMD_MOTION][BEGIN_DRIVE] d={distance_mm:.1f} "
-            f"t={duration_s:.3f} now={now_s:.3f} pos_valid={self._position_valid} "
+            f"t={duration_s:.3f} now={motion_now_s:.3f} pos_valid={self._position_valid} "
             f"heading_valid={self._heading_valid} heading={self._heading}"
         )
 
     def begin_rotate(self, *, angle_deg: float, duration_s: float, now_s: float):
-        self._advance(now_s)
+        motion_now_s = self._motion_time(now_s)
+        self._advance(motion_now_s)
 
         if abs(angle_deg) < MIN_EFFECTIVE_ROTATE_DEG:
             print(
@@ -111,14 +124,14 @@ class CommandedMotionProvider(PoseProvider):
 
         self._active = _Segment(
             kind="rotate",
-            start_s=now_s,
+            start_s=motion_now_s,
             duration_s=max(1e-6, duration_s),
             total_rotate_deg=angle_deg,
         )
 
         print(
             f"[CMD_MOTION][BEGIN_ROTATE] a={angle_deg:.1f} "
-            f"t={duration_s:.3f} now={now_s:.3f} pos_valid={self._position_valid} "
+            f"t={duration_s:.3f} now={motion_now_s:.3f} pos_valid={self._position_valid} "
             f"heading_valid={self._heading_valid} heading={self._heading}"
         )
 
@@ -178,12 +191,13 @@ class CommandedMotionProvider(PoseProvider):
     # --------------------------------------------------
 
     def get_observation(self, now_s: float) -> PoseObservation | None:
-        self._advance(now_s)
+        motion_now_s = self._motion_time(now_s)
+        self._advance(motion_now_s)
 
         if not self._position_valid:
             return None
 
-        age_s = max(0.0, now_s - self._last_reseed_s)
+        age_s = max(0.0, motion_now_s - self._last_reseed_s)
 
         confidence = max(
             0.0,

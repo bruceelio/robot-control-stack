@@ -1,18 +1,18 @@
+
 # behaviors/post_pickup_realign.py
 
 from behaviors.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
-from primitives.motion import Drive, Rotate
-from primitives.manipulation.liftcarry import LiftCarry
+from primitives.motion import Rotate
+
 
 
 class PostPickupRealign(Behavior):
     """
-    Post-pickup cleanup behavior:
+    Rotate towards the estimated homeward direction.
 
-        reverse
-        -> lower lift to carry position
-        -> rotate to re-establish a useful heading
+    PickupObject has already reversed, verified the grip,
+    and moved the lift to its carrying position.
     """
 
     def __init__(self):
@@ -32,90 +32,41 @@ class PostPickupRealign(Behavior):
         print("[POST_PICKUP_REALIGN] start")
 
         self.config = config
-        self.step = "REVERSE"
+        self.step = "ROTATE"
         self.active = None
         self.status = BehaviorStatus.RUNNING
 
-    def update(
-        self,
-        *,
-        motion_backend,
-        lvl2,
-        **_,
-    ):
+    def update(self, *, motion_backend, **_):
+        if self.status != BehaviorStatus.RUNNING:
+            return self.status
+
         if self.active is None:
+            print("[POST_PICKUP_REALIGN] rotate")
 
-            if self.step == "REVERSE":
-                print("[POST_PICKUP_REALIGN] reverse")
+            self.active = Rotate(
+                angle_deg=self.config.post_pickup_rotate_deg
+            )
 
-                self.active = Drive(
-                    distance_mm=-self.config.post_pickup_reverse_mm
-                )
-
-                self.active.start(
-                    motion_backend=motion_backend
-                )
-
-            elif self.step == "LIFT_CARRY":
-                print("[POST_PICKUP_REALIGN] lift carry")
-
-                self.active = LiftCarry(
-                    settle_time=0.0
-                )
-
-                self.active.start(
-                    lvl2=lvl2
-                )
-
-            elif self.step == "ROTATE":
-                print("[POST_PICKUP_REALIGN] rotate")
-
-                self.active = Rotate(
-                    angle_deg=self.config.post_pickup_rotate_deg
-                )
-
-                self.active.start(
-                    motion_backend=motion_backend
-                )
-
-            elif self.step == "DONE":
-                print("[POST_PICKUP_REALIGN] complete")
-
-                self.status = BehaviorStatus.SUCCEEDED
-                return self.status
-
-        if self.step == "LIFT_CARRY":
-            prim_status = self.active.update()
-
-        else:
-            prim_status = self.active.update(
+            self.active.start(
                 motion_backend=motion_backend
             )
 
-        if prim_status == PrimitiveStatus.RUNNING:
+        st = self.active.update(
+            motion_backend=motion_backend
+        )
+
+        if st == PrimitiveStatus.RUNNING:
             return self.status
 
-        if prim_status == PrimitiveStatus.FAILED:
-            print(
-                f"[POST_PICKUP_REALIGN] "
-                f"{self.step} FAILED"
-            )
+        if st == PrimitiveStatus.FAILED:
+            print("[POST_PICKUP_REALIGN] rotate FAILED")
 
             self.status = BehaviorStatus.FAILED
             return self.status
 
-        # Current step succeeded.
-        if self.step == "REVERSE":
-            print("[POST_PICKUP_REALIGN] reverse complete")
-            self.step = "LIFT_CARRY"
+        print("[POST_PICKUP_REALIGN] rotate complete")
 
-        elif self.step == "LIFT_CARRY":
-            print("[POST_PICKUP_REALIGN] lift carry complete")
-            self.step = "ROTATE"
+        self.step = "DONE"
+        self.status = BehaviorStatus.SUCCEEDED
 
-        elif self.step == "ROTATE":
-            print("[POST_PICKUP_REALIGN] rotate complete")
-            self.step = "DONE"
-
-        self.active = None
         return self.status

@@ -391,12 +391,14 @@ class AutoSR2026Stage1:
                     distance_mm=self.pickup_distance_mm,
                     bearing_deg=self.pickup_bearing_deg,
                     target_is_high=self.pickup_target_is_high,
+                    target_id=self.pending_pickup_id,
                 )
 
             status = self.behavior.update(
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
                 io=controller.io,
+                perception=controller.perception,
             )
 
             if status.name == "SUCCEEDED":

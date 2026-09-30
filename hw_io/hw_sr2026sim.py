@@ -888,6 +888,9 @@ class SR2026SimIO(IOMap):
     # Timing / shutdown
     # --------------------------------------------------
 
+    def time(self) -> float:
+        return float(self.robot.time())
+
     def sleep(self, secs: float) -> None:
         sleep_fn = getattr(self.robot, "sleep", None)
 

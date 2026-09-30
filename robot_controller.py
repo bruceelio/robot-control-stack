@@ -86,6 +86,23 @@ class Controller:
             camera_manager=self.camera_manager,
         )
 
+        # Temporary Testing of Clock
+
+        clock_start = self.io.time()
+        wall_start = time.monotonic()
+
+        self.io.sleep(0.2)
+
+        clock_elapsed = self.io.time() - clock_start
+        wall_elapsed = time.monotonic() - wall_start
+
+        print(
+            f"[IO TIMING] clock={clock_elapsed:.3f}s "
+            f"wall={wall_elapsed:.3f}s"
+        )
+
+        # End temporary testing of clock
+
         if self.camera_manager is not None:
             self.camera_manager.start()
             print("[CAMERA_PROCESS] manager started")
@@ -123,6 +140,13 @@ class Controller:
         self.perception = Perception(self.io)
 
         self.localisation = Localisation()
+
+        # Commanded motion uses the robot's clock for propagation.
+        for provider in self.localisation.providers:
+            set_clock = getattr(provider, "set_clock", None)
+
+            if callable(set_clock):
+                set_clock(self.io.time)
 
         if CONFIG.io.get("usb.match_zone") is not None:
             match_zone = int(
