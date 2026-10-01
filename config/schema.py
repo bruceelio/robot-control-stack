@@ -1,6 +1,7 @@
 # config/schema.py
 
 from dataclasses import dataclass, asdict
+import math
 from pprint import pprint
 
 # --------------------------------------------------
@@ -9,7 +10,6 @@ from pprint import pprint
 
 VALID_ENVIRONMENTS = ("simulation", "real")
 VALID_SURFACES = ("simulation", "tile", "wood", "carpet")
-VALID_WALL_ANGLE_BACKENDS = ("one_ultrasonic_scan", "two_ultrasonics")
 
 
 # --------------------------------------------------
@@ -182,41 +182,6 @@ class Config:
     backoff_scan_timeout_s: float
 
 
-    # --------------------------------------------------
-    # Wall / ultrasonic geometry (navigation)
-    # --------------------------------------------------
-
-    # Which wall-angle backend to use:
-    #   "one_ultrasonic_scan"
-    #   "two_ultrasonics"
-    wall_angle_backend: str
-
-    # ---- Two-ultrasonic configuration ----
-    wall_two_ultrasonic_keys: tuple[str, str]
-    wall_two_ultrasonic_baseline_mm: float
-
-    # ---- One-ultrasonic scan configuration ----
-    wall_one_ultrasonic_key: str
-    wall_scan_angle_1_deg: float
-    wall_scan_angle_2_deg: float
-    wall_scan_samples_per_angle: int
-    wall_scan_settle_time_s: float
-
-    # ---- Ultrasonic sanity limits ----
-    wall_ultrasonic_min_mm: float
-    wall_ultrasonic_max_mm: float
-
-    # ---- Wall angle filtering / stability ----
-    wall_angle_stable_samples: int
-    wall_angle_max_age_s: float
-
-    # ---- Parallel-to-wall control ----
-    wall_parallel_tolerance_deg: float
-    wall_parallel_trigger_deg: float
-    wall_parallel_max_rotate_deg: float
-    wall_parallel_step_deg: float
-    wall_parallel_timeout_s: float
-
     def has_io(self, category: str, name: str) -> bool:
         key = f"{category}.{name}"
 
@@ -253,9 +218,9 @@ RESOLVE_MAP = {
     "encoders": ("computed", "encoders"),
     "encoder_sign": ("profile", "ENCODER_SIGN"),
     "encoder_wheel_diameter_mm": ("profile", "ENCODER_WHEEL_DIAMETER_MM"),
-    "camera_mounts": ("profile", "CAMERA_MOUNTS"),
+    "camera_mounts": ("computed", "camera_mounts"),
     "range_sensor_mounts": ("computed", "range_sensor_mounts"),
-    "gripper_mount": ("profile", "GRIPPER_MOUNT"),
+    "gripper_mount": ("computed", "gripper_mount"),
     "gripper_from_camera": ("computed", "gripper_from_camera"),
     "gripper_open_position": ("profile", "GRIPPER_OPEN_POSITION"),
     "gripper_grab_position": ("profile", "GRIPPER_GRAB_POSITION"),
@@ -434,39 +399,82 @@ RESOLVE_MAP = {
     "backoff_scan_cap_deg": ("profile", "BACKOFF_SCAN_CAP_DEG"),
     "backoff_scan_step_deg": ("profile", "BACKOFF_SCAN_STEP_DEG"),
     "backoff_scan_timeout_s": ("profile", "BACKOFF_SCAN_TIMEOUT_S"),
-
-
-    # --------------------------------------------------
-    # Wall / ultrasonic geometry (navigation)
-    # --------------------------------------------------
-    "wall_angle_backend": ("profile", "WALL_ANGLE_BACKEND"),
-
-    # Two ultrasonics
-    "wall_two_ultrasonic_keys": ("profile", "WALL_TWO_ULTRASONIC_KEYS"),
-    "wall_two_ultrasonic_baseline_mm": ("profile", "WALL_TWO_ULTRASONIC_BASELINE_MM"),
-
-    # One ultrasonic scan
-    "wall_one_ultrasonic_key": ("profile", "WALL_ONE_ULTRASONIC_KEY"),
-    "wall_scan_angle_1_deg": ("profile", "WALL_SCAN_ANGLE_1_DEG"),
-    "wall_scan_angle_2_deg": ("profile", "WALL_SCAN_ANGLE_2_DEG"),
-    "wall_scan_samples_per_angle": ("profile", "WALL_SCAN_SAMPLES_PER_ANGLE"),
-    "wall_scan_settle_time_s": ("profile", "WALL_SCAN_SETTLE_TIME_S"),
-
-    # Ultrasonic sanity
-    "wall_ultrasonic_min_mm": ("profile", "WALL_ULTRASONIC_MIN_MM"),
-    "wall_ultrasonic_max_mm": ("profile", "WALL_ULTRASONIC_MAX_MM"),
-
-    # Filtering / stability
-    "wall_angle_stable_samples": ("profile", "WALL_ANGLE_STABLE_SAMPLES"),
-    "wall_angle_max_age_s": ("profile", "WALL_ANGLE_MAX_AGE_S"),
-
-    # Parallel-to-wall control
-    "wall_parallel_tolerance_deg": ("profile", "WALL_PARALLEL_TOLERANCE_DEG"),
-    "wall_parallel_trigger_deg": ("profile", "WALL_PARALLEL_TRIGGER_DEG"),
-    "wall_parallel_max_rotate_deg": ("profile", "WALL_PARALLEL_MAX_ROTATE_DEG"),
-    "wall_parallel_step_deg": ("profile", "WALL_PARALLEL_STEP_DEG"),
-    "wall_parallel_timeout_s": ("profile", "WALL_PARALLEL_TIMEOUT_S"),
 }
+
+def _mount_to_si(
+    mount: dict,
+) -> dict:
+    """
+    Normalize one source-config mount into canonical runtime units.
+
+    Source configuration:
+        position = millimetres
+        angles   = degrees
+
+    Runtime configuration:
+        position = metres
+        angles   = radians
+
+    Axis conventions are not changed here.
+    """
+
+    return {
+        "x_m": (
+            float(mount["x_mm"])
+            / 1000.0
+        ),
+        "y_m": (
+            float(mount["y_mm"])
+            / 1000.0
+        ),
+        "z_m": (
+            float(
+                mount.get(
+                    "z_mm",
+                    0.0,
+                )
+            )
+            / 1000.0
+        ),
+        "roll_rad": math.radians(
+            float(
+                mount.get(
+                    "roll_deg",
+                    0.0,
+                )
+            )
+        ),
+        "pitch_rad": math.radians(
+            float(
+                mount.get(
+                    "pitch_deg",
+                    0.0,
+                )
+            )
+        ),
+        "yaw_rad": math.radians(
+            float(
+                mount.get(
+                    "yaw_deg",
+                    0.0,
+                )
+            )
+        ),
+    }
+
+
+def _mounts_to_si(
+    mounts: dict,
+) -> dict:
+    """
+    Normalize a named collection of source-config mounts.
+    """
+
+    return {
+        str(name): _mount_to_si(mount)
+        for name, mount in mounts.items()
+    }
+
 
 # --------------------------------------------------
 # Resolver
@@ -480,10 +488,6 @@ def resolve(*, arena, profile, strategy) -> Config:
     if profile.SURFACE not in VALID_SURFACES:
         raise ValueError(f"Invalid SURFACE: {profile.SURFACE}")
 
-    if profile.WALL_ANGLE_BACKEND not in VALID_WALL_ANGLE_BACKENDS:
-        raise ValueError(f"Invalid WALL_ANGLE_BACKEND: {profile.WALL_ANGLE_BACKEND}")
-
-
     # --- derived calibration ---
     rotate_factor = (
         profile.BASE_ROTATE_FACTOR
@@ -495,23 +499,50 @@ def resolve(*, arena, profile, strategy) -> Config:
         * profile.SURFACE_MULTIPLIERS[profile.SURFACE]["drive"]
     )
 
-    camera_mounts = getattr(profile, "CAMERA_MOUNTS")
-    gripper_mount = getattr(profile, "GRIPPER_MOUNT")
+    source_camera_mounts = getattr(
+        profile,
+        "CAMERA_MOUNTS",
+    )
 
-    front_cam = camera_mounts["front"]
+    source_gripper_mount = getattr(
+        profile,
+        "GRIPPER_MOUNT",
+    )
+
+    camera_mounts = _mounts_to_si(
+        source_camera_mounts
+    )
+
+    gripper_mount = _mount_to_si(
+        source_gripper_mount
+    )
+
+    # Retained temporarily for the legacy
+    # gripper_from_camera mm interface.
+    front_cam = source_camera_mounts[
+        "front"
+    ]
 
     computed = {
         "rotate_factor": rotate_factor,
         "drive_factor": drive_factor,
         "encoders": getattr(profile, "ENCODERS", {}),
+        "camera_mounts": camera_mounts,
         "range_sensor_mounts": getattr(
             profile,
             "RANGE_SENSOR_MOUNTS",
             {},
         ),
+        "gripper_mount": gripper_mount,
         "gripper_from_camera": {
-            "x_mm": gripper_mount["x_mm"] - front_cam["x_mm"],
-            "y_mm": gripper_mount["y_mm"] - front_cam["y_mm"],
+            "x_mm": (
+                source_gripper_mount["x_mm"]
+                - front_cam["x_mm"]
+            ),
+            "y_mm": (
+                source_gripper_mount["y_mm"]
+                - front_cam["y_mm"]
+            ),
         },
     }
 

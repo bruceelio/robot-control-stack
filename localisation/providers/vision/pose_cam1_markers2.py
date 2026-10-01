@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from config import CONFIG
 from config.arena import marker_locations
 from localisation.providers.base import PoseObservation, PoseProvider
-from navigation.pose_trilaterate import trilaterate_point
+from localisation.pose_trilaterate import trilaterate_point
 
 
 class Cam1Markers2Provider(PoseProvider):
@@ -122,9 +122,26 @@ class Cam1Markers2Provider(PoseProvider):
 
         cam_mount = CONFIG.camera_mounts["front"]
 
+        camera_x_mm = (
+                float(cam_mount["x_m"])
+                * 1000.0
+        )
+
+        camera_y_mm = (
+                float(cam_mount["y_m"])
+                * 1000.0
+        )
+
         # Approximate correction (assumes small heading error)
-        base_x = float(x) - float(cam_mount["x_mm"])
-        base_y = float(y) - float(cam_mount["y_mm"])
+        base_x = (
+                float(x)
+                - camera_x_mm
+        )
+
+        base_y = (
+                float(y)
+                - camera_y_mm
+        )
 
         heading = None
 
@@ -212,8 +229,8 @@ class Cam1Markers2Provider(PoseProvider):
 
         diagnostics["base_link_correction"] = {
             "camera_key": "front",
-            "x_mm": float(cam_mount["x_mm"]),
-            "y_mm": float(cam_mount["y_mm"]),
+            "x_mm": camera_x_mm,
+            "y_mm": camera_y_mm,
         }
 
         diagnostics["heading_estimate_count"] = len(heading_estimates)

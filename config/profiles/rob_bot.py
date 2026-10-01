@@ -243,10 +243,10 @@ GRIPPER_MOUNT = {
 # Servoing
 # -------------------------
 
-# This robot/camera configuration supports closed-loop visual servoing.
+# This robot/camera configuration supports closed-loop visual visual_servoing.
 SERVOING_ENABLED = True
 
-# Maximum commanded velocities while servoing.
+# Maximum commanded velocities while visual_servoing.
 # Limited to speeds at which perception remains sufficiently reliable.
 
 # Arducam 300.0 works slowly, 500.0 is too fast
@@ -405,53 +405,6 @@ BACKOFF_SCAN_STEP_DEG = 20.0
 BACKOFF_SCAN_TIMEOUT_S = 3.0
 
 
-# -------------------------
-# Wall / Ultrasonic Navigation
-# -------------------------
-
-# Which wall-angle backend to use:
-# "one_ultrasonic_scan"
-# "two_ultrasonics"
-
-WALL_ANGLE_BACKEND = "one_ultrasonic_scan"
-
-
-# Two-ultrasonic configuration
-
-WALL_TWO_ULTRASONIC_KEYS = ("left", "right")
-WALL_TWO_ULTRASONIC_BASELINE_MM = 160.0
-
-
-# One-ultrasonic scan configuration
-
-WALL_ONE_ULTRASONIC_KEY = "front"
-
-WALL_SCAN_ANGLE_1_DEG = -8.0
-WALL_SCAN_ANGLE_2_DEG = 8.0
-WALL_SCAN_SAMPLES_PER_ANGLE = 3
-WALL_SCAN_SETTLE_TIME_S = 0.10
-
-
-# Ultrasonic sanity limits
-
-WALL_ULTRASONIC_MIN_MM = 50.0
-WALL_ULTRASONIC_MAX_MM = 2500.0
-
-
-# Wall-angle filtering / stability
-
-WALL_ANGLE_STABLE_SAMPLES = 2
-WALL_ANGLE_MAX_AGE_S = 0.25
-
-
-# Parallel-to-wall control
-
-WALL_PARALLEL_TOLERANCE_DEG = 3.0
-WALL_PARALLEL_TRIGGER_DEG = 10.0
-
-WALL_PARALLEL_MAX_ROTATE_DEG = 15.0
-WALL_PARALLEL_STEP_DEG = 5.0
-WALL_PARALLEL_TIMEOUT_S = 4.0
 
 GRAB_DISTANCE_MM = 0.0 # not currently in code?
 

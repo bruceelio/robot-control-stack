@@ -6,7 +6,7 @@ from behaviors.base import Behavior, BehaviorStatus
 from primitives.manipulation import Grab, LiftUp, LiftDown
 from primitives.base import PrimitiveStatus
 from skills.select_target import get_closest_target
-from navigation.height_model import HeightModel
+from perception.height_model import HeightModel
 from primitives.motion import Rotate  # Keep for blind 0° rotate if you want, but we’ll mostly use AlignToTarget now
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget

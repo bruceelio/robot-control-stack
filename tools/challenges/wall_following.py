@@ -6,8 +6,8 @@ import time
 import math
 
 from config import CONFIG
-from navigation.providers.wall_geometry_resolver import (
-    WallGeometryResolver,
+from perception.providers.acquisition import (
+    acquire_wall_geometry,
 )
 from navigation.wall_following.models import WallSide
 from skills.navigation.follow_wall import FollowWall
@@ -18,7 +18,7 @@ from behaviors.init_escape import InitEscape
 # Challenge configuration
 # ==================================================
 
-WALL_SIDE = WallSide.RIGHT
+WALL_SIDE = WallSide.LEFT
 
 # None means:
 # latch the first valid side range and try to maintain it.
@@ -123,7 +123,6 @@ def run(controller):
         f"sensor=ultrasonic.{sensor_key}"
     )
 
-    wall_geometry_resolver = WallGeometryResolver()
     follow_wall = None
 
     start_s = time.monotonic()
@@ -136,9 +135,10 @@ def run(controller):
         ):
             now_s = time.monotonic()
 
-            side_mm = _read_range_mm(
-                controller.io,
-                sensor_key,
+            wall_geometry = acquire_wall_geometry(
+                config=controller.config,
+                io=controller.io,
+                wall_side=WALL_SIDE,
             )
 
             front_mm = _read_range_mm(
@@ -169,16 +169,17 @@ def run(controller):
             # No usable side-wall measurement
             # ------------------------------------------
 
-            if side_mm is None:
+            if not wall_geometry.has_distance:
                 if follow_wall is not None:
                     follow_wall.update(
-                        wall=wall_geometry_resolver.update(),
+                        wall=wall_geometry,
                     )
 
                 if now_s >= next_log_s:
                     print(
                         "[WALL_FOLLOW] "
-                        f"{sensor_key}=NONE "
+                        f"side={WALL_SIDE.value} "
+                        "wall_distance=NONE "
                         f"front={front_mm}"
                     )
                     next_log_s = now_s + 0.25
@@ -187,6 +188,10 @@ def run(controller):
                     LOOP_DELAY_S
                 )
                 continue
+
+            side_mm = float(
+                wall_geometry.distance_mm
+            )
 
             # ------------------------------------------
             # Latch initial desired wall distance
@@ -223,9 +228,7 @@ def run(controller):
             # ------------------------------------------
 
             follow_wall.update(
-                wall=wall_geometry_resolver.update(
-                    distance_mm=side_mm,
-                ),
+                wall=wall_geometry,
             )
 
             # ------------------------------------------
@@ -236,9 +239,17 @@ def run(controller):
                 mode = follow_wall.active_mode
                 result = follow_wall.last_result
                 if result is not None:
+                    wall_heading_text = (
+                        "NONE"
+                        if not wall_geometry.has_heading
+                        else (
+                            f"{math.degrees(wall_geometry.heading_rad):+.1f}deg"
+                        )
+                    )
                     print(
                         "[WALL_FOLLOW] "
                         f"{sensor_key}={side_mm:.0f}mm "
+                        f"wall_heading={wall_heading_text} "
                         f"err={result.distance_error_mm:+.0f}mm "
                         f"rate_raw={result.distance_rate_mm_s:+.0f}mm/s "
                         f"rate_filt={result.distance_rate_filtered_mm_s:+.0f}mm/s "

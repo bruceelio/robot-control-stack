@@ -13,11 +13,11 @@ from motion_backends.velocity import VelocityMotionBackend
 
 from config import CONFIG
 
-from navigation.servoing.smooth_control_law import (
+from navigation.control.smooth_control_law import (
     Pose2D,
     SmoothControlParams,
 )
-from navigation.servoing.pose_servo_controller import (
+from navigation.visual_servoing.pose_servo_controller import (
     PoseServoController,
     PoseServoMode,
 )
@@ -89,7 +89,7 @@ def _fmt_mm(value):
 
 def run(controller):
     """
-    Initial pose-servoing data challenge.
+    Initial pose-visual_servoing data challenge.
 
     A short controlled pose-servo motion test is commanded.
 

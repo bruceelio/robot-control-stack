@@ -112,10 +112,21 @@ def _reading_from_sensor(
 
     gripper = config.gripper_mount
 
-    gripper_x_mm = float(gripper["x_mm"])
-    gripper_y_mm = float(gripper["y_mm"])
-    gripper_yaw_rad = math.radians(
-        float(gripper.get("yaw_deg", 0.0))
+    gripper_x_mm = (
+            float(gripper["x_m"])
+            * 1000.0
+    )
+
+    gripper_y_mm = (
+            float(gripper["y_m"])
+            * 1000.0
+    )
+
+    gripper_yaw_rad = float(
+        gripper.get(
+            "yaw_rad",
+            0.0,
+        )
     )
 
     delta_x_mm = hit_x_base_mm - gripper_x_mm

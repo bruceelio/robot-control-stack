@@ -126,10 +126,10 @@ class PIDController:
 
             Examples:
 
-                "servoing.approach_target.linear"
-                "servoing.approach_target.angular"
-                "servoing.return_to_base.linear"
-                "servoing.return_to_base.angular"
+                "visual_servoing.approach_target.linear"
+                "visual_servoing.approach_target.angular"
+                "visual_servoing.return_to_base.linear"
+                "visual_servoing.return_to_base.angular"
                 "lift.position"
 
             Each loop_id maintains completely independent state.

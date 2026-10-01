@@ -5,7 +5,7 @@ from __future__ import annotations
 from calibration import CALIBRATION
 from config import CONFIG
 from motion_backends.motor_output_conditioner import MotorPowerCommand
-from navigation.velocity_arbiter import VelocityCommand
+from navigation.command.velocity_arbiter import VelocityCommand
 
 
 class VelocityDiff2WD:

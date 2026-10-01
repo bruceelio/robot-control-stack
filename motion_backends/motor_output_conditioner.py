@@ -24,7 +24,7 @@ class MotorPowerCommand:
 
     timestamp:
         Optional timestamp propagated from the command source.
-        For example, servoing may propagate the perception timestamp.
+        For example, visual_servoing may propagate the perception timestamp.
     """
 
     front_left: float

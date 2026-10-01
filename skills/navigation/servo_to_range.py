@@ -5,12 +5,12 @@ from __future__ import annotations
 import time
 
 from motion_backends.velocity import VelocityMotionBackend
-from navigation.servoing.range_only_controller import (
+from navigation.control.range_only_controller import (
     RangeOnlyController,
     RangeOnlyParams,
     RangeOnlyResult,
 )
-from navigation.velocity_arbiter import VelocityCommand
+from navigation.command.velocity_arbiter import VelocityCommand
 from primitives.base import Primitive, PrimitiveStatus
 
 

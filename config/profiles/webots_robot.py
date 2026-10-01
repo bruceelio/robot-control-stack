@@ -168,10 +168,10 @@ RANGE_SENSOR_MOUNTS = {
 # Servoing
 # -------------------------
 
-# This robot/camera configuration supports closed-loop visual servoing.
-SERVOING_ENABLED = True
+# This robot/camera configuration supports closed-loop visual visual_servoing.
+SERVOING_ENABLED = False
 
-# Maximum commanded velocities while servoing.
+# Maximum commanded velocities while visual_servoing.
 # Limited to speeds at which perception remains sufficiently reliable.
 SERVOING_LINEAR_MAX_MM_S = 900.0        # 900: camera maintains (could be much higher)
 SERVOING_ANGULAR_MAX_RAD_S = 0.8
@@ -237,8 +237,8 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 350          # typical 250
-INIT_ESCAPE_ROTATE_DEG = -45      # typical 45
+INIT_ESCAPE_DRIVE_MM = 1350          # typical 250
+INIT_ESCAPE_ROTATE_DEG = -45      # typical -45
 
 # -------------------------
 # Approach Target (not optimized)
@@ -332,11 +332,11 @@ VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 BAND_B_MIN_DISTANCE_MM = 200            # minimum drive distance on Band B approach
 
 FINAL_APPROACH_DIRECT_RANGE_MM = 700    # added distance from commit for ranging (> final)
-FINAL_COMMIT_DISTANCE_MM = 300          # from here we go blind (WeBots low servoing - 228)
+FINAL_COMMIT_DISTANCE_MM = 300          # from here we go blind (WeBots low visual_servoing - 228)
 FINAL_APPROACH_BACKUP_MM = 200
 
 FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit for ranging
-FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high servoing - 848
+FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high visual_servoing - 848
 FINAL_APPROACH_MAX_DEGREE_HIGH = 10
 VISIBLE_MAX_AGE_S = 0.35
 FINAL_APPROACH_MARKER_PUSH = 35
@@ -350,62 +350,6 @@ BACKOFF_SCAN_CAP_DEG = 60.0
 BACKOFF_SCAN_STEP_DEG = 20.0
 BACKOFF_SCAN_TIMEOUT_S = 3.0
 
-# --------------------------------------------------
-# Wall / ultrasonic geometry (navigation)
-# --------------------------------------------------
 
-# Which wall-angle backend to use
-#   "one_ultrasonic_scan"
-#   "two_ultrasonics"
-WALL_ANGLE_BACKEND = "one_ultrasonic_scan"
-
-
-# ---- Two-ultrasonic configuration ----
-# Keys must exist in io.ultrasonics()
-WALL_TWO_ULTRASONIC_KEYS = ("left", "right")
-
-# Physical separation between the two ultrasonic sensors (mm)
-WALL_TWO_ULTRASONIC_BASELINE_MM = 160.0
-
-
-# ---- One-ultrasonic scan configuration ----
-# Key must exist in io.ultrasonics()
-WALL_ONE_ULTRASONIC_KEY = "front"
-
-# Relative scan angles (robot frame, degrees)
-WALL_SCAN_ANGLE_1_DEG = -8.0
-WALL_SCAN_ANGLE_2_DEG = 8.0
-
-# Number of samples taken at each scan angle (per side)
-WALL_SCAN_SAMPLES_PER_ANGLE = 3
-
-# Time to wait after rotation before sampling (sensor + dead_reckoning settle)
-WALL_SCAN_SETTLE_TIME_S = 0.10
-
-
-# ---- Ultrasonic sanity limits ----
-WALL_ULTRASONIC_MIN_MM = 50.0
-WALL_ULTRASONIC_MAX_MM = 2500.0
-
-
-# ---- Wall angle filtering / stability ----
-# Require N consecutive valid angle estimates before we "trust" it.
-WALL_ANGLE_STABLE_SAMPLES = 2
-
-# If we haven’t refreshed an estimate in this long, treat it stale.
-WALL_ANGLE_MAX_AGE_S = 0.25
-
-
-# ---- Parallel-to-wall control ----
-# How close (in degrees) we need to be to parallel before success
-WALL_PARALLEL_TOLERANCE_DEG = 3.0
-
-# Start parallel-to-wall action when abs(error) exceeds this
-WALL_PARALLEL_TRIGGER_DEG = 10.0    # typically same as FINAL_APPROACH_MAX_DEGREE_HIGH
-
-# Safety caps on how much we rotate while trying to parallel
-WALL_PARALLEL_MAX_ROTATE_DEG = 15.0
-WALL_PARALLEL_STEP_DEG = 5.0
-WALL_PARALLEL_TIMEOUT_S = 4.0
 
 

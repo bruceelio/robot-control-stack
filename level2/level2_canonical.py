@@ -75,7 +75,7 @@ class Level2:
         Power remains applied until another DRIVE_POWER command
         or DRIVE_STOP is issued.
 
-        Used by continuous-control dead_reckoning such as servoing and
+        Used by continuous-control dead_reckoning such as visual_servoing and
         path tracking.
         """
         left_power = self._clip(left_power)

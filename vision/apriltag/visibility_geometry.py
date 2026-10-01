@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import math
 
 from config.arena_tags import resolve_tag_size_m
+from navigation.geometry.transforms_2d import transform_point_2d
 
 
 @dataclass(frozen=True)
@@ -63,34 +64,22 @@ def _camera_xy_to_base(
     y_m: float,
     mount: dict,
 ) -> tuple[float, float]:
-    mount_x_m = float(mount["x_mm"]) / 1000.0
-    mount_y_m = float(mount["y_mm"]) / 1000.0
-
-    mount_yaw_rad = math.radians(
-        float(
+    return transform_point_2d(
+        point_x=float(x_m),
+        point_y=float(y_m),
+        frame_x=float(
+            mount["x_m"]
+        ),
+        frame_y=float(
+            mount["y_m"]
+        ),
+        frame_yaw_rad=float(
             mount.get(
-                "yaw_deg",
+                "yaw_rad",
                 0.0,
             )
-        )
+        ),
     )
-
-    cos_yaw = math.cos(mount_yaw_rad)
-    sin_yaw = math.sin(mount_yaw_rad)
-
-    base_x_m = (
-        mount_x_m
-        + cos_yaw * x_m
-        - sin_yaw * y_m
-    )
-
-    base_y_m = (
-        mount_y_m
-        + sin_yaw * x_m
-        + cos_yaw * y_m
-    )
-
-    return base_x_m, base_y_m
 
 def _feature_from_xy(
     *,

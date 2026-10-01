@@ -11,25 +11,26 @@ from typing import Optional, Sequence
 from policies.vision_grace_period import VisionGracePeriod
 from motion_backends.velocity import VelocityMotionBackend
 from perception.robot_geometry import (
-    target_from_camera,
-    target_from_base_link,
+    relative_target_from_base_link,
+    relative_target_from_camera,
 )
-from navigation.servoing.servoing_controller import (
-    ServoingController,
-    ServoingStatus,
+from navigation.command.velocity_arbiter import VelocityCommand
+from navigation.control.distance_angle_controller import (
+    DistanceAngleController,
+    DistanceAngleParams,
 )
 from primitives.base import Primitive, PrimitiveStatus
 from config.arena import marker_poses
 
 
-GUIDE_BEARING_OFFSET_DEG = 20.0
+GUIDE_BEARING_OFFSET_RAD = math.radians(20.0)
 
-# Virtual forward error supplied to ServoingController.
+# Virtual forward error supplied to DistanceAngleController.
 # This controls cruise speed; it is NOT tag distance.
 GUIDE_FORWARD_ERROR_MM = 250.0
 GUIDE_STOP_DISTANCE_MM = 0.0
 
-FINAL_GUIDE_BEARING_DEG = 0.0
+FINAL_GUIDE_BEARING_RAD = 0.0
 FINAL_GUIDE_STOP_DISTANCE_MM = 762.5
 
 # Maximum absolute arena approach angle for direct final-guide servo.
@@ -64,8 +65,9 @@ class ReturnToBaseServo(Primitive):
     of the camera so that the camera looks ahead toward the
     next tag.
 
-    ServoingController owns the actual closed-loop velocity
-    calculation. This skill owns guide-tag selection and handoff.
+    DistanceAngleController owns the generic closed-loop
+    distance-angle calculation. This skill owns guide-tag
+    selection, freshness policy, command construction, and handoff.
     """
 
     FAILURE_PERCEPTION = "perception"
@@ -134,9 +136,65 @@ class ReturnToBaseServo(Primitive):
             )
         )
 
-        self.controller = ServoingController(
-            application="return_to_base",
-            config=self.config,
+        self.controller = DistanceAngleController(
+            controller_id="return_to_base",
+            params=DistanceAngleParams(
+                linear_kp=float(
+                    self.config.return_to_base_servo_linear_kp
+                ),
+                linear_ki=float(
+                    self.config.return_to_base_servo_linear_ki
+                ),
+                linear_kd=float(
+                    self.config.return_to_base_servo_linear_kd
+                ),
+
+                angular_kp=float(
+                    self.config.return_to_base_servo_angular_kp
+                ),
+                angular_ki=float(
+                    self.config.return_to_base_servo_angular_ki
+                ),
+                angular_kd=float(
+                    self.config.return_to_base_servo_angular_kd
+                ),
+
+                linear_max_mps=(
+                        float(
+                            self.config.return_to_base_servo_linear_max_mm_s
+                        )
+                        / 1000.0
+                ),
+                angular_max_rad_s=float(
+                    self.config.return_to_base_servo_angular_max_rad_s
+                ),
+
+                angle_drive_slowdown_start_rad=math.radians(
+                    float(
+                        self.config
+                        .return_to_base_servo_drive_slowdown_start_deg
+                    )
+                ),
+
+                angle_drive_cutoff_rad=math.radians(
+                    float(
+                        self.config
+                        .return_to_base_servo_drive_cutoff_deg
+                    )
+                ),
+
+                distance_tolerance_m=(
+                        float(
+                            self.config
+                            .return_to_base_servo_stop_tolerance_mm
+                        )
+                        / 1000.0
+                ),
+                derivative_mode=(
+                    self.config
+                    .return_to_base_servo_derivative_mode
+                ),
+            ),
         )
 
         self.velocity_backend = None
@@ -145,7 +203,7 @@ class ReturnToBaseServo(Primitive):
         self.selected_route_index = None
         self.guide_ids = ()
         self.active_index = 0
-        self.desired_bearing_deg = 0.0
+        self.desired_bearing_rad = 0.0
 
         self.failure_reason: Optional[str] = None
         self.terminal_target_id: Optional[int] = None
@@ -219,13 +277,23 @@ class ReturnToBaseServo(Primitive):
                 approach_deg=None,
             )
 
-        distance_mm, _ = target_from_base_link(
+        base_target = relative_target_from_base_link(
             observation=observation,
             config=self.config,
         )
 
-        _, camera_bearing_deg = target_from_camera(
+        camera_target = relative_target_from_camera(
             observation=observation,
+        )
+
+        # FinalGuideState is still a legacy external interface.
+        distance_mm = (
+                base_target.distance_m
+                * 1000.0
+        )
+
+        camera_bearing_deg = -math.degrees(
+            camera_target.bearing_rad
         )
 
         approach_deg = (
@@ -261,7 +329,7 @@ class ReturnToBaseServo(Primitive):
         self.selected_route_index = None
         self.guide_ids = ()
         self.active_index = 0
-        self.desired_bearing_deg = 0.0
+        self.desired_bearing_rad = 0.0
         self.failure_reason = None
         self.terminal_target_id = None
         self.terminal_target_kind = None
@@ -405,38 +473,36 @@ class ReturnToBaseServo(Primitive):
         Completion uses the LOW pickup commit distance.
         """
 
-        distance_mm = float(
-            observation["distance"]
+        target_geometry = relative_target_from_camera(
+            observation=observation,
         )
 
-        bearing_deg = float(
-            observation["bearing"]
+        distance_m = (
+            target_geometry.distance_m
+        )
+
+        bearing_rad = (
+            target_geometry.bearing_rad
+        )
+
+        # Legacy values retained for diagnostics only.
+        distance_mm = (
+                distance_m
+                * 1000.0
+        )
+
+        bearing_deg = -math.degrees(
+            bearing_rad
         )
 
         timestamp = float(
             observation.get("last_seen", 0.0)
         )
 
-        stop_distance_mm = float(
-            self.config.final_commit_distance_mm
-        )
-
-        result = self.controller.update(
-            distance_mm=distance_mm,
-            target_angle_rad=math.radians(
-                bearing_deg
-            ),
-            target_angle_setpoint_rad=0.0,
-            timestamp=timestamp,
-            stop_distance_mm=stop_distance_mm,
-            now=now,
-        )
-
-        self.velocity_backend.update(
-            result.command
-        )
-
-        if result.status == ServoingStatus.FAILED_STALE:
+        if (
+            now - timestamp
+            > float(self.config.visible_max_age_s)
+        ):
             self.velocity_backend.stop()
 
             print(
@@ -447,7 +513,38 @@ class ReturnToBaseServo(Primitive):
             self.status = PrimitiveStatus.RUNNING
             return self.status
 
-        if result.status == ServoingStatus.SUCCESS:
+        stop_distance_m = (
+                float(
+                    self.config.final_commit_distance_mm
+                )
+                / 1000.0
+        )
+
+        stop_distance_mm = (
+            stop_distance_m
+            * 1000.0
+        )
+
+        result = self.controller.update(
+            distance_m=distance_m,
+            target_distance_m=stop_distance_m,
+            angle_rad=bearing_rad,
+            target_angle_rad=0.0,
+            timestamp=timestamp,
+        )
+
+        command = VelocityCommand(
+            linear_x_mps=result.linear_mps,
+            angular_z_rps=result.angular_rps,
+            lateral_y_mps=0.0,
+            timestamp=timestamp,
+        )
+
+        self.velocity_backend.update(
+            command
+        )
+
+        if result.distance_reached:
             self.velocity_backend.stop()
 
             print(
@@ -467,8 +564,8 @@ class ReturnToBaseServo(Primitive):
             f"distance={distance_mm:.0f}mm "
             f"stop={stop_distance_mm:.0f}mm "
             f"bearing={bearing_deg:+.1f}deg "
-            f"vx={result.command.linear_x_mps:.3f}m/s "
-            f"wz={result.command.angular_z_rps:+.3f}rad/s"
+            f"vx={command.linear_x_mps:.3f}m/s "
+            f"wz={command.angular_z_rps:+.3f}rad/s"
         )
 
         self.status = PrimitiveStatus.RUNNING
@@ -609,12 +706,12 @@ class ReturnToBaseServo(Primitive):
             self.active_index = visible_index
 
             if route["guide_side"] == "left":
-                self.desired_bearing_deg = (
-                    -GUIDE_BEARING_OFFSET_DEG
+                self.desired_bearing_rad = (
+                    +GUIDE_BEARING_OFFSET_RAD
                 )
             else:
-                self.desired_bearing_deg = (
-                    +GUIDE_BEARING_OFFSET_DEG
+                self.desired_bearing_rad = (
+                    -GUIDE_BEARING_OFFSET_RAD
                 )
 
             print(
@@ -623,7 +720,7 @@ class ReturnToBaseServo(Primitive):
                 f"side={route['guide_side']} "
                 f"guide={self.active_guide_id} "
                 f"target="
-                f"{self.desired_bearing_deg:+.1f}deg"
+                f"{math.degrees(self.desired_bearing_rad):+.1f}deg"
             )
 
         # --------------------------------------------------
@@ -795,20 +892,42 @@ class ReturnToBaseServo(Primitive):
 
 
         # --------------------------------------------------
-        # Convert navigation policy into servoing error
+        # Convert navigation policy into visual_servoing error
         # --------------------------------------------------
 
-        camera_distance_mm, camera_bearing_deg = (
-            target_from_camera(
-                observation=observation,
-            )
+        camera_target = relative_target_from_camera(
+            observation=observation,
         )
 
-        guide_distance_mm, observed_bearing_deg = (
-            target_from_base_link(
-                observation=observation,
-                config=self.config,
-            )
+        guide_target = relative_target_from_base_link(
+            observation=observation,
+            config=self.config,
+        )
+
+        guide_distance_m = (
+            guide_target.distance_m
+        )
+
+        camera_bearing_rad = (
+            camera_target.bearing_rad
+        )
+
+        observed_bearing_rad = (
+            guide_target.bearing_rad
+        )
+
+        # Legacy display/safety values.
+        guide_distance_mm = (
+                guide_distance_m
+                * 1000.0
+        )
+
+        camera_bearing_deg = math.degrees(
+            camera_bearing_rad
+        )
+
+        observed_bearing_deg = math.degrees(
+            observed_bearing_rad
         )
 
         # --------------------------------------------------
@@ -849,67 +968,63 @@ class ReturnToBaseServo(Primitive):
                 self.status = PrimitiveStatus.FAILED
                 return self.status
 
-
-
-
         if guide_id == self.final_guide_id:
-            # Final approach:
-            #
-            # Once sufficiently frontal to the final guide,
-            # centre it in the camera and use its real range
-            # to drive to the delivery distance.
-            distance_mm = guide_distance_mm
+            distance_m = guide_distance_m
 
-            stop_distance_mm = (
-                FINAL_GUIDE_STOP_DISTANCE_MM
+            stop_distance_m = (
+                    FINAL_GUIDE_STOP_DISTANCE_MM
+                    / 1000.0
             )
 
-            steering_bearing_deg = camera_bearing_deg
-            target_bearing_deg = FINAL_GUIDE_BEARING_DEG
+            steering_bearing_rad = (
+                camera_bearing_rad
+            )
+
+            target_bearing_rad = (
+                FINAL_GUIDE_BEARING_RAD
+            )
 
         else:
-            # Intermediate guides retain their existing base_link
-            # steering policy.
-            distance_mm = GUIDE_FORWARD_ERROR_MM
-            stop_distance_mm = GUIDE_STOP_DISTANCE_MM
+            distance_m = (
+                    GUIDE_FORWARD_ERROR_MM
+                    / 1000.0
+            )
 
-            steering_bearing_deg = observed_bearing_deg
-            target_bearing_deg = self.desired_bearing_deg
+            stop_distance_m = (
+                    GUIDE_STOP_DISTANCE_MM
+                    / 1000.0
+            )
 
-        bearing_error_deg = (
-                steering_bearing_deg
-                - target_bearing_deg
+            steering_bearing_rad = (
+                observed_bearing_rad
+            )
+
+            target_bearing_rad = (
+                self.desired_bearing_rad
+            )
+
+        distance_mm = (
+            distance_m * 1000.0
         )
 
-        result = self.controller.update(
-            distance_mm=distance_mm,
-
-            target_angle_rad=math.radians(
-                steering_bearing_deg
-            ),
-
-            target_angle_setpoint_rad=math.radians(
-                target_bearing_deg
-            ),
-
-            timestamp=float(
-                observation_timestamp
-            ),
-
-            stop_distance_mm=stop_distance_mm,
-
-            now=now,
+        stop_distance_mm = (
+            stop_distance_m * 1000.0
         )
 
-        # --------------------------------------------------
-        # Execute ServoingController output
-        # --------------------------------------------------
-
-        self.velocity_backend.update(
-            result.command
+        target_bearing_deg = math.degrees(
+            target_bearing_rad
         )
 
-        if result.status == ServoingStatus.FAILED_STALE:
+        bearing_error_deg = math.degrees(
+            steering_bearing_rad
+            - target_bearing_rad
+        )
+
+
+        if (
+            now - float(observation_timestamp)
+            > float(self.config.visible_max_age_s)
+        ):
             self.velocity_backend.stop()
 
             print(
@@ -921,8 +1036,35 @@ class ReturnToBaseServo(Primitive):
             self.status = PrimitiveStatus.RUNNING
             return self.status
 
+        result = self.controller.update(
+            distance_m=distance_m,
+            target_distance_m=stop_distance_m,
+            angle_rad=steering_bearing_rad,
+            target_angle_rad=target_bearing_rad,
+            timestamp=float(
+                observation_timestamp
+            ),
+        )
+
+        command = VelocityCommand(
+            linear_x_mps=result.linear_mps,
+            angular_z_rps=result.angular_rps,
+            lateral_y_mps=0.0,
+            timestamp=float(
+                observation_timestamp
+            ),
+        )
+
+        # --------------------------------------------------
+        # Execute DistanceAngleController output
+        # --------------------------------------------------
+
+        self.velocity_backend.update(
+            command
+        )
+
         if (
-                result.status == ServoingStatus.SUCCESS
+                result.distance_reached
                 and guide_id == self.final_guide_id
         ):
             self.velocity_backend.stop()
@@ -948,8 +1090,8 @@ class ReturnToBaseServo(Primitive):
                 f"base_bearing={observed_bearing_deg:+.1f}deg "
                 f"target={target_bearing_deg:+.1f}deg "
                 f"error={bearing_error_deg:+.1f}deg "
-                f"vx={result.command.linear_x_mps:.3f}m/s "
-                f"wz={result.command.angular_z_rps:+.3f}rad/s"
+                f"vx={command.linear_x_mps:.3f}m/s "
+                f"wz={command.angular_z_rps:+.3f}rad/s"
             )
 
 
@@ -967,8 +1109,8 @@ class ReturnToBaseServo(Primitive):
                 f"base_bearing={observed_bearing_deg:+.1f}deg "
                 f"target={target_bearing_deg:+.1f}deg "
                 f"error={bearing_error_deg:+.1f}deg "
-                f"vx={result.command.linear_x_mps:.3f}m/s "
-                f"wz={result.command.angular_z_rps:+.3f}rad/s"
+                f"vx={command.linear_x_mps:.3f}m/s "
+                f"wz={command.angular_z_rps:+.3f}rad/s"
             )
 
         self.status = PrimitiveStatus.RUNNING

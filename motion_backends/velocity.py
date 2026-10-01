@@ -10,7 +10,7 @@ from motion_backends.motor_output_conditioner import (
 )
 from motion_backends.vel_diff_2wd import VelocityDiff2WD
 
-from navigation.velocity_arbiter import VelocityCommand
+from navigation.command.velocity_arbiter import VelocityCommand
 
 
 class VelocityMotionBackend:

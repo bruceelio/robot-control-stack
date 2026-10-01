@@ -1,4 +1,4 @@
-# tools/challenges/servoing.py
+# tools/challenges/visual_servoing.py
 
 from __future__ import annotations
 
@@ -10,16 +10,15 @@ from config import CONFIG
 from perception import sense
 from perception.robot_geometry import target_from_gripper
 
-from navigation.servoing.servoing_controller import (
+from navigation.control.distance_angle_controller import (
     ServoingController,
     ServoingStatus,
 )
 
 from behaviors.init_escape import InitEscape
 from skills.perception.select_target import SelectTarget
-from skills.navigation.approach_target import _marker_elevation
 
-from navigation.velocity_arbiter import (
+from navigation.command.velocity_arbiter import (
     VelocityArbiter,
     VelocitySource,
 )
@@ -39,7 +38,7 @@ STOP_DISTANCE_MM = 0.0
 # Small delay between control updates.
 LOOP_DELAY_S = 0.02
 
-# Ultrasonic diagnostics are deliberately slower than the servoing loop.
+# Ultrasonic diagnostics are deliberately slower than the visual_servoing loop.
 # Reading all four sensors every control cycle could disturb control timing.
 ULTRASONIC_LOG_INTERVAL_S = 0.25
 
@@ -123,7 +122,7 @@ def run(controller):
 
         if status.name == "FAILED":
             raise RuntimeError(
-                "InitEscape failed during servoing challenge"
+                "InitEscape failed during visual_servoing challenge"
             )
 
         controller.io.sleep(LOOP_DELAY_S)
@@ -345,7 +344,7 @@ def run(controller):
             if velocity_command is None:
                 raise RuntimeError(
                     "VelocityArbiter returned no command "
-                    "for servoing."
+                    "for visual_servoing."
                 )
 
             # --------------------------------------------------

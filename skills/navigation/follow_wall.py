@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 
 from motion_backends.velocity import VelocityMotionBackend
-from navigation.velocity_arbiter import VelocityCommand
-from navigation.wall_geometry import WallGeometry
+from navigation.command.velocity_arbiter import VelocityCommand
+from navigation.wall_geometry.models import WallGeometry
 from navigation.wall_following.models import (
     WallFollowResult,
     WallSide,

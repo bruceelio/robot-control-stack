@@ -19,6 +19,10 @@ from skills.perception.select_target import SelectTarget
 from config import CONFIG
 from config.strategy import STARTUP_SCRIPT, StartupScript
 
+from navigation.wall_geometry import (
+    acquire_wall_geometry,
+)
+
 
 class AutoSR2026Stage1:
     """
@@ -523,11 +527,26 @@ class AutoSR2026Stage1:
                     match_zone=controller.io.usb["match_zone"].value,
                 )
 
+            wall_geometry = None
+
+            wall_side = getattr(
+                self.behavior,
+                "arrival_side",
+                None,
+            )
+
+            if wall_side is not None:
+                wall_geometry = acquire_wall_geometry(
+                    config=CONFIG,
+                    io=controller.io,
+                    wall_side=wall_side,
+                )
             status = self.behavior.update(
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
                 io=controller.io,
                 localisation=controller.localisation,
+                wall_geometry=wall_geometry,
                 perception=controller.perception,
                 delivered_ids=self.delivered_ids,
                 arena_observations=controller.latest_arena_observations,
@@ -535,6 +554,21 @@ class AutoSR2026Stage1:
                     controller.latest_arena_observation_timestamp
                 ),
             )
+
+            wall_geometry = None
+
+            wall_side = getattr(
+                self.behavior,
+                "arrival_side",
+                None,
+            )
+
+            if wall_side is not None:
+                wall_geometry = acquire_wall_geometry(
+                    config=CONFIG,
+                    io=controller.io,
+                    wall_side=wall_side,
+                )
 
             if status.name == "SUCCEEDED":
                 self.return_arrival_side = getattr(

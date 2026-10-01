@@ -5,11 +5,11 @@ from __future__ import annotations
 import math
 import time
 
-from navigation.servoing.servoing_controller import (
+from navigation.control.distance_angle_controller import (
     ServoingController,
     ServoingStatus,
 )
-from navigation.velocity_arbiter import (
+from navigation.command.velocity_arbiter import (
     VelocityArbiter,
     VelocitySource,
 )

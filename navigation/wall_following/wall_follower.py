@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from enum import Enum
 
-from navigation.wall_geometry import WallGeometry
+from navigation.wall_geometry.models import WallGeometry
 from navigation.wall_following.distance_only import (
     DistanceOnlyWallFollower,
 )

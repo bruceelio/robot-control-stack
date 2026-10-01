@@ -405,7 +405,7 @@ class SelectTarget:
         # Current default approach policy.
         #
         # Future target-selection logic may choose POSE_BEARING
-        # when target geometry requires it and pose servoing is
+        # when target geometry requires it and pose visual_servoing is
         # both available and usable.
         self.selected_servo_method = (
             ApproachServoMethod.TARGET_BEARING

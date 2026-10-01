@@ -4,7 +4,7 @@ from perception.robot_geometry import (
     gripper_standoff_pose_from_face,
 )
 
-from navigation.servoing.smooth_control_law import (
+from navigation.control.smooth_control_law import (
     Pose2D,
     SmoothControlLaw,
     SmoothControlParams,

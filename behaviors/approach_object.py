@@ -4,7 +4,7 @@ import time
 import inspect
 
 from behaviors.base import Behavior, BehaviorStatus
-from navigation.height_model import HeightModel
+from perception.height_model import HeightModel
 from policies.vision_grace_period import VisionGracePeriod
 from primitives.base import PrimitiveStatus
 
@@ -554,7 +554,7 @@ class ApproachObject(Behavior):
         # --------------------------------------------------
         #
         # Stage 2 depends on usable live perception.
-        # If that becomes unavailable, stop continuous servoing
+        # If that becomes unavailable, stop continuous visual_servoing
         # and fall back to the proven Stage 1 approach.
         #
         # Do not fall back for a height-classification safety failure.

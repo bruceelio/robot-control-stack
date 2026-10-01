@@ -9,7 +9,7 @@ from behaviors.base import Behavior, BehaviorStatus
 from calibration import CALIBRATION
 from config.arena import marker_poses, return_guide_routes
 from navigation.wall_following.models import WallSide
-from navigation.wall_geometry import WallGeometry
+from navigation.wall_geometry.models import WallGeometry
 from primitives.base import PrimitiveStatus
 from primitives.motion import Drive, Rotate
 from skills.navigation.follow_wall import FollowWall
@@ -72,32 +72,42 @@ MODE_WALL_FOLLOW = "wall_follow"
 MODE_FINAL_DRIVE = "final_drive"
 
 
-def _read_side_range_mm(
-    io,
+def _geometry_parallel_error_deg(
+    *,
+    wall: WallGeometry,
     wall_side: WallSide,
 ) -> float | None:
-    """Read one positive semantic side range in millimetres."""
+    """
+    Return wall-parallel error from semantic robot-relative wall geometry.
 
-    key = wall_side.value
+    WallGeometry.heading_rad is the direction from base_link toward the
+    wall normal:
 
-    try:
-        value = io.ultrasonic[key]
-    except Exception:
+        +90 deg -> wall on left
+        -90 deg -> wall on right
+    """
+
+    if not wall.has_heading:
         return None
 
-    if value is None:
-        return None
+    desired_normal_rad = (
+        math.pi / 2.0
+        if wall_side == WallSide.LEFT
+        else -math.pi / 2.0
+    )
 
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        return None
+    error_rad = math.atan2(
+        math.sin(
+            float(wall.heading_rad)
+            - desired_normal_rad
+        ),
+        math.cos(
+            float(wall.heading_rad)
+            - desired_normal_rad
+        ),
+    )
 
-    # Current simulation convention: zero means no return.
-    if value <= 0.0:
-        return None
-
-    return value
+    return abs(math.degrees(error_rad))
 
 
 def _wall_parallel_error_deg(
@@ -223,7 +233,7 @@ class ReturnToBase(Behavior):
     arrival_side is latched from the selected return route and is
     preserved across every navigation handoff for DropoffObject.
 
-    Stage 1 remains the existing dead-reckoning fallback when servoing
+    Stage 1 remains the existing dead-reckoning fallback when visual_servoing
     is disabled.
 
     This behavior does not release the carried object.
@@ -694,12 +704,12 @@ class ReturnToBase(Behavior):
         )
 
     def _start_wall_follow(
-        self,
-        *,
-        lvl2,
-        side_mm: float,
-        final_approach_deg: float,
-        parallel_error_deg: float,
+            self,
+            *,
+            lvl2,
+            wall: WallGeometry,
+            final_approach_deg: float,
+            parallel_error_deg: float,
     ):
         if self.arrival_side is None:
             raise RuntimeError(
@@ -711,8 +721,13 @@ class ReturnToBase(Behavior):
             self.arrival_side
         )
 
+        if not wall.has_distance:
+            raise RuntimeError(
+                "Cannot start FollowWall without wall distance"
+            )
+
         self._latched_wall_distance_mm = float(
-            side_mm
+            wall.distance_mm
         )
 
         self.return_servo.stop()
@@ -742,7 +757,7 @@ class ReturnToBase(Behavior):
             f"direct_max="
             f"{FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG:.1f}deg "
             f"parallel_error={parallel_error_deg:.1f}deg "
-            f"side_range={side_mm:.0f}mm "
+            f"wall_distance={wall.distance_mm:.0f}mm "
             f"desired={self._latched_wall_distance_mm:.0f}mm"
         )
 
@@ -750,9 +765,7 @@ class ReturnToBase(Behavior):
         # latched as the desired distance, so initial distance error
         # is approximately zero.
         self.follow_wall.update(
-            wall=WallGeometry(
-                distance_mm=side_mm,
-            ),
+            wall=wall,
         )
 
     def _resume_return_servo(self):
@@ -857,7 +870,7 @@ class ReturnToBase(Behavior):
         observation_timestamp,
         perception,
         delivered_ids,
-        io,
+        wall_geometry,
         robot_pose,
     ):
         if not self._mode_started:
@@ -982,31 +995,41 @@ class ReturnToBase(Behavior):
             self.arrival_side
         )
 
-        side_mm = _read_side_range_mm(
-            io,
-            wall_side,
-        )
-
-        if side_mm is None:
+        if (
+                wall_geometry is None
+                or not wall_geometry.has_distance
+        ):
             return self.status
 
+        wall_distance_mm = float(
+            wall_geometry.distance_mm
+        )
+
         wall_distance_ready = (
-            WALL_FOLLOW_ENTRY_MIN_DISTANCE_MM
-            <= side_mm
-            <= WALL_FOLLOW_ENTRY_MAX_DISTANCE_MM
+                WALL_FOLLOW_ENTRY_MIN_DISTANCE_MM
+                <= wall_distance_mm
+                <= WALL_FOLLOW_ENTRY_MAX_DISTANCE_MM
         )
 
         parallel_error_deg = (
-            _wall_parallel_error_deg(
-                robot_pose=robot_pose,
-                wall_guide_id=(
-                    self.return_servo.active_guide_id
-                ),
-                arena_marker_poses=(
-                    self._arena_marker_poses
-                ),
+            _geometry_parallel_error_deg(
+                wall=wall_geometry,
+                wall_side=wall_side,
             )
         )
+
+        if parallel_error_deg is None:
+            parallel_error_deg = (
+                _wall_parallel_error_deg(
+                    robot_pose=robot_pose,
+                    wall_guide_id=(
+                        self.return_servo.active_guide_id
+                    ),
+                    arena_marker_poses=(
+                        self._arena_marker_poses
+                    ),
+                )
+            )
 
         wall_heading_ready = (
             parallel_error_deg is not None
@@ -1022,7 +1045,7 @@ class ReturnToBase(Behavior):
 
         self._start_wall_follow(
             lvl2=lvl2,
-            side_mm=side_mm,
+            wall=wall_geometry,
             final_approach_deg=(
                 final_state.approach_deg
             ),
@@ -1286,12 +1309,12 @@ class ReturnToBase(Behavior):
         return self.status
 
     def _update_wall_follow(
-        self,
-        *,
-        arena_observations,
-        io,
-        robot_pose,
-        motion_backend,
+            self,
+            *,
+            arena_observations,
+            wall_geometry,
+            robot_pose,
+            motion_backend,
     ):
         final_state = self.return_servo.observe_final_guide(
             arena_observations=arena_observations,
@@ -1390,28 +1413,13 @@ class ReturnToBase(Behavior):
         # Continue wall following
         # --------------------------------------------------
 
-        wall_side = WallSide(
-            self.arrival_side
+        self.follow_wall.update(
+            wall=(
+                wall_geometry
+                if wall_geometry is not None
+                else WallGeometry()
+            ),
         )
-
-        side_mm = _read_side_range_mm(
-            io,
-            wall_side,
-        )
-
-        if side_mm is None:
-            # FollowWall stops safely when no usable wall geometry
-            # is supplied, but remains active and may recover when
-            # the side range returns.
-            self.follow_wall.update(
-                wall=WallGeometry(),
-            )
-        else:
-            self.follow_wall.update(
-                wall=WallGeometry(
-                    distance_mm=side_mm,
-                ),
-            )
 
         return self.status
 
@@ -1459,6 +1467,7 @@ class ReturnToBase(Behavior):
         motion_backend,
         io,
         localisation,
+        wall_geometry: WallGeometry | None = None,
         arena_observations=None,
         observation_timestamp=None,
         perception=None,
@@ -1498,7 +1507,7 @@ class ReturnToBase(Behavior):
                 ),
                 perception=perception,
                 delivered_ids=delivered_ids,
-                io=io,
+                wall_geometry=wall_geometry,
                 robot_pose=robot_pose,
             )
 
@@ -1532,7 +1541,7 @@ class ReturnToBase(Behavior):
         if self._mode == MODE_WALL_FOLLOW:
             return self._update_wall_follow(
                 arena_observations=arena_observations,
-                io=io,
+                wall_geometry=wall_geometry,
                 robot_pose=robot_pose,
                 motion_backend=motion_backend,
             )

@@ -49,7 +49,7 @@ ROTATE_B_LARGE = 0.0
 # Independent of timed-drive SHORT/LONG settings.
 #
 # These initial points are seeded from the previous timed-drive
-# calibration and preserve existing velocity/servoing behaviour.
+# calibration and preserve existing velocity/visual_servoing behaviour.
 # Replace/add points here as measured steady-state velocity data
 # becomes available.
 DRIVE_VELOCITY_CURVE = (

@@ -7,14 +7,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
+from skills.navigation.dog_leg_side_step import DogLegSideStep, compute_dog_leg_plan
 
 from primitives.base import Primitive, PrimitiveStatus
 from primitives.motion import Drive, Rotate
 
 from skills.navigation.align_to_target import AlignToTarget
-from skills.navigation.parallel_to_wall import ParallelToWall  # NEW
-from perception.robot_geometry import target_from_gripper
+from perception.robot_geometry import relative_target_from_gripper
 from skills.perception.reacquire_target import ReacquireTarget
 from skills.perception.select_target_utils import get_closest_target
 from skills.perception.marker_elevation import _marker_elevation
@@ -27,6 +26,37 @@ def _cfg(config: Any, name: str, fallback: Any) -> Any:
     """Read config field if present; else fallback."""
     return getattr(config, name, fallback)
 
+def _stage1_target_geometry(
+    *,
+    observation: dict,
+    config,
+) -> tuple[float, float]:
+    """
+    Return gripper-relative target geometry in the historical
+    Stage-1 control units/convention.
+
+    Stage 1 uses:
+        distance = millimetres
+        +bearing = right
+        bearing  = degrees
+
+    robot_geometry uses canonical:
+        distance = metres
+        +bearing = left / CCW
+        bearing  = radians
+    """
+
+    target = relative_target_from_gripper(
+        observation=observation,
+        config=config,
+    )
+
+    return (
+        target.distance_m * 1000.0,
+        -math.degrees(
+            target.bearing_rad
+        ),
+    )
 
 def _debug_dump_visible_vertical_angles(
     perception,
@@ -121,7 +151,7 @@ class ApproachTarget(Primitive):
 
         # Approach loop state
         self.active_primitive: Optional[Primitive] = None
-        self.last_action: Optional[str] = None  # "rotate" / "drive" / "reacquire" / "parallel" / "dogleg"
+        self.last_action: Optional[str] = None  # "rotate" / "drive" / "reacquire" / "dogleg"
         self.settle_until: Optional[float] = None
 
         self.cached_distance: Optional[float] = None
@@ -144,8 +174,6 @@ class ApproachTarget(Primitive):
         # lock onto initially chosen marker id (if provided)
         self.target_id: Optional[int] = None
 
-        # Parallel-to-wall helper state
-        self._parallel_skill: Optional[ParallelToWall] = None
 
         self._dogleg_cooldown_until: Optional[float] = None
 
@@ -229,7 +257,7 @@ class ApproachTarget(Primitive):
             self.target_id = int(seed_target.get("id")) if seed_target else None
 
         if seed_target is not None:
-            distance, bearing = target_from_gripper(
+            distance, bearing = _stage1_target_geometry(
                 observation=seed_target,
                 config=self.config,
             )
@@ -242,7 +270,7 @@ class ApproachTarget(Primitive):
             self.last_seen_distance = None
             self.last_seen_bearing = None
 
-        self._parallel_skill = None
+
         self._require_fresh_obs_after_settle = False
         self._fresh_obs_wait_started = None
 
@@ -286,9 +314,10 @@ class ApproachTarget(Primitive):
             prim = self.active_primitive
 
             if isinstance(prim, ReacquireTarget):
-                prim_status = prim.update(motion_backend=motion_backend, perception=perception)
-            elif isinstance(prim, ParallelToWall):
-                prim_status = prim.update(motion_backend=motion_backend, perception=perception)
+                prim_status = prim.update(
+                    motion_backend=motion_backend,
+                    perception=perception,
+                )
             elif isinstance(prim, (Drive, Rotate)):
                 prim_status = prim.update(motion_backend=motion_backend)
             else:
@@ -304,13 +333,6 @@ class ApproachTarget(Primitive):
                     self.last_action = None
                     return PrimitiveStatus.RUNNING
 
-                if self.last_action == "parallel":
-                    self.last_action = None
-                    self._parallel_skill = None
-                    self.cached_distance = None
-                    self.cached_bearing = None
-                    self.bearing_consumed = False
-                    return PrimitiveStatus.RUNNING
 
                 if self.last_action == "dogleg":
                     self.last_action = None
@@ -373,14 +395,14 @@ class ApproachTarget(Primitive):
                     self.bearing_consumed = False
                     self.last_drive_step = None
                     self.settle_until = None
-                    self._parallel_skill = None
+
                     return PrimitiveStatus.FAILED
 
                 self.active_primitive = None
                 self.last_action = None
                 self.cached_distance = None
                 self.cached_bearing = None
-                self._parallel_skill = None
+
                 return PrimitiveStatus.FAILED
 
             return PrimitiveStatus.RUNNING
@@ -504,7 +526,7 @@ class ApproachTarget(Primitive):
         mode, commit, direct = self._geometry_params()
 
         if target is not None:
-            distance, bearing = target_from_gripper(
+            distance, bearing = _stage1_target_geometry(
                 observation=target,
                 config=self.config,
             )
@@ -663,32 +685,7 @@ class ApproachTarget(Primitive):
                     self._dogleg_cooldown_until = now + DOGLEG_COOLDOWN_S
                     return PrimitiveStatus.RUNNING
 
-        # --------------------------------------------------
-        # HIGH policy: if too angled in A/B, run ParallelToWall.
-        # --------------------------------------------------
-        if mode == "HIGH" and abs(bearing) > float(self.t.final_approach_max_degree_high):
-            band_now = self._band_label(distance, commit, direct)
 
-            if band_now in ("A", "B"):
-                print(
-                    "[APPROACH][HIGH_POLICY] "
-                    f"band={band_now} bearing={bearing:.1f}° exceeds "
-                    f"final_approach_max_degree_high={self.t.final_approach_max_degree_high:.1f}° "
-                    "— invoking ParallelToWall"
-                )
-
-                if self._parallel_skill is None:
-                    self._parallel_skill = ParallelToWall(config=self.config)
-                    self._parallel_skill.start()
-
-                self.active_primitive = self._parallel_skill
-                self.last_action = "parallel"
-                return PrimitiveStatus.RUNNING
-
-            print(
-                "[APPROACH][HIGH_POLICY] "
-                f"band={band_now} bearing={bearing:.1f}° exceeds max, but in band C — skipping parallel-to-wall until closer"
-            )
 
         # --------------------------------------------------
         # Pickup handoff
@@ -838,5 +835,5 @@ class ApproachTarget(Primitive):
     def stop(self, *, motion_backend=None):
         self._safe_stop(self.active_primitive, motion_backend=motion_backend)
         self.active_primitive = None
-        self._parallel_skill = None
+
 

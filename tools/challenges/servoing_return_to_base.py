@@ -7,7 +7,7 @@ import time
 
 from behaviors.init_escape import InitEscape
 from config.arena import return_guide_routes
-from navigation.wall_geometry import WallGeometry
+from navigation.wall_geometry.models import WallGeometry
 from navigation.wall_following.models import WallSide
 from perception import sense
 from perception.robot_geometry import (

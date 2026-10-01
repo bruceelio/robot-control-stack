@@ -11,26 +11,28 @@ from typing import Optional
 from skills.perception.marker_elevation import _marker_elevation
 from skills.perception.select_target import ApproachServoMethod
 from motion_backends.velocity import VelocityMotionBackend
-from navigation.servoing.servoing_controller import (
-    ServoingController,
+from navigation.command.velocity_arbiter import VelocityCommand
+from navigation.control.distance_angle_controller import (
+    DistanceAngleController,
+    DistanceAngleParams,
 )
 from perception.robot_geometry import (
-    target_from_gripper,
-    target_xy_from_base_link,
+    relative_target_from_base_link,
+    relative_target_from_gripper,
 )
 
-from perception.pose_reference import (
-    base_pose_from_reference,
+from navigation.geometry.relative_goal_pose import (
+    relative_goal_pose_from_reference,
 )
 from primitives.base import Primitive, PrimitiveStatus
 
 from calibration import CALIBRATION
 
-from navigation.servoing.pose_servo_controller import (
+from navigation.visual_servoing.pose_servo_controller import (
     PoseServoController,
 )
 
-from navigation.servoing.smooth_control_law import (
+from navigation.control.smooth_control_law import (
     Pose2D,
     SmoothControlParams,
 )
@@ -48,7 +50,7 @@ class ApproachTargetServo(Primitive):
         - convert camera-relative geometry to gripper-relative geometry
         - keep the shared HeightModel updated
         - dynamically choose LOW/HIGH pickup commit distance
-        - feed continuous observations to ServoingController
+        - feed continuous observations to DistanceAngleController
         - execute VelocityCommand through VelocityMotionBackend
         - stop at pickup commit and expose final pickup geometry
 
@@ -98,9 +100,58 @@ class ApproachTargetServo(Primitive):
             else None
         )
 
-        self.range_bearing_controller = ServoingController(
-            application="approach_target",
-            config=self.config,
+        self.range_bearing_controller = DistanceAngleController(
+            controller_id="approach_target",
+            params=DistanceAngleParams(
+                linear_kp=float(
+                    self.config.approach_target_servo_linear_kp
+                ),
+                linear_ki=float(
+                    self.config.approach_target_servo_linear_ki
+                ),
+                linear_kd=float(
+                    self.config.approach_target_servo_linear_kd
+                ),
+
+                angular_kp=float(
+                    self.config.approach_target_servo_angular_kp
+                ),
+                angular_ki=float(
+                    self.config.approach_target_servo_angular_ki
+                ),
+                angular_kd=float(
+                    self.config.approach_target_servo_angular_kd
+                ),
+
+                linear_max_mps=float(
+                    self.config.approach_range_linear_max_mps
+                ),
+                angular_max_rad_s=float(
+                    self.config.approach_range_angular_max_rad_s
+                ),
+
+                angle_drive_slowdown_start_rad=None,
+
+                angle_drive_cutoff_rad=math.radians(
+                    float(
+                        self.config
+                        .approach_target_servo_drive_cutoff_deg
+                    )
+                ),
+
+                distance_tolerance_m=(
+                        float(
+                            self.config
+                            .approach_target_servo_stop_tolerance_mm
+                        )
+                        / 1000.0
+                ),
+
+                derivative_mode=(
+                    self.config
+                    .approach_target_servo_derivative_mode
+                ),
+            ),
         )
 
         self.pose_bearing_controller = None
@@ -210,55 +261,51 @@ class ApproachTargetServo(Primitive):
 
         for observation in candidates:
             try:
-                candidate_distance_mm, candidate_bearing_deg = (
-                    target_from_gripper(
-                        observation=observation,
-                        config=self.config,
-                    )
+                candidate = relative_target_from_gripper(
+                    observation=observation,
+                    config=self.config,
                 )
             except (KeyError, TypeError, ValueError):
                 continue
 
             geometries.append(
-                (
-                    float(candidate_distance_mm),
-                    float(candidate_bearing_deg),
-                )
+                candidate
             )
 
         if len(geometries) < 2:
             return None
 
-        terminal_limit_mm = (
-            float(commit_distance_mm)
-            + float(tolerance_mm)
-        )
+        terminal_limit_m = (
+                                   float(commit_distance_mm)
+                                   + float(tolerance_mm)
+                           ) / 1000.0
 
         # Do nothing until at least one duplicate observation says
         # we have reached the normal final-handoff region.
         if not any(
-                distance <= terminal_limit_mm
-                for distance, _ in geometries
+                geometry.distance_m <= terminal_limit_m
+                for geometry in geometries
         ):
             return None
 
-        selected_distance_mm, selected_bearing_deg = min(
+        selected = min(
             geometries,
-            key=lambda geometry: abs(geometry[1]),
+            key=lambda geometry: abs(
+                geometry.bearing_rad
+            ),
         )
 
         print(
             "[SERVO_APPROACH][FINAL_SELECT] "
             f"id={self.locked_target_id} "
             f"candidates={len(geometries)} "
-            f"selected_dist={selected_distance_mm:.0f}mm "
-            f"selected_bearing={selected_bearing_deg:+.1f}deg"
+            f"selected_dist="
+            f"{selected.distance_m * 1000.0:.0f}mm "
+            f"selected_bearing="
+            f"{-math.degrees(selected.bearing_rad):+.1f}deg"
         )
 
-        return (
-            selected_distance_mm,
-            selected_bearing_deg,
-        )
+        return selected
 
     def _get_locked_pose_face(self, perception):
         """
@@ -640,9 +687,22 @@ class ApproachTargetServo(Primitive):
             self.failure_reason = self.FAILURE_PERCEPTION
             return PrimitiveStatus.FAILED
 
-        distance_mm, bearing_deg = target_from_gripper(
+        target_geometry = relative_target_from_gripper(
             observation=target,
             config=self.config,
+        )
+
+        distance_m = target_geometry.distance_m
+        bearing_rad = target_geometry.bearing_rad
+
+        # Legacy values retained only for existing height,
+        # handoff and diagnostic interfaces.
+        distance_mm = (
+                distance_m * 1000.0
+        )
+
+        bearing_deg = -math.degrees(
+            bearing_rad
         )
 
         self._update_height_model(
@@ -666,7 +726,21 @@ class ApproachTargetServo(Primitive):
         )
 
         if terminal_geometry is not None:
-            distance_mm, bearing_deg = terminal_geometry
+            distance_m = (
+                terminal_geometry.distance_m
+            )
+
+            bearing_rad = (
+                terminal_geometry.bearing_rad
+            )
+
+            distance_mm = (
+                    distance_m * 1000.0
+            )
+
+            bearing_deg = -math.degrees(
+                bearing_rad
+            )
 
         # Same safety rule as Stage 1:
         # UNKNOWN may approach using LOW geometry,
@@ -823,13 +897,22 @@ class ApproachTargetServo(Primitive):
         if self.active_strategy == ApproachServoStrategy.RANGE_BEARING:
 
             result = self.range_bearing_controller.update(
-                distance_mm=distance_mm,
-                target_angle_rad=math.radians(bearing_deg),
+                distance_m=distance_m,
+                target_distance_m=(
+                        float(commit_distance_mm)
+                        / 1000.0
+                ),
+                angle_rad=bearing_rad,
+                target_angle_rad=0.0,
                 timestamp=timestamp,
-                stop_distance_mm=commit_distance_mm,
-                now=now,
             )
-            command = result.command
+
+            command = VelocityCommand(
+                linear_x_mps=result.linear_mps,
+                angular_z_rps=result.angular_rps,
+                lateral_y_mps=0.0,
+                timestamp=timestamp,
+            )
 
         elif self.active_strategy == ApproachServoStrategy.POSE_BEARING:
 
@@ -863,8 +946,8 @@ class ApproachTargetServo(Primitive):
             # along the selected face normal by the requested
             # standoff distance.
 
-            reference_x_mm, reference_y_mm = (
-                target_xy_from_base_link(
+            reference_target = (
+                relative_target_from_base_link(
                     observation=target,
                     config=self.config,
                 )
@@ -876,12 +959,10 @@ class ApproachTargetServo(Primitive):
                 camera_name
             ]
 
-            camera_yaw_rad = math.radians(
-                float(
-                    camera_mount.get(
-                        "yaw_deg",
-                        0.0,
-                    )
+            camera_yaw_rad = float(
+                camera_mount.get(
+                    "yaw_rad",
+                    0.0,
                 )
             )
 
@@ -904,33 +985,40 @@ class ApproachTargetServo(Primitive):
             gripper_mount = self.config.gripper_mount
 
             (
-                goal_x_mm,
-                goal_y_mm,
+                goal_x_m,
+                goal_y_m,
                 goal_heading_rad,
-            ) = base_pose_from_reference(
-                reference_x_mm=reference_x_mm,
-                reference_y_mm=reference_y_mm,
-                controlled_heading_rad=controlled_heading_rad,
-                standoff_mm=commit_distance_mm,
-                controlled_frame_x_mm=float(
-                    gripper_mount["x_mm"]
+            ) = relative_goal_pose_from_reference(
+                reference_x_m=(
+                    reference_target.x_m
                 ),
-                controlled_frame_y_mm=float(
-                    gripper_mount["y_mm"]
+                reference_y_m=(
+                    reference_target.y_m
                 ),
-                controlled_frame_yaw_rad=math.radians(
-                    float(
-                        gripper_mount.get(
-                            "yaw_deg",
-                            0.0,
-                        )
+                controlled_heading_rad=(
+                    controlled_heading_rad
+                ),
+                standoff_m=(
+                        float(commit_distance_mm)
+                        / 1000.0
+                ),
+                controlled_frame_x_m=float(
+                    gripper_mount["x_m"]
+                ),
+                controlled_frame_y_m=float(
+                    gripper_mount["y_m"]
+                ),
+                controlled_frame_yaw_rad=float(
+                    gripper_mount.get(
+                        "yaw_rad",
+                        0.0,
                     )
                 ),
             )
 
             target_pose = Pose2D(
-                x_m=goal_x_mm / 1000.0,
-                y_m=goal_y_mm / 1000.0,
+                x_m=goal_x_m,
+                y_m=goal_y_m,
                 heading_rad=goal_heading_rad,
             )
 
@@ -939,11 +1027,12 @@ class ApproachTargetServo(Primitive):
                 f"face_dist={float(face['distance']):.0f}mm "
                 f"face_bearing={float(face['bearing']):+.2f}deg "
                 f"face_yaw={float(face['yaw_deg']):+.2f}deg "
-                f"goal_x={goal_x_mm:+.1f}mm "
-                f"goal_y={goal_y_mm:+.1f}mm "
+                f"goal_x={goal_x_m * 1000.0:+.1f}mm "
+                f"goal_y={goal_y_m * 1000.0:+.1f}mm "
                 f"goal_heading="
                 f"{math.degrees(goal_heading_rad):+.2f}deg "
-                f"goal_r={math.hypot(goal_x_mm, goal_y_mm):.1f}mm"
+                f"goal_r="
+                f"{math.hypot(goal_x_m, goal_y_m) * 1000.0:.1f}mm"
             )
 
             pose_result = pose_controller.update(
