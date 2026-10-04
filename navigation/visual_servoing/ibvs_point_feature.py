@@ -1,4 +1,4 @@
-# navigation/visual_servoing/ibvs_target_centering.py
+# navigation/visual_servoing/ibvs_point_feature.py
 
 """
 Target-Centering Image-Based Visual Servoing (IBVS).
@@ -28,10 +28,16 @@ The law is deliberately independent of:
 
 Coordinate conventions:
     normalized_x > 0
-        target is to the camera's right
+        target is to the camera's left
+
+    bearing_rad > 0
+        target is to the camera's left / counter-clockwise
 
     angular_z_rps > 0
         robot turns left / counter-clockwise
+
+Raw image/pixel coordinates may use a different convention. Any such
+conversion belongs at the perception boundary, not inside this control law.
 """
 
 from __future__ import annotations
@@ -45,7 +51,7 @@ from dataclasses import dataclass
 # ==================================================
 
 @dataclass(frozen=True)
-class TargetCenteringIBVSParams:
+class PointFeatureIBVSParams:
     """
     Parameters for the image-based visual-servo control law.
 
@@ -61,15 +67,17 @@ class TargetCenteringIBVSParams:
 # ==================================================
 
 @dataclass(frozen=True)
-class TargetCenteringIBVSResult:
+class PointFeatureIBVSResult:
     """
     Diagnostic result from one IBVS calculation.
 
-    normalized_x:
-        Current normalized horizontal image coordinate.
+        normalized_x:
+        Current canonical normalized horizontal coordinate.
+        Positive = target left.
 
     desired_normalized_x:
-        Desired normalized horizontal image coordinate.
+        Desired canonical normalized horizontal coordinate.
+        Positive = target left.
 
     error:
         Image-feature error:
@@ -95,33 +103,43 @@ class TargetCenteringIBVSResult:
 # IBVS control law
 # ==================================================
 
-class TargetCenteringIBVS:
+class PointFeatureIBVS:
     """
     Target-centering image-based visual-servo control law.
 
     Controls one visual feature:
     horizontal target position.
 
-    For a stationary differential-drive robot in translation:
+    For a stationary target and canonical positive-left bearing:
 
-        x_dot = (1 + x^2) * omega
+    x_dot = -(1 + x^2) * omega
+
+    where:
+
+    x > 0       target is left
+    omega > 0   robot turns left
 
     Standard IBVS imposes:
 
-        e_dot = -lambda * e
+    e_dot = -lambda * e
 
-    giving:
+    so the reduced interaction term is:
 
-        omega = -lambda * e / (1 + x^2)
+    L = -(1 + x^2)
+
+    and:
+
+    omega = -lambda * e / L
+          =  lambda * e / (1 + x^2)
 
     where x is the normalized horizontal image coordinate.
     """
 
     def __init__(
             self,
-            params: TargetCenteringIBVSParams | None = None,
+            params: PointFeatureIBVSParams | None = None,
     ):
-        self.params = params or TargetCenteringIBVSParams()
+        self.params = params or PointFeatureIBVSParams()
 
         if self.params.gain <= 0.0:
             raise ValueError("IBVS gain must be > 0")
@@ -131,11 +149,27 @@ class TargetCenteringIBVS:
         bearing_rad: float,
     ) -> float:
         """
-        Convert horizontal camera bearing to normalized image x.
+                Convert canonical horizontal bearing to the normalized horizontal
+        coordinate used by this controller.
 
-        For a pinhole camera:
+        Canonical convention:
 
-            x = tan(bearing)
+            bearing > 0
+                target is left / counter-clockwise
+
+            normalized_x > 0
+                target is left
+
+        Therefore:
+
+            normalized_x = tan(bearing)
+
+        Note that conventional image coordinates and many IBVS references use
+        image x positive to the RIGHT. Under that convention this controller's
+        normalized_x is the negative of native image x.
+
+        The sign adaptation is intentional so that the public navigation and
+        visual-servo interfaces use the robot-wide positive-left convention.
         """
 
         return math.tan(float(bearing_rad))
@@ -145,7 +179,7 @@ class TargetCenteringIBVS:
             *,
             normalized_x: float,
             desired_normalized_x: float = 0.0,
-    ) -> TargetCenteringIBVSResult:
+    ) -> PointFeatureIBVSResult:
         """
         Calculate angular velocity for horizontal target centering.
 
@@ -157,15 +191,15 @@ class TargetCenteringIBVS:
 
         error = x - x_desired
 
-        interaction = 1.0 + x * x
+        interaction = -(1.0 + x * x)
 
         angular_z_rps = (
-            -self.params.gain
-            * error
-            / interaction
+                -self.params.gain
+                * error
+                / interaction
         )
 
-        return TargetCenteringIBVSResult(
+        return PointFeatureIBVSResult(
             normalized_x=x,
             desired_normalized_x=x_desired,
             error=error,

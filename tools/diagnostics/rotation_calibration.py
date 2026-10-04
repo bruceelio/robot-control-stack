@@ -3,7 +3,7 @@
 import time
 import math
 
-from behaviors.init_escape import InitEscape
+from autonomous.SR2026.init_escape import InitEscape
 from perception.perception import Perception, sense
 from level2.level2_canonical import Level2
 from motion_backends import create_motion_backend

@@ -40,14 +40,23 @@ When supplied, it is treated as ``required_kind``.
 
 from __future__ import annotations
 
+from __future__ import annotations
+
+import math
 import time
 from enum import Enum
+
 from typing import Iterable, Optional
 
 from primitives.base import PrimitiveStatus
 
 from perception import get_visible_targets
 from skills.perception.marker_elevation import _marker_elevation
+
+from skills.navigation.approach_feasibility import (
+    ApproachFeasibilityEvaluator,
+    ApproachFeasibilityMode,
+)
 
 
 class ApproachServoMethod(Enum):
@@ -130,6 +139,8 @@ class SelectTarget:
         self,
         *,
         max_age_s: float,
+        config,
+        pose_bearing_allowed: bool = False,
 
         preferred_kind: str | None = None,
         preferred_elevation: str | None = None,
@@ -188,6 +199,21 @@ class SelectTarget:
 
         self.max_age_s = float(max_age_s)
 
+        self.config = config
+
+        self.pose_bearing_allowed = bool(
+            pose_bearing_allowed
+        )
+
+        self._approach_feasibility = (
+            ApproachFeasibilityEvaluator(
+                config=self.config,
+                pose_bearing_allowed=(
+                    self.pose_bearing_allowed
+                ),
+            )
+        )
+
         self.marker_pitch_high_deg = (
             None
             if marker_pitch_high_deg is None
@@ -238,6 +264,9 @@ class SelectTarget:
         self.selected_elevation: str | None = None
         self.selected_servo_method: ApproachServoMethod | None = None
 
+        self.selected_approach_feasibility = None
+        self.selected_smooth_selection = None
+
         # --------------------------------------------------
         # Runtime state
         # --------------------------------------------------
@@ -278,6 +307,9 @@ class SelectTarget:
         self.selected_kind = None
         self.selected_elevation = None
         self.selected_servo_method = None
+
+        self.selected_approach_feasibility = None
+        self.selected_smooth_selection = None
 
         self._last_no_target_log = None
 
@@ -333,56 +365,104 @@ class SelectTarget:
             return self._no_target_status(now)
 
         # --------------------------------------------------
-        # Preference 1: elevation
+        # Rank candidates by policy, then test feasibility
         # --------------------------------------------------
+        #
+        # required_kind has already been applied as a HARD filter
+        # by _gather_candidates().
+        #
+        # preferred elevation and preferred kind remain SOFT
+        # preferences. Candidates are tried in preference order,
+        # nearest first within each tier.
+        #
+        # Smooth is therefore evaluated only for the next candidate
+        # we would otherwise select, not for every visible object.
 
-        preferred = candidates
-
-        if self.preferred_elevation is not None:
-
-            elevation_matches = [
-                candidate
-                for candidate in preferred
-                if self._matches_elevation(
-                    candidate[1],
-                    self.preferred_elevation,
-                )
-            ]
-
-            # Preference only.
-            #
-            # If nothing satisfies the requested elevation,
-            # retain the current candidate set.
-            if elevation_matches:
-                preferred = elevation_matches
-
-        # --------------------------------------------------
-        # Preference 2: kind
-        # --------------------------------------------------
-
-        if self.preferred_kind is not None:
-
-            kind_matches = [
-                candidate
-                for candidate in preferred
-                if candidate[0]
-                == self.preferred_kind
-            ]
-
-            # Preference only.
-            if kind_matches:
-                preferred = kind_matches
-
-        # --------------------------------------------------
-        # Preference 3: distance
-        # --------------------------------------------------
-
-        selected_kind, selected_target = min(
-            preferred,
-            key=lambda candidate: float(
-                candidate[1]["distance"]
-            ),
+        ranked_candidates = sorted(
+            candidates,
+            key=self._candidate_preference_key,
         )
+
+        selected_kind = None
+        selected_target = None
+        selected_elevation = None
+        selected_feasibility = None
+        selected_servo_method = None
+
+        for (
+                candidate_kind,
+                candidate_target,
+        ) in ranked_candidates:
+
+            candidate_elevation = (
+                self._classify_elevation(
+                    candidate_target
+                )
+            )
+
+            feasibility = (
+                self._approach_feasibility.evaluate(
+                    kind=candidate_kind,
+                    target=candidate_target,
+                    elevation=candidate_elevation,
+                    perception=perception,
+                )
+            )
+
+            candidate_id = _safe_int(
+                candidate_target.get("id")
+            )
+
+            if not feasibility.viable:
+                print(
+                    f"[{self.label}][APPROACH] "
+                    f"reject id={candidate_id} "
+                    f"kind={candidate_kind} "
+                    f"elevation={candidate_elevation} "
+                    f"reason={feasibility.reason}"
+                )
+
+                continue
+
+            # First viable candidate wins.
+            selected_kind = candidate_kind
+            selected_target = candidate_target
+            selected_elevation = candidate_elevation
+            selected_feasibility = feasibility
+
+            if (
+                    feasibility.mode
+                    == ApproachFeasibilityMode.SMOOTH
+            ):
+                selected_servo_method = (
+                    ApproachServoMethod.POSE_BEARING
+                )
+
+            else:
+                selected_servo_method = (
+                    ApproachServoMethod.TARGET_BEARING
+                )
+
+            break
+
+        # --------------------------------------------------
+        # Visible candidates exist, but none are currently
+        # approachable.
+        #
+        # This is different from "no target visible".
+        # Waiting here would simply rerun the same expensive
+        # feasibility checks every control cycle.
+        # --------------------------------------------------
+
+        if selected_target is None:
+            print(
+                f"[{self.label}] "
+                "visible candidates exhausted "
+                "by approach feasibility "
+                "-> FAILED"
+            )
+
+            return PrimitiveStatus.FAILED
 
         # --------------------------------------------------
         # Store outputs
@@ -395,20 +475,15 @@ class SelectTarget:
         )
 
         self.selected_kind = selected_kind
+        self.selected_elevation = selected_elevation
+        self.selected_servo_method = selected_servo_method
 
-        self.selected_elevation = (
-            self._classify_elevation(
-                selected_target
-            )
+        self.selected_approach_feasibility = (
+            selected_feasibility
         )
 
-        # Current default approach policy.
-        #
-        # Future target-selection logic may choose POSE_BEARING
-        # when target geometry requires it and pose visual_servoing is
-        # both available and usable.
-        self.selected_servo_method = (
-            ApproachServoMethod.TARGET_BEARING
+        self.selected_smooth_selection = (
+            selected_feasibility.smooth_selection
         )
 
         tid_display = (
@@ -431,12 +506,36 @@ class SelectTarget:
             )
         )
 
+        if self.selected_smooth_selection is not None:
+
+            smooth = (
+                self.selected_smooth_selection
+            )
+
+            approach_text = (
+                f"{selected_feasibility.mode.value}"
+                f"/{smooth.mode.value}"
+                f"/{smooth.relaxation_fraction}"
+            )
+
+
+        else:
+
+            approach_text = (
+
+                f"{selected_feasibility.mode.value}"
+
+                f"/{selected_feasibility.reason}"
+
+            )
+
         print(
             f"[{self.label}] "
             f"selected id={tid_display} "
             f"kind={self.selected_kind} "
             f"elevation={self.selected_elevation} "
             f"servo={self.selected_servo_method.value} "
+            f"approach={approach_text} "
             f"dist={distance:.0f} "
             f"bearing={bearing:.1f}"
         )
@@ -445,6 +544,65 @@ class SelectTarget:
 
     def stop(self, **_):
         pass
+
+    # --------------------------------------------------
+    # Candidate ranking
+    # --------------------------------------------------
+
+    def _candidate_preference_key(
+            self,
+            candidate,
+    ):
+        """
+        Order candidates without turning soft preferences
+        into hard filters.
+
+        required_kind is handled earlier as a hard filter.
+
+        Ordering:
+            1. preferred elevation
+            2. preferred kind
+            3. nearest distance
+
+        If every candidate in a preferred tier is rejected as
+        unapproachable, selection naturally continues to the next
+        preference tier.
+        """
+
+        candidate_kind, target = candidate
+
+        elevation = self._classify_elevation(
+            target
+        )
+
+        elevation_penalty = 0
+
+        if (
+                self.preferred_elevation is not None
+                and elevation != self.preferred_elevation
+        ):
+            elevation_penalty = 1
+
+        kind_penalty = 0
+
+        if (
+                self.preferred_kind is not None
+                and candidate_kind != self.preferred_kind
+        ):
+            kind_penalty = 1
+
+        distance = float(
+            target.get(
+                "distance",
+                math.inf,
+            )
+        )
+
+        return (
+            elevation_penalty,
+            kind_penalty,
+            distance,
+        )
 
     # --------------------------------------------------
     # Candidate gathering
@@ -457,6 +615,24 @@ class SelectTarget:
         now: float,
         exclude_ids: set[int],
     ):
+        """
+        Gather currently visible candidates after hard filtering.
+
+        required_kind is a HARD filter.
+
+        Before the first successful delivery:
+
+            required_kind = None
+
+        so both acidic and basic targets may be considered.
+
+        After the first successful delivery:
+
+            required_kind = delivered_kind
+
+        so targets of the other kind are excluded here before
+        preference ranking or Smooth feasibility evaluation.
+        """
 
         candidates = []
 
@@ -499,6 +675,7 @@ class SelectTarget:
                 )
 
         return candidates
+
 
     # --------------------------------------------------
     # Seed compatibility

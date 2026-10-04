@@ -2,7 +2,7 @@
 
 import time
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.manipulation import Grab, LiftUp, LiftDown
 from primitives.base import PrimitiveStatus
 from skills.select_target import get_closest_target

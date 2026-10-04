@@ -213,7 +213,7 @@ def run(controller):
     implementation, retreat is temporary challenge-only code; the long-term
     owner of retreat and verification is PickupObject.
     """
-    from autonomous.auto_sr2026_stage1 import AutoSR2026Stage1
+    from autonomous.SR2026.auto_sr2026_stage1 import AutoSR2026Stage1
     from config.strategy import STARTUP_SCRIPT, StartupScript
     from primitives.motion import Drive
     from primitives.base import PrimitiveStatus

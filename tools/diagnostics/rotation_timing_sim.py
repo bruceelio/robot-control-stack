@@ -2,7 +2,7 @@
 
 import time
 
-from behaviors.init_escape import InitEscape
+from autonomous.SR2026.init_escape import InitEscape
 from localisation.localisation_temp import Localisation
 from primitives.motion import Rotate
 from primitives.base import PrimitiveStatus

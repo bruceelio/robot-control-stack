@@ -1,6 +1,6 @@
-# behaviors/scripted_start.py
+# autonomous/SR2026/scripted_start.py
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from config.strategy import STARTUP_SCRIPT, StartupScript
 from scripted.registry import SCRIPT_REGISTRY
 

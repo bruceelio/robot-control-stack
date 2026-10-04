@@ -1,10 +1,10 @@
-# behaviors/global_object_search.py
+# autonomous/SR2026/global_object_search.py
 
 from __future__ import annotations
 
 import time
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 
 from skills.navigation.search_rotate import SearchRotate

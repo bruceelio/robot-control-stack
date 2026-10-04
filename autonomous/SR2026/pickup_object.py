@@ -1,4 +1,4 @@
-# behaviors/pickup_object.py
+# autonomous/SR2026/pickup_object.py
 """Final pickup following the vision-based approach handoff.
 
 LOW:
@@ -24,7 +24,7 @@ import math
 import statistics
 import time
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
 from primitives.manipulation.grab import Grab
@@ -32,7 +32,6 @@ from primitives.manipulation.grab import Grab
 from perception.providers.pickup_face_resolver import resolve_pickup_faces
 from perception.providers.pickup_range_resolver import resolve_pickup_range
 from skills.navigation.align_to_target import AlignToTarget
-from skills.manipulation.grasp_object import GraspObject
 
 
 class PickupObject(Behavior):

@@ -1,6 +1,6 @@
-# behaviors/init_escape.py
+# autonomous/SR2026/init_escape.py
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.composites.drive_then_rotate import DriveThenRotate
 from primitives.manipulation.liftup import LiftUp

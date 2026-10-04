@@ -1,7 +1,7 @@
-# behaviors/recover_localisation.py
+# autonomous/SR2026/recover_localisation.py
 
 import time
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.motion import Rotate
 from primitives.base import PrimitiveStatus
 

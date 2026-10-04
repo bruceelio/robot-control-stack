@@ -15,7 +15,20 @@ from collections.abc import Sequence
 @dataclass(frozen=True)
 class SmoothFovPrediction:
     admissible: bool
+
     max_abs_bearing_rad: float
+
+    # Signed bearing of the feature which produced the
+    # maximum absolute FOV excursion.
+    #
+    # Canonical convention:
+    #     positive = left / counter-clockwise
+    #     negative = right / clockwise
+    peak_bearing_rad: float
+
+    # Prediction step at which peak_bearing_rad occurred.
+    peak_step: int
+
     reached_goal: bool
     features_stayed_in_front: bool
     steps: int
@@ -36,7 +49,7 @@ def _wrap_angle(angle_rad: float) -> float:
     )
 
 
-def _camera_bearing_to_point(
+def camera_bearing_to_point(
     *,
     robot_pose: Pose2D,
     camera_mount: Pose2D,
@@ -50,7 +63,7 @@ def _camera_bearing_to_point(
         robot/camera +x = forward
         robot/camera +y = left
         positive yaw = left / CCW
-        returned bearing positive = right
+        returned bearing positive = left / counter-clockwise
     """
 
     robot_c = math.cos(robot_pose.heading_rad)
@@ -86,7 +99,7 @@ def _camera_bearing_to_point(
         + camera_c * dy_m
     )
 
-    bearing_rad = -math.atan2(
+    bearing_rad = math.atan2(
         point_camera_y_m,
         point_camera_x_m,
     )
@@ -161,6 +174,9 @@ def predict_smooth_fov(
     current_pose = Pose2D()
 
     max_abs_bearing_rad = 0.0
+    peak_bearing_rad = 0.0
+    peak_step = 0
+
     features_stayed_in_front = True
     reached_goal = False
 
@@ -176,7 +192,7 @@ def predict_smooth_fov(
 
         for point_x_m, point_y_m in points:
             bearing_rad, feature_in_front = (
-                _camera_bearing_to_point(
+                camera_bearing_to_point(
                     robot_pose=current_pose,
                     camera_mount=camera_mount,
                     point_x_m=point_x_m,
@@ -184,10 +200,25 @@ def predict_smooth_fov(
                 )
             )
 
-            max_abs_bearing_rad = max(
-                max_abs_bearing_rad,
-                abs(bearing_rad),
+            abs_bearing_rad = abs(
+                bearing_rad
             )
+
+            if (
+                    abs_bearing_rad
+                    > max_abs_bearing_rad
+            ):
+                max_abs_bearing_rad = (
+                    abs_bearing_rad
+                )
+
+                peak_bearing_rad = (
+                    bearing_rad
+                )
+
+                peak_step = (
+                    step_index
+                )
 
             if not feature_in_front:
                 step_features_in_front = False
@@ -234,9 +265,17 @@ def predict_smooth_fov(
     return SmoothFovPrediction(
         admissible=admissible,
         max_abs_bearing_rad=max_abs_bearing_rad,
+        peak_bearing_rad=peak_bearing_rad,
+        peak_step=peak_step,
         reached_goal=reached_goal,
         features_stayed_in_front=(
             features_stayed_in_front
         ),
         steps=steps,
     )
+
+__all__ = [
+    "SmoothFovPrediction",
+    "camera_bearing_to_point",
+    "predict_smooth_fov",
+]

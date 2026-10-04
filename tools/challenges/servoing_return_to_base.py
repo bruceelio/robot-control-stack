@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import time
 
-from behaviors.init_escape import InitEscape
+from autonomous.SR2026.init_escape import InitEscape
 from config.arena import return_guide_routes
 from navigation.wall_geometry.models import WallGeometry
 from navigation.wall_following.models import WallSide

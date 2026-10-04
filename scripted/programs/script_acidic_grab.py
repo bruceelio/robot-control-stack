@@ -1,6 +1,6 @@
 # scripted/programs/script_acidic_grab.py
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 
 from primitives.motion import Drive, Rotate

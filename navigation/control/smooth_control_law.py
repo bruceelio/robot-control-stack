@@ -32,6 +32,22 @@
 # SmoothControlLaw formulation. A target to the robot's right therefore gives
 # a positive line-of-sight angle inside the control law.
 
+# Coordinate-convention note:
+#
+# The public Cartesian interface follows the robot-wide navigation convention:
+#   +x       = forward
+#   +y       = left
+#   +heading = counter-clockwise / left
+#
+# Internally, however, the egocentric line-of-sight variables used by
+# SmoothControlLaw intentionally retain the Navigation2 / OpenNav formulation.
+# In those private Smooth coordinates a target to the robot's RIGHT gives a
+# positive line-of-sight angle.
+#
+# Do not change that internal sign convention merely to match the public
+# navigation bearing convention; doing so would require re-deriving the
+# Smooth control law.
+
 from __future__ import annotations
 
 from dataclasses import dataclass

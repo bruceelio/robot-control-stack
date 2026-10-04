@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+import math
 import time
 
 from config import CONFIG
@@ -18,7 +19,11 @@ from navigation.control.smooth_control_law import (
 
 from navigation.control.smooth_fov_admissibility import (
     SmoothFovPrediction,
-    predict_smooth_fov,
+)
+
+from navigation.control.smooth_pose_selector import (
+    SmoothPoseSelection,
+    select_smooth_pose,
 )
 
 from navigation.visual_servoing.pbvs_nonholonomic import (
@@ -47,8 +52,11 @@ class PoseServoResult:
     command: VelocityCommand
     mode: PoseServoMode
     mode_changed: bool
-    pbvs_fov_result: object | None = None
+
+    smooth_selection: SmoothPoseSelection | None = None
     fov_prediction: SmoothFovPrediction | None = None
+
+    pbvs_fov_result: object | None = None
     pbvs_result: object | None = None
     smooth_result: object | None = None
 
@@ -137,8 +145,14 @@ class PoseServoController:
         self.smooth = SmoothControlLaw(smooth_params)
         self.pbvs = NonHolonomicPBVS()
 
-
         self._mode: PoseServoMode | None = None
+
+        # Smooth mode may be latched, but the relative target pose must
+        # remain live because it is expressed in the robot's CURRENT
+        # base_link frame.
+        #
+        # Only the selected terminal-heading relaxation is persistent.
+        self._smooth_heading_offset_rad: float | None = None
 
     @property
     def mode(self) -> PoseServoMode | None:
@@ -146,6 +160,7 @@ class PoseServoController:
 
     def reset(self) -> None:
         self._mode = None
+        self._smooth_heading_offset_rad = None
         self.pbvs.reset()
 
     def update(
@@ -171,10 +186,31 @@ class PoseServoController:
         pbvs_result = None
         smooth_result = None
         pbvs_fov_result = None
+        smooth_selection = None
 
-        # Re-evaluate Smooth eligibility only while PBVS is active.
-        # Once Smooth has been admitted, this first selector latches it.
+        # --------------------------------------------------
+        # Select Smooth terminal pose
+        # --------------------------------------------------
+        #
+        # Do not force Smooth.
+        #
+        # The selector first tests the exact requested pose. If that
+        # trajectory is not visibility-admissible, it tests the
+        # configured relaxed terminal-heading candidates:
+        #
+        #     50% -> 75% -> 100%
+        #
+        # The staging x/y position remains unchanged.
+        #
+        # Once an admissible Smooth strategy is selected, latch Smooth
+        # mode and the chosen terminal-heading relaxation.
+        #
+        # Do NOT latch the relative target pose itself. target_pose is
+        # expressed in the CURRENT base_link frame and therefore must be
+        # refreshed from perception on every control cycle.
+
         if self._mode != PoseServoMode.SMOOTH:
+
             camera_name = str(
                 observation["camera"]
             )
@@ -200,9 +236,9 @@ class PoseServoController:
                 ),
             )
 
-            fov_prediction = predict_smooth_fov(
+            smooth_selection = select_smooth_pose(
                 law=self.smooth,
-                target_pose=target_pose,
+                ideal_goal_pose=target_pose,
                 visibility_points=(
                     (
                         tag_visibility.left.base_x_m,
@@ -226,16 +262,51 @@ class PoseServoController:
                 camera_mount=camera_mount,
             )
 
-            if fov_prediction.admissible:
+            if smooth_selection.admissible:
                 self._mode = PoseServoMode.SMOOTH
+
+                self._smooth_heading_offset_rad = float(
+                    smooth_selection.heading_offset_rad
+                )
+
+                fov_prediction = (
+                    smooth_selection.prediction
+                )
+
             else:
                 self._mode = PoseServoMode.PBVS
-
-
+                self._smooth_heading_offset_rad = None
 
         if self._mode == PoseServoMode.SMOOTH:
+
+            if self._smooth_heading_offset_rad is None:
+                raise RuntimeError(
+                    "Smooth mode selected without a heading offset"
+                )
+
+            # target_pose is freshly reconstructed by the caller from the
+            # current camera observation on every control cycle.
+            #
+            # Preserve the Smooth selector's chosen terminal-heading
+            # relaxation, but apply it to the CURRENT relative goal.
+            live_heading_rad = (
+                    target_pose.heading_rad
+                    + self._smooth_heading_offset_rad
+            )
+
+            live_heading_rad = math.atan2(
+                math.sin(live_heading_rad),
+                math.cos(live_heading_rad),
+            )
+
+            live_smooth_target_pose = Pose2D(
+                x_m=target_pose.x_m,
+                y_m=target_pose.y_m,
+                heading_rad=live_heading_rad,
+            )
+
             smooth_result = self.smooth.calculate_regular_velocity(
-                target_pose
+                live_smooth_target_pose
             )
 
             command = VelocityCommand(
@@ -338,14 +409,13 @@ class PoseServoController:
 
             )
 
-
-
         return PoseServoResult(
             command=command,
-            pbvs_fov_result=pbvs_fov_result,
             mode=self._mode,
             mode_changed=(self._mode != previous_mode),
+            smooth_selection=smooth_selection,
             fov_prediction=fov_prediction,
+            pbvs_fov_result=pbvs_fov_result,
             pbvs_result=pbvs_result,
             smooth_result=smooth_result,
         )

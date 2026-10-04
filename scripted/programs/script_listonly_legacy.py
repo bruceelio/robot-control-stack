@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 
 from primitives.motion import Drive, Rotate

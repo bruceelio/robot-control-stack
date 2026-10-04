@@ -32,6 +32,10 @@ from navigation.visual_servoing.pose_servo_controller import (
     PoseServoController,
 )
 
+from navigation.visual_servoing.ibvs_bearing_feature import (
+    BearingFeatureIBVS,
+)
+
 from navigation.control.smooth_control_law import (
     Pose2D,
     SmoothControlParams,
@@ -68,6 +72,11 @@ class ApproachTargetServo(Primitive):
     FAILURE_POSE_UNAVAILABLE = "pose_unavailable"
 
     POSE_FOV_ACTIVATION_MARGIN_DEG = 3.0
+
+    # Stage-2 terminal rotational IBVS.
+    # Once the pickup standoff has been reached, translation is latched
+    # off and bearing-feature IBVS centres the target before handoff.
+    TERMINAL_BEARING_TOLERANCE_DEG = 1.0
 
     def __init__(
             self,
@@ -158,6 +167,9 @@ class ApproachTargetServo(Primitive):
         self._pose_bearing_camera_name: Optional[str] = None
         self._pose_bearing_standoff_mm: Optional[float] = None
 
+        self.terminal_bearing_controller = BearingFeatureIBVS()
+        self._terminal_align_active = False
+
         self.velocity_backend = None
 
         self.failure_reason: Optional[str] = None
@@ -188,6 +200,7 @@ class ApproachTargetServo(Primitive):
         self.final_bearing_deg = None
         self.target_is_high = None
 
+        self._terminal_align_active = False
         self._last_height_timestamp = None
 
         self.velocity_backend = VelocityMotionBackend(
@@ -215,29 +228,43 @@ class ApproachTargetServo(Primitive):
 
         return memory.get(self.locked_target_id)
 
-    def _get_terminal_target_bearing_geometry(
+    def _get_terminal_visual_bearing_rad(
             self,
             perception,
             *,
             commit_distance_mm: float,
             tolerance_mm: float,
-    ):
+    ) -> Optional[float]:
         """
-        Resolve duplicate observations of the locked target only when
-        TARGET_BEARING is entering its final-pickup region.
+        Return the visual centre bearing of the locked object near
+        terminal pickup alignment.
 
-        If multiple detections of the same tag ID are present in the
-        current frame, choose the observation whose gripper-relative
-        bearing is closest to zero.
+        All valid current observations of the locked object are first
+        transformed into the common canonical gripper frame:
 
-        Outside the terminal region, normal target tracking is unchanged.
+            +bearing = left / counter-clockwise
+
+        The object's horizontal visual centre is then defined by the
+        angular envelope of its visible faces:
+
+            rightmost = min(face bearings)
+            leftmost  = max(face bearings)
+            centre    = (rightmost + leftmost) / 2
+
+        This generalises naturally:
+
+            one visible face   -> that face bearing
+            two visible faces  -> their angular bisector
+            three+ faces       -> centre of the full visible envelope
+
+        Interior faces therefore do not bias the visual centre merely
+        because they become visible.
+
+        Before terminal alignment has latched, the envelope is used only
+        when at least one current face has reached the normal terminal
+        distance region. Once terminal alignment is active, range noise
+        cannot disable the visual-envelope bearing.
         """
-
-        if (
-                self.servo_method
-                != ApproachServoMethod.TARGET_BEARING
-        ):
-            return None
 
         frame_memory = getattr(
             perception,
@@ -254,14 +281,14 @@ class ApproachTargetServo(Primitive):
             .get(self.locked_target_id, [])
         )
 
-        if len(candidates) < 2:
+        if not candidates:
             return None
 
         geometries = []
 
         for observation in candidates:
             try:
-                candidate = relative_target_from_gripper(
+                geometry = relative_target_from_gripper(
                     observation=observation,
                     config=self.config,
                 )
@@ -269,43 +296,60 @@ class ApproachTargetServo(Primitive):
                 continue
 
             geometries.append(
-                candidate
+                geometry
             )
 
-        if len(geometries) < 2:
+        if not geometries:
             return None
 
         terminal_limit_m = (
-                                   float(commit_distance_mm)
-                                   + float(tolerance_mm)
-                           ) / 1000.0
+                (
+                        float(commit_distance_mm)
+                        + float(tolerance_mm)
+                )
+                / 1000.0
+        )
 
-        # Do nothing until at least one duplicate observation says
-        # we have reached the normal final-handoff region.
-        if not any(
-                geometry.distance_m <= terminal_limit_m
-                for geometry in geometries
+        if (
+                not self._terminal_align_active
+                and not any(
+            geometry.distance_m <= terminal_limit_m
+            for geometry in geometries
+        )
         ):
             return None
 
-        selected = min(
-            geometries,
-            key=lambda geometry: abs(
-                geometry.bearing_rad
-            ),
+        bearings_rad = [
+            geometry.bearing_rad
+            for geometry in geometries
+        ]
+
+        rightmost_bearing_rad = min(
+            bearings_rad
         )
+
+        leftmost_bearing_rad = max(
+            bearings_rad
+        )
+
+        centre_bearing_rad = (
+                                     rightmost_bearing_rad
+                                     + leftmost_bearing_rad
+                             ) / 2.0
 
         print(
-            "[SERVO_APPROACH][FINAL_SELECT] "
+            "[SERVO_APPROACH][TERMINAL_ENVELOPE] "
             f"id={self.locked_target_id} "
-            f"candidates={len(geometries)} "
-            f"selected_dist="
-            f"{selected.distance_m * 1000.0:.0f}mm "
-            f"selected_bearing="
-            f"{-math.degrees(selected.bearing_rad):+.1f}deg"
+            f"faces={len(geometries)} "
+            f"right="
+            f"{math.degrees(rightmost_bearing_rad):+.2f}deg "
+            f"left="
+            f"{math.degrees(leftmost_bearing_rad):+.2f}deg "
+            f"centre="
+            f"{math.degrees(centre_bearing_rad):+.2f}deg"
         )
 
-        return selected
+        return centre_bearing_rad
 
     def _get_locked_pose_face(self, perception):
         """
@@ -717,25 +761,17 @@ class ApproachTargetServo(Primitive):
             self.config.approach_target_servo_stop_tolerance_mm
         )
 
-        terminal_geometry = (
-            self._get_terminal_target_bearing_geometry(
+        terminal_visual_bearing_rad = (
+            self._get_terminal_visual_bearing_rad(
                 perception,
                 commit_distance_mm=commit_distance_mm,
                 tolerance_mm=commit_tolerance_mm,
             )
         )
 
-        if terminal_geometry is not None:
-            distance_m = (
-                terminal_geometry.distance_m
-            )
-
+        if terminal_visual_bearing_rad is not None:
             bearing_rad = (
-                terminal_geometry.bearing_rad
-            )
-
-            distance_mm = (
-                    distance_m * 1000.0
+                terminal_visual_bearing_rad
             )
 
             bearing_deg = -math.degrees(
@@ -778,44 +814,128 @@ class ApproachTargetServo(Primitive):
         # FinalPickup then owns:
         #     final alignment -> blind drive -> grasp.
 
-
         remaining_distance_mm = (
-            distance_mm - commit_distance_mm
+                distance_mm - commit_distance_mm
         )
 
+        terminal_region_reached = (
+                self.height_model.is_committed()
+                and remaining_distance_mm <= commit_tolerance_mm
+        )
+
+        # --------------------------------------------------
+        # Stage-2 terminal rotational IBVS
+        # --------------------------------------------------
+        #
+        # Reaching the pickup standoff permanently ends translational
+        # approach control for this run.
+        #
+        # From this point until final handoff:
+        #
+        #     linear_x = 0
+        #     bearing -> 0 using BearingFeatureIBVS
+        #
+        # The latch prevents range noise from returning control to
+        # Smooth or range/bearing translation after alignment begins.
+
         if (
-            self.height_model.is_committed()
-            and remaining_distance_mm <= commit_tolerance_mm
+                terminal_region_reached
+                and not self._terminal_align_active
         ):
+            self._terminal_align_active = True
             self.velocity_backend.stop()
 
-            self.final_distance_mm = float(distance_mm)
-            self.final_bearing_deg = float(bearing_deg)
-
-            latest_height = (
-                self.height_model.last_good_is_high()
+            print(
+                "[SERVO_APPROACH][TERMINAL_IBVS] enter "
+                f"dist={distance_mm:.0f}mm "
+                f"bearing="
+                f"{math.degrees(bearing_rad):+.2f}deg"
             )
 
-            self.target_is_high = (
-                latest_height
-                if latest_height is not None
-                else self.height_model.is_high()
+        if self._terminal_align_active:
+            bearing_tolerance_rad = math.radians(
+                self.TERMINAL_BEARING_TOLERANCE_DEG
             )
+
+            if abs(bearing_rad) <= bearing_tolerance_rad:
+                self.velocity_backend.stop()
+
+                self.final_distance_mm = float(distance_mm)
+                self.final_bearing_deg = float(bearing_deg)
+
+                latest_height = (
+                    self.height_model.last_good_is_high()
+                )
+
+                self.target_is_high = (
+                    latest_height
+                    if latest_height is not None
+                    else self.height_model.is_high()
+                )
+
+                print(
+                    "[SERVO_APPROACH][TERMINAL_IBVS] aligned "
+                    f"bearing="
+                    f"{math.degrees(bearing_rad):+.2f}deg "
+                    f"tolerance="
+                    f"{self.TERMINAL_BEARING_TOLERANCE_DEG:.1f}deg"
+                )
+
+                print(
+                    "[SERVO_APPROACH][HANDOFF] "
+                    f"approach_mode="
+                    f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
+                    f"pickup_height="
+                    f"{'HIGH' if self.target_is_high else 'LOW'} "
+                    f"dist={distance_mm:.0f}mm "
+                    f"bearing={bearing_deg:.1f}deg "
+                    f"commit={commit_distance_mm:.0f}mm "
+                    f"tolerance={commit_tolerance_mm:.0f}mm "
+                    "-> FINAL_PICKUP"
+                )
+
+                return PrimitiveStatus.SUCCEEDED
+
+            terminal_result = (
+                self.terminal_bearing_controller.calculate(
+                    bearing_rad=bearing_rad,
+                    desired_bearing_rad=0.0,
+                    linear_mps=0.0,
+                )
+            )
+
+            angular_max_rps = float(
+                self.config.approach_pose_angular_max_rad_s
+            )
+
+            angular_z_rps = max(
+                -angular_max_rps,
+                min(
+                    angular_max_rps,
+                    terminal_result.angular_z_rps,
+                ),
+            )
+
+            command = VelocityCommand(
+                linear_x_mps=0.0,
+                angular_z_rps=angular_z_rps,
+                lateral_y_mps=0.0,
+                timestamp=timestamp,
+            )
+
+            self.velocity_backend.update(command)
 
             print(
-                "[SERVO_APPROACH][HANDOFF] "
-                f"approach_mode="
-                f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
-                f"pickup_height="
-                f"{'HIGH' if self.target_is_high else 'LOW'} "
-                f"dist={distance_mm:.0f}mm "
-                f"bearing={bearing_deg:.1f}deg "
-                f"commit={commit_distance_mm:.0f}mm "
-                f"tolerance={commit_tolerance_mm:.0f}mm "
-                "-> FINAL_PICKUP"
+                "[SERVO_APPROACH][TERMINAL_IBVS] "
+                f"bearing="
+                f"{math.degrees(bearing_rad):+.2f}deg "
+                f"error="
+                f"{math.degrees(terminal_result.error_rad):+.2f}deg "
+                f"vx=0.000m/s "
+                f"wz={angular_z_rps:+.3f}rad/s"
             )
 
-            return PrimitiveStatus.SUCCEEDED
+            return PrimitiveStatus.RUNNING
 
         # --------------------------------------------------
         # Select Stage-2 servo strategy
@@ -948,7 +1068,7 @@ class ApproachTargetServo(Primitive):
 
             reference_target = (
                 relative_target_from_base_link(
-                    observation=target,
+                    observation=face,
                     config=self.config,
                 )
             )
@@ -1041,6 +1161,24 @@ class ApproachTargetServo(Primitive):
                 target_pose=target_pose,
                 timestamp=pose_timestamp,
             )
+
+            if (
+                    pose_result.smooth_selection is not None
+                    and pose_result.mode_changed
+            ):
+                selection = pose_result.smooth_selection
+
+                print(
+                    "[SERVO_APPROACH][SMOOTH_SELECT] "
+                    f"mode={selection.mode.value} "
+                    f"fraction="
+                    f"{selection.relaxation_fraction} "
+                    f"offset="
+                    f"{math.degrees(selection.heading_offset_rad):+.1f}deg "
+                    f"max_offset="
+                    f"{math.degrees(selection.max_heading_offset_rad):+.1f}deg "
+                    f"tested={selection.tested_fractions}"
+                )
 
             command = pose_result.command
             pose_mode = pose_result.mode.value

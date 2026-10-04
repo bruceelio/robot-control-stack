@@ -15,9 +15,9 @@ class HorizontalTagFeature:
     One horizontal visibility feature of an AprilTag.
 
     Camera coordinates:
-        +x = forward from camera
-        +y = camera left
-        +bearing = camera right
+    +x = forward from camera
+    +y = camera left
+    +bearing = camera left / counter-clockwise
 
     Base coordinates:
         +x = robot forward
@@ -103,7 +103,7 @@ def _feature_from_xy(
         y_m=y_m,
         base_x_m=base_x_m,
         base_y_m=base_y_m,
-        bearing_rad=-math.atan2(
+        bearing_rad=math.atan2(
             y_m,
             x_m,
         ),
@@ -176,7 +176,20 @@ def horizontal_tag_visibility(
             "AprilTag distance must be > 0"
         )
 
-    bearing_rad = math.radians(
+    # The raw AprilTag observation retains the detector/image convention:
+    #
+    #     positive bearing = image right
+    #
+    # This is a perception boundary. The geometry produced by this module
+    # uses the robot-wide canonical convention:
+    #
+    #     +x = forward
+    #     +y = left
+    #     positive bearing = left / counter-clockwise
+    #
+    # The sign conversion therefore occurs when the raw polar observation
+    # is converted into canonical camera-frame Cartesian coordinates below.
+    observation_bearing_rad = math.radians(
         float(observation["bearing"])
     )
 
@@ -201,12 +214,12 @@ def horizontal_tag_visibility(
 
     centre_x_m = (
         horizontal_range_m
-        * math.cos(bearing_rad)
+        * math.cos(observation_bearing_rad)
     )
 
     centre_y_m = (
         -horizontal_range_m
-        * math.sin(bearing_rad)
+        * math.sin(observation_bearing_rad)
     )
 
     centre = _feature_from_xy(
@@ -252,18 +265,21 @@ def horizontal_tag_visibility(
         mount=mount,
     )
 
-    # +bearing = image right.
+    # Canonical horizontal bearing convention:
     #
-    # Therefore the smaller bearing is the image-left
-    # feature and the larger bearing is image-right.
-    left = min(
+    #     positive bearing = image left
+    #     negative bearing = image right
+    #
+    # Therefore the image-left feature has the LARGER bearing,
+    # while the image-right feature has the SMALLER bearing.
+    left = max(
         (edge_a, edge_b),
         key=lambda feature: (
             feature.bearing_rad
         ),
     )
 
-    right = max(
+    right = min(
         (edge_a, edge_b),
         key=lambda feature: (
             feature.bearing_rad

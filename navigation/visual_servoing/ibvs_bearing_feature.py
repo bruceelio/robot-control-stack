@@ -1,7 +1,7 @@
-# navigation/visual_servoing/ibvs_bearing_only_tracking.py
+# navigation/visual_servoing/ibvs_bearing_feature.py
 
 """
-Bearing-Only Image-Based Visual Servoing (IBVS).
+Bearing-Feature Image-Based Visual Servoing (IBVS).
 
 Tracks a target using horizontal bearing alone. The caller may provide a
 translational velocity, but the visual-servo law controls angular velocity
@@ -31,13 +31,17 @@ The law is deliberately independent of:
 
 Coordinate conventions:
     bearing_rad > 0
-        target is to the robot/camera's right
+        target is to the robot/camera's left / counter-clockwise
 
     angular_z_rps > 0
         robot turns left / counter-clockwise
 
     linear_mps > 0
         robot moves forward
+
+This module uses the robot-wide canonical navigation convention.
+Raw image/detector coordinates may use the opposite horizontal sign;
+that conversion belongs at the perception boundary.
 """
 
 from __future__ import annotations
@@ -51,7 +55,7 @@ from dataclasses import dataclass
 # ==================================================
 
 @dataclass(frozen=True)
-class BearingOnlyTrackingIBVSParams:
+class BearingFeatureIBVSParams:
     """
     Parameters for the bearing-only visual-servo control law.
 
@@ -67,7 +71,7 @@ class BearingOnlyTrackingIBVSParams:
 # ==================================================
 
 @dataclass(frozen=True)
-class BearingOnlyTrackingIBVSResult:
+class BearingFeatureIBVSResult:
     """
     Diagnostic result from one bearing-only IBVS calculation.
 
@@ -83,7 +87,14 @@ class BearingOnlyTrackingIBVSResult:
 
     interaction:
         Reduced interaction term relating robot angular velocity
-        to horizontal bearing rate. For rotation-only motion this is 1.
+        to horizontal bearing rate.
+
+        Under the canonical positive-left bearing convention,
+        rotation-only motion gives:
+
+            bearing_dot = -angular_z_rps
+
+        so this interaction term is -1.
 
     linear_mps:
         Caller-requested translational velocity, passed through unchanged.
@@ -105,54 +116,67 @@ class BearingOnlyTrackingIBVSResult:
 # IBVS control law
 # ==================================================
 
-class BearingOnlyTrackingIBVS:
+class BearingFeatureIBVS:
     """
-    Bearing-only image-based visual-servo control law.
+    Bearing-feature image-based visual servoing control law
 
-    Starting from the normalized horizontal image coordinate
+        Using the canonical positive-left horizontal bearing:
 
-        x = tan(b)
+        b > 0
+            target is left
 
-    and the rotation-only point-feature relation
+        omega > 0
+            robot turns left
 
-        x_dot = (1 + x^2) * omega
+    For rotation-only motion of a stationary target:
 
-    gives
-
-        b_dot = omega
-
-    because
-
-        db/dx = 1 / (1 + x^2)
+        b_dot = -omega
 
     Therefore the reduced bearing interaction term is
 
-        L_b = 1
+        L_b = -1
 
-    and imposing
+    Imposing
 
         e_dot = -lambda * e
 
+    with
+
+        e = wrap(b - b*)
+
     gives
 
-        omega = -lambda * e
+        omega = lambda * e
+
+    Equivalently, using the standard interaction-law form:
+
+        omega = -lambda * e / L_b
+
+    with:
+
+        L_b = -1
 
     where
 
         e = wrap(b - b*)
 
     Forward/reverse translational velocity may be supplied by the caller and
-    is passed through unchanged. Translation also affects bearing according
-    to target depth/range. Because this controller is deliberately
-    bearing-only, it does not estimate or compensate that depth-dependent
-    term; angular feedback rejects it as a disturbance.
+    is passed through unchanged.
+
+    Under the canonical positive-left convention, translation contributes:
+
+        b_dot_translation = (sin(b) / range) * v
+
+    Because this controller is deliberately bearing-only, it does not estimate
+    target depth/range and therefore does not explicitly compensate this
+    translation-dependent term. Angular feedback rejects it as a disturbance.
     """
 
     def __init__(
         self,
-        params: BearingOnlyTrackingIBVSParams | None = None,
+        params: BearingFeatureIBVSParams | None = None,
     ):
-        self.params = params or BearingOnlyTrackingIBVSParams()
+        self.params = params or BearingFeatureIBVSParams()
 
         if not math.isfinite(self.params.gain) or self.params.gain <= 0.0:
             raise ValueError("IBVS gain must be finite and > 0")
@@ -167,7 +191,7 @@ class BearingOnlyTrackingIBVS:
         bearing_rad: float,
         desired_bearing_rad: float = 0.0,
         linear_mps: float = 0.0,
-    ) -> BearingOnlyTrackingIBVSResult:
+    ) -> BearingFeatureIBVSResult:
         """
         Calculate angular velocity from horizontal bearing error.
 
@@ -188,7 +212,7 @@ class BearingOnlyTrackingIBVS:
 
         error = self._wrap_to_pi(bearing - desired)
 
-        interaction = 1.0
+        interaction = -1.0
 
         angular_z_rps = (
             -self.params.gain
@@ -196,7 +220,7 @@ class BearingOnlyTrackingIBVS:
             / interaction
         )
 
-        return BearingOnlyTrackingIBVSResult(
+        return BearingFeatureIBVSResult(
             bearing_rad=bearing,
             desired_bearing_rad=desired,
             error_rad=error,

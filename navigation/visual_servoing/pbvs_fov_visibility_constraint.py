@@ -39,13 +39,25 @@ class PBVSFovVisibilityConstraint:
     - no intervention when the nominal task already moves the feature
       away from the boundary
 
-    Robot/image conventions:
-        bearing > 0 : feature to camera right
+        Robot/navigation conventions:
+        bearing > 0 : feature to camera left / CCW
         omega > 0   : robot turns left / CCW
         v > 0       : robot drives forward
 
-    For a stationary feature:
-        bearing_dot = (sin(bearing) / range) * v + omega
+    For a stationary feature under the canonical positive-left
+    bearing convention:
+
+        bearing_dot = (
+            (sin(bearing) / range) * v
+            - omega
+        )
+
+    A positive left turn therefore decreases a positive-left target
+    bearing, as expected.
+
+    Literature and image-space formulations may use the opposite
+    horizontal-bearing sign. This implementation intentionally uses
+    the robot-wide navigation convention at its public interface.
 
     Supply the most endangered horizontal image feature. For an
     AprilTag this should ideally be a tag corner, not only its centre.
@@ -83,12 +95,27 @@ class PBVSFovVisibilityConstraint:
         if r <= 0.0:
             raise ValueError("feature_range_m must be > 0")
 
+        # Differential-drive horizontal feature interaction.
+        #
+        # Canonical convention:
+        #     b > 0     feature left
+        #     omega > 0 robot turns left
+        #
+        # Therefore:
+        #
+        #     b_dot = (sin(b) / r) * v - omega
+        #
+        # The translational interaction coefficient itself remains
+        # sin(b) / r; the negative rotational coefficient appears
+        # explicitly in nominal_rate below.
+        interaction_v = math.sin(b) / r
+
         # Differential-drive horizontal image-feature interaction.
         interaction_v = math.sin(b) / r
 
         nominal_rate = (
-            interaction_v * v0
-            + w0
+                interaction_v * v0
+                - w0
         )
 
         # Is PBVS currently driving the feature toward its FOV edge?
@@ -191,7 +218,7 @@ class PBVSFovVisibilityConstraint:
 
         constrained_rate = (
             interaction_v * v
-            + w
+            - w
         )
 
         return self._result(
@@ -244,7 +271,7 @@ class PBVSFovVisibilityConstraint:
 
         j_dot_z = (
             j_v * z_v
-            + z_w
+            - z_w
         )
 
         j_norm_sq = (
@@ -262,7 +289,7 @@ class PBVSFovVisibilityConstraint:
         )
 
         z_v -= correction * j_v
-        z_w -= correction
+        z_w += correction
 
         return (
             z_v * v_scale,
@@ -297,7 +324,7 @@ class PBVSFovVisibilityConstraint:
 
         j_dot_z = (
             j_v * z_v
-            + z_w
+            - z_w
         )
 
         j_norm_sq = (
@@ -311,7 +338,7 @@ class PBVSFovVisibilityConstraint:
         )
 
         z_v -= correction * j_v
-        z_w -= correction
+        z_w += correction
 
         return (
             z_v * v_scale,

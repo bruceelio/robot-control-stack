@@ -11,7 +11,7 @@ from perception.providers.acquisition import (
 )
 from navigation.wall_following.models import WallSide
 from skills.navigation.follow_wall import FollowWall
-from behaviors.init_escape import InitEscape
+from autonomous.SR2026.init_escape import InitEscape
 
 
 # ==================================================

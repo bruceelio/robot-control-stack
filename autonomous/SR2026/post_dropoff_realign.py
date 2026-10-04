@@ -1,6 +1,6 @@
-# behaviors/post_dropoff_realign.py
+# autonomous/SR2026/post_dropoff_realign.py
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.motion import Drive, Rotate
 from primitives.manipulation.liftdown import LiftDown

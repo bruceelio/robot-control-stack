@@ -1,9 +1,9 @@
-# behaviors/approach_object.py
+# autonomous/SR2026/approach_object.py
 
 import time
 import inspect
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from perception.height_model import HeightModel
 from policies.vision_grace_period import VisionGracePeriod
 from primitives.base import PrimitiveStatus
@@ -11,6 +11,7 @@ from primitives.base import PrimitiveStatus
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
 from skills.navigation.approach_target_servo import ApproachTargetServo
+from skills.perception.acquire_wall_geometry import AcquireWallGeometry
 from skills.perception.track_object import TrackObject
 
 from log_trace import next_run, trace
@@ -27,8 +28,10 @@ class ApproachObject(Behavior):
 
         self.config = None
         self.kind = None
+        self.elevation = None
 
-
+        self.approach_feasibility = None
+        self.wall_geometry_status = None
 
         self.pose_bearing_allowed = bool(
             pose_bearing_allowed
@@ -53,6 +56,11 @@ class ApproachObject(Behavior):
 
         # ALIGN skill
         self._align_skill = None
+
+        # Wall active-perception skill
+        self._wall_acquisition_skill = None
+        self._wall_acquisition_attempted = False
+        self.wall_range_rays = ()
 
         # APPROACH skill
         self._approach_skill = None
@@ -94,7 +102,9 @@ class ApproachObject(Behavior):
             config,
             selected_target=None,
             selected_kind=None,
+            selected_elevation=None,
             selected_servo_method=None,
+            selected_approach_feasibility=None,
             **_,
     ):
         self.run_id = next_run()
@@ -105,7 +115,18 @@ class ApproachObject(Behavior):
         # SelectTarget has already made the decision.
         self.target = selected_target
         self.kind = selected_kind
+        self.elevation = selected_elevation
         self.servo_method = selected_servo_method
+
+        self.approach_feasibility = (
+            selected_approach_feasibility
+        )
+
+        self.wall_geometry_status = getattr(
+            self.approach_feasibility,
+            "wall_geometry_status",
+            None,
+        )
 
         self.locked_target_id = None
 
@@ -122,9 +143,20 @@ class ApproachObject(Behavior):
             phase=initial_phase,
             run=self.run_id,
             kind=self.kind,
+            elevation=self.elevation,
             servo=(
                 self.servo_method.value
                 if self.servo_method is not None
+                else "none"
+            ),
+            wall_state=(
+                self.wall_geometry_status.state.value
+                if self.wall_geometry_status is not None
+                else "none"
+            ),
+            wall_action=(
+                self.wall_geometry_status.action.value
+                if self.wall_geometry_status is not None
                 else "none"
             ),
         )
@@ -150,6 +182,11 @@ class ApproachObject(Behavior):
         self.height_model = HeightModel()
 
         self._align_skill = None
+
+        self._wall_acquisition_skill = None
+        self._wall_acquisition_attempted = False
+        self.wall_range_rays = ()
+
         self._approach_skill = None
         self._navigation_stage = None
 
@@ -205,11 +242,21 @@ class ApproachObject(Behavior):
             lost=snap.lost_count,
         )
 
+        if self.phase == "ACQUIRE_WALL_GEOMETRY":
+            return self._acquire_wall_geometry(
+                perception=perception,
+                motion_backend=motion_backend,
+            )
+
         if self.phase == "ALIGN":
             return self._align(lvl2, motion_backend)
 
         if self.phase == "APPROACHING":
-            return self._approach(lvl2, perception, motion_backend)
+            return self._approach(
+                lvl2,
+                perception,
+                motion_backend,
+            )
 
         return self.status
 
@@ -287,6 +334,39 @@ class ApproachObject(Behavior):
         self.track = None
 
         # ------------------------------------------
+        # HIGH wall-geometry acquisition
+        # ------------------------------------------
+
+        if (
+                self.elevation == "high"
+                and self.wall_geometry_status is not None
+                and self.wall_geometry_status.acquisition_required
+                and not self._wall_acquisition_attempted
+        ):
+            print(
+                "[APPROACH_OBJECT][WALL] "
+                "HIGH target requires wall acquisition "
+                f"action="
+                f"{self.wall_geometry_status.action.value}"
+            )
+
+            trace(
+                src="ACQ",
+                evt="PHASE_ENTER",
+                phase="ACQUIRE_WALL_GEOMETRY",
+                run=self.run_id,
+                lock=(
+                        self.locked_target_id
+                        or "none"
+                ),
+            )
+
+            self.phase = "ACQUIRE_WALL_GEOMETRY"
+            self._wall_acquisition_skill = None
+
+            return self.status
+
+        # ------------------------------------------
         # Highest available navigation stage
         # ------------------------------------------
 
@@ -332,6 +412,92 @@ class ApproachObject(Behavior):
 
         return self.status
 
+
+    # -------------------------
+    # Phase: ACQUIRE WALL GEOMETRY
+    # -------------------------
+
+    def _acquire_wall_geometry(
+        self,
+        *,
+        perception,
+        motion_backend,
+    ):
+        if self._wall_acquisition_skill is None:
+
+            self._wall_acquisition_skill = (
+                AcquireWallGeometry(
+                    config=self.config,
+                    wall_status=(
+                        self.wall_geometry_status
+                    ),
+                )
+            )
+
+            st = (
+                self._wall_acquisition_skill.start(
+                    perception=perception,
+                    motion_backend=motion_backend,
+                )
+            )
+
+            if st == PrimitiveStatus.FAILED:
+                print(
+                    "[APPROACH_OBJECT][WALL] "
+                    "acquisition could not start "
+                    "-> visual fallback"
+                )
+
+                self._wall_acquisition_attempted = True
+                self._wall_acquisition_skill = None
+                self.phase = "START_APPROACH"
+
+                return self.status
+
+        st = self._wall_acquisition_skill.update(
+            perception=perception,
+            motion_backend=motion_backend,
+        )
+
+        if st == PrimitiveStatus.RUNNING:
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
+            print(
+                "[APPROACH_OBJECT][WALL] "
+                "acquisition failed "
+                f"reason="
+                f"{self._wall_acquisition_skill.failure_reason} "
+                "-> visual fallback"
+            )
+
+            self._wall_acquisition_attempted = True
+            self._wall_acquisition_skill = None
+            self.phase = "START_APPROACH"
+
+            return self.status
+
+        self.wall_range_rays = tuple(
+            self._wall_acquisition_skill.range_rays
+        )
+
+        print(
+            "[APPROACH_OBJECT][WALL] "
+            f"acquired {len(self.wall_range_rays)} "
+            "range rays"
+        )
+
+        # Wall association / extraction is deliberately the
+        # next layer. Do not blindly interpret these observations
+        # as one wall here.
+        #
+        # Until that layer is connected, continue through the
+        # proven HIGH visual fallback after acquisition.
+        self._wall_acquisition_attempted = True
+        self._wall_acquisition_skill = None
+        self.phase = "START_APPROACH"
+
+        return self.status
 
     # -------------------------
     # Phase: ALIGN
@@ -707,5 +873,15 @@ class ApproachObject(Behavior):
         return self.status
 
     def stop(self, *, motion_backend=None, **_):
-        self._safe_stop(self._align_skill, motion_backend=motion_backend)
-        self._safe_stop(self._approach_skill, motion_backend=motion_backend)
+        self._safe_stop(
+            self._wall_acquisition_skill,
+            motion_backend=motion_backend,
+        )
+        self._safe_stop(
+            self._align_skill,
+            motion_backend=motion_backend,
+        )
+        self._safe_stop(
+            self._approach_skill,
+            motion_backend=motion_backend,
+        )

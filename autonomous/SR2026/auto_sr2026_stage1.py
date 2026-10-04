@@ -1,17 +1,17 @@
-# autonomous/auto_sr2026_stage1.py
+# autonomous/SR2026/auto_sr2026_stage1.py
 
 from state_machine import RobotState
 
-from behaviors.init_escape import InitEscape
-from behaviors.approach_object import ApproachObject
-from behaviors.pickup_object import PickupObject
-from behaviors.post_pickup_realign import PostPickupRealign
-from behaviors.recover_localisation import RecoverLocalisation
-from behaviors.dropoff_object import DropoffObject
-from behaviors.post_dropoff_realign import PostDropoffRealign
-from behaviors.scripted_start import ScriptedStart
-from behaviors.return_to_base import ReturnToBase
-from behaviors.global_object_search import GlobalObjectSearch
+from autonomous.SR2026.init_escape import InitEscape
+from autonomous.SR2026.approach_object import ApproachObject
+from autonomous.SR2026.pickup_object import PickupObject
+from autonomous.SR2026.post_pickup_realign import PostPickupRealign
+from autonomous.SR2026.recover_localisation import RecoverLocalisation
+from autonomous.SR2026.dropoff_object import DropoffObject
+from autonomous.SR2026.post_dropoff_realign import PostDropoffRealign
+from autonomous.SR2026.scripted_start import ScriptedStart
+from autonomous.SR2026.return_to_base import ReturnToBase
+from autonomous.SR2026.global_object_search import GlobalObjectSearch
 
 from skills.manipulation.prepare_search import PrepareSearch
 from skills.perception.select_target import SelectTarget
@@ -19,7 +19,7 @@ from skills.perception.select_target import SelectTarget
 from config import CONFIG
 from config.strategy import STARTUP_SCRIPT, StartupScript
 
-from navigation.wall_geometry import (
+from perception.providers.acquisition import (
     acquire_wall_geometry,
 )
 
@@ -50,7 +50,9 @@ class AutoSR2026Stage1:
         self.pickup_target_is_high: bool | None = None
         self.selected_target = None
         self.selected_kind: str | None = None
+        self.selected_elevation: str | None = None
         self.selected_servo_method = None
+        self.selected_approach_feasibility = None
 
 
         self.return_arrival_side = None
@@ -215,6 +217,12 @@ class AutoSR2026Stage1:
                     preferred_elevation = None
 
                 self.behavior = SelectTarget(
+                    config=CONFIG,
+
+                    pose_bearing_allowed=(
+                            CONFIG.environment == "simulation"
+                    ),
+
                     max_age_s=CONFIG.visible_max_age_s,
 
                     required_kind=required_kind,
@@ -255,14 +263,24 @@ class AutoSR2026Stage1:
                     self.behavior.selected_kind
                 )
 
+                self.selected_elevation = (
+                    self.behavior.selected_elevation
+                )
+
                 self.selected_servo_method = (
                     self.behavior.selected_servo_method
+                )
+
+                self.selected_approach_feasibility = (
+                    self.behavior
+                    .selected_approach_feasibility
                 )
 
                 print(
                     "[SELECT_TARGET] complete "
                     f"id={self.behavior.selected_target_id} "
                     f"kind={self.selected_kind} "
+                    f"elevation={self.selected_elevation} "
                     f"servo={self.selected_servo_method.value}"
                 )
 
@@ -302,7 +320,11 @@ class AutoSR2026Stage1:
                     config=CONFIG,
                     selected_target=self.selected_target,
                     selected_kind=self.selected_kind,
+                    selected_elevation=self.selected_elevation,
                     selected_servo_method=self.selected_servo_method,
+                    selected_approach_feasibility=(
+                        self.selected_approach_feasibility
+                    ),
                 )
 
             status = self.behavior.update(
@@ -353,7 +375,9 @@ class AutoSR2026Stage1:
 
                 self.selected_target = None
                 self.selected_kind = None
+                self.selected_elevation = None
                 self.selected_servo_method = None
+                self.selected_approach_feasibility = None
 
                 self.behavior = None
                 self.state = RobotState.PICKUP_OBJECT
@@ -370,8 +394,10 @@ class AutoSR2026Stage1:
                 )
 
                 self.selected_target = None
-
                 self.selected_kind = None
+                self.selected_elevation = None
+                self.selected_servo_method = None
+                self.selected_approach_feasibility = None
 
                 self.behavior = None
 

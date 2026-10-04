@@ -57,7 +57,10 @@ navigation/
 │   ├── artificial_potential_field.py
 │   ├── bug2.py
 │   ├── dynamic_window.py
+│   ├── follow_the_gap.py
+│   ├── local_planning_coordinator.py
 │   ├── models.py
+│   ├── README_NAV_LOCAL_PLANNING.md
 │   ├── tangent_bug.py
 │   ├── vector_field_histogram.py
 │   └── velocity_obstacle.py

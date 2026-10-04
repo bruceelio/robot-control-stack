@@ -1,8 +1,8 @@
-# behaviors/dropoff_object.py
+# autonomous/SR2026/dropoff_object.py
 
 from __future__ import annotations
 
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.manipulation import Release
 from primitives.motion import Rotate

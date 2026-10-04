@@ -169,7 +169,7 @@ RANGE_SENSOR_MOUNTS = {
 # -------------------------
 
 # This robot/camera configuration supports closed-loop visual visual_servoing.
-SERVOING_ENABLED = False
+SERVOING_ENABLED = True
 
 # Maximum commanded velocities while visual_servoing.
 # Limited to speeds at which perception remains sufficiently reliable.
@@ -237,8 +237,8 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 1350          # typical 250
-INIT_ESCAPE_ROTATE_DEG = -45      # typical -45
+INIT_ESCAPE_DRIVE_MM = 150          # typical 250
+INIT_ESCAPE_ROTATE_DEG = -85      # typical -45
 
 # -------------------------
 # Approach Target (not optimized)
@@ -268,6 +268,20 @@ APPROACH_RANGE_ANGULAR_MAX_RAD_S = 0.35
 APPROACH_POSE_PBVS_LINEAR_MAX_MPS = 0.90
 APPROACH_POSE_SMOOTH_LINEAR_MAX_MPS = 0.60
 APPROACH_POSE_ANGULAR_MAX_RAD_S = 0.35
+
+# FinalApproach
+
+BAND_B_MIN_DISTANCE_MM = 200            # minimum drive distance on Band B approach
+
+FINAL_APPROACH_DIRECT_RANGE_MM = 700    # added distance from commit for ranging (> final)
+FINAL_COMMIT_DISTANCE_MM = 300          # from here we go blind (WeBots low visual_servoing - 228)
+FINAL_APPROACH_BACKUP_MM = 200
+
+FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit for ranging
+FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high visual_servoing - 848
+FINAL_APPROACH_MAX_DEGREE_HIGH = 10
+VISIBLE_MAX_AGE_S = 0.35
+FINAL_APPROACH_MARKER_PUSH = 35
 
 # PostPickupRealign
 POST_PICKUP_REVERSE_MM = 160
@@ -327,19 +341,7 @@ MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 VISION_LOSS_TIMEOUT_S = 0.5
 VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
 
-# FinalApproach
 
-BAND_B_MIN_DISTANCE_MM = 200            # minimum drive distance on Band B approach
-
-FINAL_APPROACH_DIRECT_RANGE_MM = 700    # added distance from commit for ranging (> final)
-FINAL_COMMIT_DISTANCE_MM = 300          # from here we go blind (WeBots low visual_servoing - 228)
-FINAL_APPROACH_BACKUP_MM = 200
-
-FINAL_APPROACH_DIRECT_RANGE_HIGH_MM = 750      # additional distance from commit for ranging
-FINAL_COMMIT_DISTANCE_HIGH_MM = 900            # WeBots high visual_servoing - 848
-FINAL_APPROACH_MAX_DEGREE_HIGH = 10
-VISIBLE_MAX_AGE_S = 0.35
-FINAL_APPROACH_MARKER_PUSH = 35
 
 # ReacquireTarget
 REACQUIRE_TARGET_VISION_LOSS = 20

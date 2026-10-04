@@ -1,7 +1,6 @@
+# autonomous/SR2026/post_pickup_realign.py
 
-# behaviors/post_pickup_realign.py
-
-from behaviors.base import Behavior, BehaviorStatus
+from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.motion import Rotate
 

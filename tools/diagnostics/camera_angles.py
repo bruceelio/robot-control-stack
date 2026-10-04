@@ -2,7 +2,7 @@
 
 import time
 
-from behaviors.init_escape import InitEscape
+from autonomous.SR2026.init_escape import InitEscape
 from perception.perception import Perception, sense
 from localisation.localisation import Localisation
 from level2.level2_canonical import Level2

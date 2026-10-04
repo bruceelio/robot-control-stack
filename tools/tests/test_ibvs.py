@@ -1,4 +1,4 @@
-from navigation.visual_servoing.ibvs_target_centering import (
+from navigation.visual_servoing.ibvs_point_feature import (
     IBVSParams,
     ImageBasedVisualServo,
 )
