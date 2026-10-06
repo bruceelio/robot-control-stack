@@ -68,4 +68,8 @@ def run_challenge(challenge, controller):
         from tools.challenges.lift_vision_sweep import run
         return run(controller)
 
+    if challenge == Challenge.LOCAL_PLANNING:
+        from tools.challenges.local_planning import run
+        return run(controller)
+
     raise RuntimeError(f"Unsupported challenge: {challenge}")

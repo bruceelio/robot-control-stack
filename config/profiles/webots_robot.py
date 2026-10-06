@@ -165,6 +165,18 @@ RANGE_SENSOR_MOUNTS = {
 }
 
 # -------------------------
+# Home-base perception
+# -------------------------
+
+# Required penetration of base_link beyond the two
+# field-facing base boundaries before the robot is
+# considered safely inside its home base.
+#
+# This accounts for the robot/gripper geometry without
+# requiring a valid robot heading.
+HOME_BASE_ENTRY_MARGIN_MM = 200.0
+
+# -------------------------
 # Servoing
 # -------------------------
 
@@ -208,6 +220,8 @@ LIFT_LOW_RETREAT_POSITION = -0.75
 LIFT_HIGH_PICKUP_POSITION = 0.0
 LIFT_HIGH_RETREAT_POSITION = 1.0
 
+LIFT_STACK_POSITION = 0.0
+
 # LIFT_CARRY_POSITION is defined above.
 
 # -------------------------
@@ -237,8 +251,8 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 150          # typical 250
-INIT_ESCAPE_ROTATE_DEG = -85      # typical -45
+INIT_ESCAPE_DRIVE_MM = 350         # typical 250
+INIT_ESCAPE_ROTATE_DEG = -45      # typical -45
 
 # -------------------------
 # Approach Target (not optimized)
@@ -337,11 +351,8 @@ MARKER_PITCH_LOW_DEG = -0.02
 HEIGHT_DECISION_DEADLINE_MM = 1500            # cannot be low or will never commit
 MARKER_HEIGHT_MAX_DISTANCE_MM = 6000
 
-
 VISION_LOSS_TIMEOUT_S = 0.5
 VISION_GRACE_PERIOD_S = 0.3             # for policy/vision_grace_period.py
-
-
 
 # ReacquireTarget
 REACQUIRE_TARGET_VISION_LOSS = 20

@@ -152,6 +152,19 @@ GRIPPER_MOUNT = {
 }
 
 # -------------------------
+# Home-base perception
+# -------------------------
+
+# Required penetration of base_link beyond the two
+# field-facing base boundaries before the robot is
+# considered safely inside its home base.
+#
+# This accounts for the robot/gripper geometry without
+# requiring a valid robot heading.
+HOME_BASE_ENTRY_MARGIN_MM = 200.0
+
+
+# -------------------------
 # Servoing
 # -------------------------
 
@@ -225,6 +238,8 @@ LIFT_LOW_RETREAT_POSITION = 1.0
 
 LIFT_HIGH_PICKUP_POSITION = 0.0
 LIFT_HIGH_RETREAT_POSITION = 1.0
+
+LIFT_STACK_POSITION = 0.0
 
 # LIFT_CARRY_POSITION is defined above.
 

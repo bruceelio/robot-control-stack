@@ -139,6 +139,16 @@ class VelocityCandidate:
 
 
 @dataclass(frozen=True)
+class DynamicWindowEvaluation:
+    """All statically admissible DWA candidates, best score first."""
+
+    candidates: Tuple[VelocityCandidate, ...]
+    dynamic_window: DynamicWindow
+    evaluated_candidates: int
+    admissible_candidates: int
+
+
+@dataclass(frozen=True)
 class DynamicWindowResult:
     """Best admissible velocity selected by DWA."""
 
@@ -150,6 +160,7 @@ class DynamicWindowResult:
     admissible_candidates: int
 
 
+
 @dataclass(frozen=True)
 class _ObstacleDisc:
     x_mm: float
@@ -157,27 +168,22 @@ class _ObstacleDisc:
     radius_mm: float
 
 
-def select_velocity(
+def evaluate_velocity_candidates(
     obstacle_field: LocalObstacleField,
     preferred_direction: PreferredDirection,
     motion: RobotMotionState,
     dynamic_limits: RobotDynamicLimits,
     collision_geometry: RobotCollisionGeometry,
     config: DynamicWindowConfig = DynamicWindowConfig(),
-) -> Optional[DynamicWindowResult]:
+) -> DynamicWindowEvaluation:
     """
-    Select the best dynamically reachable and collision-admissible velocity.
+    Evaluate all statically admissible DWA candidates.
 
-    Returns None when no safe candidate exists.
+    Candidates are returned best-score first.
 
-    Processing:
-    1. Calculate the velocity window reachable from the current motion.
-    2. Convert perception ranges into robot-frame obstacle discs.
-    3. Sample candidate linear and angular velocities.
-    4. Roll each candidate forward with a unicycle model.
-    5. Reject collisions and motions that cannot stop before collision.
-    6. Score the remaining candidates for preferred-direction alignment,
-       obstacle clearance, and forward progress.
+    This allows a composition layer such as LocalPlanningCoordinator
+    to apply additional constraints, including Velocity Obstacles,
+    without duplicating DWA candidate-generation logic.
     """
 
     _validate_inputs(
@@ -206,15 +212,15 @@ def select_velocity(
         window.linear_max_mm_s,
         config.linear_samples,
     )
+
     angular_values = _sample_range(
         window.angular_min_rad_s,
         window.angular_max_rad_s,
         config.angular_samples,
     )
 
-    best: Optional[VelocityCandidate] = None
+    candidates = []
     evaluated = 0
-    admissible = 0
 
     for linear_mm_s in linear_values:
         for angular_rad_s in angular_values:
@@ -225,28 +231,68 @@ def select_velocity(
                 angular_rad_s=angular_rad_s,
                 preferred_direction=preferred_direction,
                 dynamic_limits=dynamic_limits,
+                dynamic_window_linear_min_mm_s=window.linear_min_mm_s,
+                dynamic_window_linear_max_mm_s=window.linear_max_mm_s,
                 collision_geometry=collision_geometry,
                 obstacles=obstacles,
                 config=config,
             )
-            if candidate is None:
-                continue
 
-            admissible += 1
+            if candidate is not None:
+                candidates.append(candidate)
 
-            if best is None or _candidate_sort_key(candidate) > _candidate_sort_key(best):
-                best = candidate
+    candidates.sort(
+        key=_candidate_sort_key,
+        reverse=True,
+    )
 
-    if best is None:
+    return DynamicWindowEvaluation(
+        candidates=tuple(candidates),
+        dynamic_window=window,
+        evaluated_candidates=evaluated,
+        admissible_candidates=len(candidates),
+    )
+
+
+def select_velocity(
+    obstacle_field: LocalObstacleField,
+    preferred_direction: PreferredDirection,
+    motion: RobotMotionState,
+    dynamic_limits: RobotDynamicLimits,
+    collision_geometry: RobotCollisionGeometry,
+    config: DynamicWindowConfig = DynamicWindowConfig(),
+) -> Optional[DynamicWindowResult]:
+    """
+    Select the best dynamically reachable and collision-admissible velocity.
+
+    This remains the normal stand-alone DWA API.
+
+    Composition layers which need access to all candidates, such as
+    LocalPlanningCoordinator applying Velocity Obstacles, should call
+    evaluate_velocity_candidates() instead.
+    """
+
+    evaluation = evaluate_velocity_candidates(
+        obstacle_field=obstacle_field,
+        preferred_direction=preferred_direction,
+        motion=motion,
+        dynamic_limits=dynamic_limits,
+        collision_geometry=collision_geometry,
+        config=config,
+    )
+
+    if not evaluation.candidates:
         return None
+
+    best = evaluation.candidates[0]
 
     return DynamicWindowResult(
         linear_mm_s=best.linear_mm_s,
         angular_rad_s=best.angular_rad_s,
         candidate=best,
-        dynamic_window=window,
-        evaluated_candidates=evaluated,
-        admissible_candidates=admissible,
+        dynamic_window=evaluation.dynamic_window,
+        evaluated_candidates=evaluation.evaluated_candidates,
+        admissible_candidates=evaluation.admissible_candidates,
     )
 
 
@@ -305,6 +351,8 @@ def _evaluate_candidate(
     angular_rad_s: float,
     preferred_direction: PreferredDirection,
     dynamic_limits: RobotDynamicLimits,
+    dynamic_window_linear_min_mm_s: float,
+    dynamic_window_linear_max_mm_s: float,
     collision_geometry: RobotCollisionGeometry,
     obstacles: Sequence[_ObstacleDisc],
     config: DynamicWindowConfig,
@@ -354,8 +402,8 @@ def _evaluate_candidate(
 
     speed_score = _speed_score(
         linear_mm_s,
-        dynamic_limits.linear_min_mm_s,
-        dynamic_limits.linear_max_mm_s,
+        dynamic_window_linear_min_mm_s,
+        dynamic_window_linear_max_mm_s,
     )
 
     score = (

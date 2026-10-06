@@ -37,15 +37,19 @@ class VelocityMotionBackend:
     """
 
     def __init__(
-        self,
-        *,
-        lvl2,
-        config=CONFIG,
-        calibration=CALIBRATION,
+            self,
+            *,
+            lvl2,
+            config=CONFIG,
+            calibration=CALIBRATION,
+            localisation=None,
+            io=None,
     ):
         self.lvl2 = lvl2
         self.cfg = config
         self.cal = calibration
+        self.localisation = localisation
+        self.io = io
 
         self.velocity_backend = self._resolve_velocity_backend()
 
@@ -81,12 +85,40 @@ class VelocityMotionBackend:
             right_power=conditioned_command.front_right,
         )
 
+        if (
+            self.localisation is not None
+            and self.io is not None
+        ):
+            self.localisation.observe_commanded_velocity(
+                linear_x_mps=(
+                    command.linear_x_mps
+                ),
+                angular_z_rps=(
+                    command.angular_z_rps
+                ),
+                now_s=float(
+                    self.io.time()
+                ),
+            )
+
     def stop(self):
         """
         Stop drivetrain output immediately.
         """
 
         self.lvl2.DRIVE_STOP()
+
+        if (
+                self.localisation is not None
+                and self.io is not None
+        ):
+            self.localisation.observe_commanded_velocity(
+                linear_x_mps=0.0,
+                angular_z_rps=0.0,
+                now_s=float(
+                    self.io.time()
+                ),
+            )
 
     # --------------------------------------------------
     # Backend selection

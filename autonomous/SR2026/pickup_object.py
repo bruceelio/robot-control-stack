@@ -29,7 +29,7 @@ from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
 from primitives.manipulation.grab import Grab
 
-from perception.providers.pickup_face_resolver import resolve_pickup_faces
+
 from perception.providers.pickup_range_resolver import resolve_pickup_range
 from skills.navigation.align_to_target import AlignToTarget
 
@@ -37,13 +37,8 @@ from skills.navigation.align_to_target import AlignToTarget
 class PickupObject(Behavior):
     # The current successful blind-drive calibration is retained:
     # final_drive_mm = handoff distance + final_approach_marker_push.
-    # Small timed rotations overshot in Webots. Avoid chasing residual
-    # midpoint errors: make at most one two-face correction.
-    LOW_TWO_FACE_TOLERANCE_DEG = 6.0
-    LOW_TWO_FACE_MAX_ROTATE_DEG = 25.0
-    LOW_SINGLE_FACE_TOLERANCE_DEG = 1.0
-    LOW_FACE_DISCOVERY_S = 0.20
-    LOW_FACE_WAIT_TIMEOUT_S = 0.60
+
+    LOW_FINAL_ALIGNMENT_TOLERANCE_DEG = 1.0
 
     LOW_READY_SAMPLES = 3
     LOW_READY_MAX_TICKS = 5
@@ -107,9 +102,7 @@ class PickupObject(Behavior):
         self.grip_verified = None  # True, False, or None (not configured)
         self.grip_measurement_mm = None
 
-        self._align_started_s = None
-        self._last_align_end_s = None
-        self._legacy_aligned = False
+
 
         self._ready_started_s = None
         self._ready_ticks = 0
@@ -158,9 +151,7 @@ class PickupObject(Behavior):
         self._retreat = None
         self.grip_verified = None
         self.grip_measurement_mm = None
-        self._align_started_s = time.time()
-        self._last_align_end_s = None
-        self._legacy_aligned = False
+
         self._ready_started_s = None
         self._ready_ticks = 0
         self._ready_samples = {"centre": [], "left": [], "right": []}
@@ -185,19 +176,31 @@ class PickupObject(Behavior):
 
         if self.target_is_high:
             # The high position is camera-compatible for the HIGH align.
-            if not self._command_lift(lvl2, "lift_high_pickup_position",
-                                      "HIGH_PICKUP"):
+            if not self._command_lift(
+                    lvl2,
+                    "lift_high_pickup_position",
+                    "HIGH_PICKUP",
+            ):
                 return self.status
+
             self._start_align(
                 bearing_deg=self.bearing_deg,
                 tolerance_deg=0.0,
                 motion_backend=motion_backend,
                 next_step="ALIGN_HIGH",
             )
+
         else:
-            # Keep the camera clear while resolving one/two faces. Lower
-            # to LOW_PICKUP only AFTER final vision alignment.
-            self._step = "ALIGN_SELECT"
+            # Perception has already resolved the physical object heading.
+            # PickupObject only executes the supplied final alignment.
+            self._start_align(
+                bearing_deg=self.bearing_deg,
+                tolerance_deg=(
+                    self.LOW_FINAL_ALIGNMENT_TOLERANCE_DEG
+                ),
+                motion_backend=motion_backend,
+                next_step="ALIGN_LOW",
+            )
 
         return self.status
 
@@ -514,56 +517,42 @@ class PickupObject(Behavior):
         next_step,
     ):
         self._align = AlignToTarget(
-            bearing_deg=float(bearing_deg),
-            tolerance_deg=float(tolerance_deg),
-            max_rotate_deg=min(
-                float(self.config.max_rotate_deg),
-                self.LOW_TWO_FACE_MAX_ROTATE_DEG
-                if next_step == "ALIGN_TWO_FACES"
-                else float(self.config.max_rotate_deg),
+            bearing_deg=float(
+                bearing_deg
+            ),
+            tolerance_deg=float(
+                tolerance_deg
+            ),
+            max_rotate_deg=float(
+                self.config.max_rotate_deg
             ),
         )
         self._align.start(motion_backend=motion_backend)
         self._step = next_step
 
-    def _face_observations(
-        self,
-        *,
-        perception,
-        face_observations,
-        now_s,
+    def _start_low_commitment(
+            self,
+            *,
+            lvl2,
+            motion_backend,
     ):
-        # face_observations is an optional test/integration override. Each
-        # observation must already be camera-corrected and fresh.
-        if face_observations is not None:
-            faces = list(face_observations)
-        else:
-            faces = resolve_pickup_faces(
-                perception=perception,
-                target_id=self.target_id,
-                max_age_s=float(self.config.visible_max_age_s),
-                now_s=now_s,
-            )
+        """
+        Lower to the calibrated LOW pickup position only after
+        final heading alignment, then begin the blind commitment.
+        """
 
-        out = []
-        for face in faces:
-            if int(face["id"]) != self.target_id:
-                continue
+        if not self._command_lift(
+                lvl2,
+                "lift_low_pickup_position",
+                "LOW_PICKUP",
+        ):
+            return self.status
 
-            # Never reuse a frame captured before a corrective rotation.
-            timestamp = face.get("timestamp")
-            if (
-                timestamp is not None
-                and self._last_align_end_s is not None
-                and float(timestamp) < self._last_align_end_s
-            ):
-                continue
+        return self._start_commitment(
+            motion_backend
+        )
 
-            bearing = float(face["bearing_deg"])
-            if math.isfinite(bearing):
-                out.append(bearing)
 
-        return sorted(out)
 
     def _bumper_fitted(self, name):
         """Use only the capability map from the resolved robot configuration."""
@@ -1162,14 +1151,13 @@ class PickupObject(Behavior):
         return self._start_grasp(lvl2)
 
     def update(
-        self,
-        *,
-        lvl2,
-        motion_backend,
-        io=None,
-        perception=None,
-        face_observations=None,
-        **_,
+            self,
+            *,
+            lvl2,
+            motion_backend,
+            io=None,
+            perception=None,
+            **_,
     ):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
@@ -1178,165 +1166,44 @@ class PickupObject(Behavior):
         if io is not None:
             self._bumper_io = io
 
-        if self._step == "ALIGN_TWO_FACE_CONFIRM":
-            # The bisector was computed from both faces *before* the turn.
-            # Do not try to rebalance it: the rotation can hide one face,
-            # and small timed corrections can overshoot. Require only a
-            # fresh observation of the same cube after the turn.
-            faces = self._face_observations(
-                perception=perception,
-                face_observations=face_observations,
-                now_s=now_s,
-            )
-            if len(faces) > 2:
-                print("[[PICKUP_OBJECT]][ALIGN] ambiguous: >2 faces for ID")
-                self.status = BehaviorStatus.FAILED
-                return self.status
-            if faces:
-                print(
-                    "[PICKUP_ALIGN][TWO_FACES] one-turn alignment complete; "
-                    f"fresh_target_faces={len(faces)} "
-                    "-> final drive-through"
-                )
-                return self._start_commitment(motion_backend)
-
-            if now_s - self._align_started_s <= self.LOW_FACE_WAIT_TIMEOUT_S:
-                return PrimitiveStatus.RUNNING
-
-            print(
-                "[[PICKUP_OBJECT]][ALIGN] no fresh sighting of selected "
-                "cube after two-face turn; aborting before commitment"
-            )
-            self.status = BehaviorStatus.FAILED
-            return self.status
-
-        if self._step == "ALIGN_SELECT":
-            # A target ID plus current perception are needed to distinguish
-            # two faces. Legacy callers without ID keep single-marker
-            # alignment, and receive an explicit diagnostic.
-            if self.target_id is None:
-                if not self._legacy_aligned:
-                    self._legacy_aligned = True
-                    print(
-                        "[[PICKUP_OBJECT]][ALIGN] no target_id; "
-                        "legacy single-marker bearing"
-                    )
-                    self._start_align(
-                        bearing_deg=self.bearing_deg,
-                        tolerance_deg=self.LOW_SINGLE_FACE_TOLERANCE_DEG,
-                        motion_backend=motion_backend,
-                        next_step="ALIGN_LEGACY",
-                    )
-                    return PrimitiveStatus.RUNNING
-                return self._start_commitment(motion_backend)
-
-            if perception is None and face_observations is None:
-                print(
-                    "[[PICKUP_OBJECT]][ALIGN] missing perception / "
-                    "face_observations for target_id"
-                )
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-            faces = self._face_observations(
-                perception=perception,
-                face_observations=face_observations,
-                now_s=now_s,
-            )
-
-            if len(faces) > 2:
-                print("[[PICKUP_OBJECT]][ALIGN] ambiguous: >2 faces for ID")
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-            if not faces:
-                if now_s - self._align_started_s <= self.LOW_FACE_WAIT_TIMEOUT_S:
-                    return PrimitiveStatus.RUNNING
-                print("[[PICKUP_OBJECT]][ALIGN] fresh target faces unavailable")
-                self.status = BehaviorStatus.FAILED
-                return self.status
-
-            if len(faces) == 2:
-                midpoint = (faces[0] + faces[1]) / 2.0
-                tolerance_deg = float(getattr(
-                    self.config,
-                    "pickup_low_two_face_tolerance_deg",
-                    self.LOW_TWO_FACE_TOLERANCE_DEG,
-                ))
-                if not math.isfinite(tolerance_deg) or tolerance_deg < 0.0:
-                    raise ValueError("invalid pickup two-face tolerance")
-                print(
-                    "[PICKUP_ALIGN][TWO_FACES] "
-                    f"bearings=({faces[0]:+.2f},{faces[1]:+.2f})deg "
-                    f"midpoint={midpoint:+.2f}deg "
-                    f"tolerance={tolerance_deg:.1f}deg"
-                )
-
-                if abs(midpoint) <= tolerance_deg:
-                    print("[[PICKUP_OBJECT]][ALIGN] two faces within tolerance")
-                    return self._start_commitment(motion_backend)
-
-                max_rotate = min(
-                    float(self.config.max_rotate_deg),
-                    self.LOW_TWO_FACE_MAX_ROTATE_DEG,
-                )
-                if abs(midpoint) > max_rotate:
-                    print("[[PICKUP_OBJECT]][ALIGN] bisector turn too large")
-                    self.status = BehaviorStatus.FAILED
-                    return self.status
-
-                self._start_align(
-                    bearing_deg=midpoint,
-                    tolerance_deg=tolerance_deg,
-                    motion_backend=motion_backend,
-                    next_step="ALIGN_TWO_FACES",
-                )
-                return PrimitiveStatus.RUNNING
-
-            # One face, and no two-face geometry has been identified.
-            # Wait briefly for the second face before starting the drive.
-            if now_s - self._align_started_s < self.LOW_FACE_DISCOVERY_S:
-                return PrimitiveStatus.RUNNING
-
-            bearing = faces[0]
-            if abs(bearing) <= self.LOW_SINGLE_FACE_TOLERANCE_DEG:
-                print("[[PICKUP_OBJECT]][ALIGN] single face centred")
-                return self._start_commitment(motion_backend)
-
-            self._start_align(
-                bearing_deg=bearing,
-                tolerance_deg=self.LOW_SINGLE_FACE_TOLERANCE_DEG,
-                motion_backend=motion_backend,
-                next_step="ALIGN_SINGLE",
-            )
-            return PrimitiveStatus.RUNNING
-
         if self._step in (
-            "ALIGN_LEGACY", "ALIGN_SINGLE", "ALIGN_TWO_FACES", "ALIGN_HIGH"
+            "ALIGN_LOW",
+            "ALIGN_HIGH",
         ):
-            st = self._align.update(motion_backend=motion_backend)
+            st = self._align.update(
+                motion_backend=motion_backend
+            )
+
             if st == PrimitiveStatus.RUNNING:
                 return st
+
             if st == PrimitiveStatus.FAILED:
-                print("[[PICKUP_OBJECT]] alignment FAILED")
-                self.status = BehaviorStatus.FAILED
+                print(
+                    "[[PICKUP_OBJECT]] "
+                    "final alignment FAILED"
+                )
+
+                self.status = (
+                    BehaviorStatus.FAILED
+                )
+
                 return self.status
 
-            if self._step in ("ALIGN_LEGACY", "ALIGN_HIGH"):
-                print("[[PICKUP_OBJECT]] alignment complete")
-                return self._start_commitment(motion_backend)
-
-            # The two-face path does not iterate. A fresh sighting of
-            # either face is enough after its one bounded rotation.
-            self._last_align_end_s = now_s
-            self._align_started_s = now_s
-            self._align = None
-            self._step = (
-                "ALIGN_TWO_FACE_CONFIRM"
-                if self._step == "ALIGN_TWO_FACES"
-                else "ALIGN_SELECT"
+            print(
+                "[[PICKUP_OBJECT]] "
+                "final alignment complete "
+                f"bearing={self.bearing_deg:+.2f}deg"
             )
-            return PrimitiveStatus.RUNNING
+
+            if self._step == "ALIGN_LOW":
+                return self._start_low_commitment(
+                    lvl2=lvl2,
+                    motion_backend=motion_backend,
+                )
+
+            return self._start_commitment(
+                motion_backend
+            )
 
         if self._step == "DRIVE":
             st = self._drive.update(motion_backend=motion_backend)

@@ -129,21 +129,51 @@ def _camera_target(
     observation: dict,
 ) -> RelativeTarget2D:
     """
-    Convert a raw camera observation into canonical planar
-    robot geometry relative to the source camera.
+    Return canonical camera-relative target geometry.
 
-    Raw perception convention:
-        distance = millimetres
-        +bearing = image right
-        bearing  = degrees
+    Preferred perception contract:
 
-    Canonical geometry:
+        distance_m
+        bearing_rad
+
+    where:
+
         distance = metres
-        +x       = forward
-        +y       = left
-        +bearing = counter-clockwise / left
+        +bearing = left / counter-clockwise
         bearing  = radians
+
+    Legacy camera observations remain supported temporarily:
+
+        distance / distance_mm
+        bearing / bearing_deg
+
+    where:
+
+        distance = millimetres
+        +bearing = image-right
+        bearing  = degrees
     """
+
+    if (
+        "distance_m" in observation
+        and "bearing_rad" in observation
+    ):
+        distance_m = float(
+            observation[
+                "distance_m"
+            ]
+        )
+
+        bearing_rad = float(
+            observation[
+                "bearing_rad"
+            ]
+        )
+
+        return relative_target_from_polar(
+            distance_m=distance_m,
+            bearing_rad=bearing_rad,
+        )
 
     distance_mm, bearing_deg = (
         _camera_measurement(
@@ -157,8 +187,8 @@ def _camera_target(
             / 1000.0
         ),
 
-        # Raw perception bearing is positive right.
-        # Canonical robot bearing is positive left.
+        # Legacy perception bearing is
+        # positive image-right.
         bearing_rad=-math.radians(
             float(bearing_deg)
         ),

@@ -24,6 +24,7 @@ CENTRAL_PLATFORM_SIZE_MM = 1220
 CENTRAL_PLATFORM_HEIGHT_MM = 180
 
 
+
 # --------------------------------------------------
 # Base identifiers
 # --------------------------------------------------
@@ -158,33 +159,62 @@ APRILTAG_SIZE_BY_GROUP_M = {
     "object": 0.08,
 }
 
+SAMPLE_SIZE_M = 0.130
+SAMPLE_HALF_SIZE_M = (
+    SAMPLE_SIZE_M / 2.0
+)
+
 # --------------------------------------------------
 # Base geometry
 # --------------------------------------------------
 
 def base_bounds(base: BaseID, arena_size: int):
     """
-    Return (xmin, xmax, ymin, ymax) for a base region.
+    Return nominal arena bounds:
+
+        (xmin, xmax, ymin, ymax)
+
+    The base is 2000 x 1000 mm.
+
+    The long dimension rotates with the corner:
+        BASE_0 / BASE_2 -> long edge along Y
+        BASE_1 / BASE_3 -> long edge along X
     """
-    h = arena_size / 2
-    w = BASE_WIDTH_MM
-    d = BASE_HEIGHT_MM
+    h = arena_size / 2.0
+    long_edge = BASE_WIDTH_MM
+    short_edge = BASE_HEIGHT_MM
 
     if base == BaseID.BASE_0:      # top-left
-        return (-h, -h + w,
-                +h - d, +h)
+        return (
+            -h,
+            -h + short_edge,
+            +h - long_edge,
+            +h,
+        )
 
     if base == BaseID.BASE_1:      # top-right
-        return (+h - w, +h,
-                +h - d, +h)
+        return (
+            +h - long_edge,
+            +h,
+            +h - short_edge,
+            +h,
+        )
 
     if base == BaseID.BASE_2:      # bottom-right
-        return (+h - w, +h,
-                -h, -h + d)
+        return (
+            +h - short_edge,
+            +h,
+            -h,
+            -h + long_edge,
+        )
 
     if base == BaseID.BASE_3:      # bottom-left
-        return (-h, -h + w,
-                -h, -h + d)
+        return (
+            -h,
+            -h + long_edge,
+            -h,
+            -h + short_edge,
+        )
 
     raise ValueError(base)
 

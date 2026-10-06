@@ -32,11 +32,15 @@ class Config:
     gripper_grab_position: float
     lift_carry_position: float
 
+
     # Pickup lift positions
     lift_low_pickup_position: float
     lift_low_retreat_position: float
     lift_high_pickup_position: float
     lift_high_retreat_position: float
+
+    # Stack lift position
+    lift_stack_position: float
 
     # Grip verification
     pickup_lift_settle_s: float
@@ -80,6 +84,8 @@ class Config:
     grab_distance_mm: float
     motor_polarity: list[int]
 
+    # Home-base perception
+    home_base_entry_margin_mm: float
 
     # Calibration
     rotate_factor: float
@@ -232,6 +238,8 @@ RESOLVE_MAP = {
     "lift_high_pickup_position": ("profile", "LIFT_HIGH_PICKUP_POSITION"),
     "lift_high_retreat_position": ("profile", "LIFT_HIGH_RETREAT_POSITION"),
 
+    "lift_stack_position": ("profile", "LIFT_STACK_POSITION"),
+
     # Grip verification
     "pickup_lift_settle_s": ("profile", "PICKUP_LIFT_SETTLE_S"),
     "pickup_grip_verify_enabled": ("profile", "PICKUP_GRIP_VERIFY_ENABLED"),
@@ -267,6 +275,12 @@ RESOLVE_MAP = {
     "motion_backend": ("profile", "MOTION_BACKEND"),
     "grab_distance_mm": ("profile", "GRAB_DISTANCE_MM"),
     "motor_polarity": ("profile", "MOTOR_POLARITY"),
+
+    # Home-base perception
+    "home_base_entry_margin_mm": (
+        "profile",
+        "HOME_BASE_ENTRY_MARGIN_MM",
+    ),
 
 
     # Calibration (computed)

@@ -1,4 +1,4 @@
-# skills/perception/reacquire_target.py
+# skills/perception/reacquire_target_sweep.py
 
 import time
 from typing import Optional

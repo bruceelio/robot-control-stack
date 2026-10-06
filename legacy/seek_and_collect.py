@@ -10,7 +10,7 @@ from perception.height_model import HeightModel
 from primitives.motion import Rotate  # Keep for blind 0° rotate if you want, but we’ll mostly use AlignToTarget now
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
-from skills.perception.reacquire_target import ReacquireTarget
+from skills.perception.reacquire_target_sweep import ReacquireTarget
 
 
 

@@ -16,7 +16,7 @@ from navigation.control.distance_angle_controller import (
 )
 
 from autonomous.SR2026.init_escape import InitEscape
-from skills.perception.select_target import SelectTarget
+from skills.perception.select_target_pickup import SelectTarget
 
 from navigation.command.velocity_arbiter import (
     VelocityArbiter,

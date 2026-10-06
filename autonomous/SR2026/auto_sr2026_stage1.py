@@ -12,9 +12,10 @@ from autonomous.SR2026.post_dropoff_realign import PostDropoffRealign
 from autonomous.SR2026.scripted_start import ScriptedStart
 from autonomous.SR2026.return_to_base import ReturnToBase
 from autonomous.SR2026.global_object_search import GlobalObjectSearch
+from autonomous.SR2026.stack_object import StackObject
 
 from skills.manipulation.prepare_search import PrepareSearch
-from skills.perception.select_target import SelectTarget
+from skills.perception.select_target_pickup import SelectTarget
 
 from config import CONFIG
 from config.strategy import STARTUP_SCRIPT, StartupScript
@@ -56,6 +57,9 @@ class AutoSR2026Stage1:
 
 
         self.return_arrival_side = None
+        self.stack_reference_id: int | None = None
+        self.stack_distance_mm: float | None = None
+        self.stack_bearing_deg: float | None = None
         self.recover_localisation_success_state = None
 
         # -------------------------
@@ -318,6 +322,7 @@ class AutoSR2026Stage1:
 
                 self.behavior.start(
                     config=CONFIG,
+                    calibration=controller.calibration,
                     selected_target=self.selected_target,
                     selected_kind=self.selected_kind,
                     selected_elevation=self.selected_elevation,
@@ -331,7 +336,8 @@ class AutoSR2026Stage1:
                 lvl2=controller.lvl2,
                 perception=controller.perception,
                 localisation=controller.localisation,
-                motion_backend=controller.motion_backend
+                motion_backend=controller.motion_backend,
+                io=controller.io,
             )
 
             if status.name == "SUCCEEDED":
@@ -547,9 +553,14 @@ class AutoSR2026Stage1:
         # -------------------------
         if self.state == RobotState.RETURN_TO_BASE:
             if self.behavior is None:
+                self.stack_reference_id = None
+                self.stack_distance_mm = None
+                self.stack_bearing_deg = None
+
                 self.behavior = ReturnToBase()
                 self.behavior.start(
                     config=CONFIG,
+                    calibration=controller.calibration,
                     match_zone=controller.io.usb["match_zone"].value,
                 )
 
@@ -575,6 +586,7 @@ class AutoSR2026Stage1:
                 wall_geometry=wall_geometry,
                 perception=controller.perception,
                 delivered_ids=self.delivered_ids,
+                carried_target_id=self.last_collected_id,
                 arena_observations=controller.latest_arena_observations,
                 observation_timestamp=(
                     controller.latest_arena_observation_timestamp
@@ -603,14 +615,56 @@ class AutoSR2026Stage1:
                     None,
                 )
 
-                print(
-                    "ReturnToBase complete "
-                    f"arrival_side={self.return_arrival_side} "
-                    "— dropping off object"
+                self.stack_reference_id = getattr(
+                    self.behavior,
+                    "stack_target_id",
+                    None,
                 )
 
-                self.behavior = None
-                self.state = RobotState.DROPOFF_OBJECT
+                self.stack_distance_mm = getattr(
+                    self.behavior,
+                    "stack_distance_mm",
+                    None,
+                )
+
+                self.stack_bearing_deg = getattr(
+                    self.behavior,
+                    "stack_bearing_deg",
+                    None,
+                )
+
+                stack_ready = (
+                        self.stack_reference_id is not None
+                        and self.stack_distance_mm is not None
+                        and self.stack_bearing_deg is not None
+                )
+
+                if stack_ready:
+                    print(
+                        "ReturnToBase complete "
+                        f"arrival_side={self.return_arrival_side} "
+                        f"stack_reference={self.stack_reference_id} "
+                        f"distance={self.stack_distance_mm:.0f}mm "
+                        f"bearing={self.stack_bearing_deg:+.1f}deg "
+                        "— stacking object"
+                    )
+
+                    self.behavior = None
+                    self.state = RobotState.STACK_OBJECT
+
+                else:
+                    self.stack_reference_id = None
+                    self.stack_distance_mm = None
+                    self.stack_bearing_deg = None
+
+                    print(
+                        "ReturnToBase complete "
+                        f"arrival_side={self.return_arrival_side} "
+                        "— dropping off object"
+                    )
+
+                    self.behavior = None
+                    self.state = RobotState.DROPOFF_OBJECT
 
 
             elif status.name == "FAILED":
@@ -621,6 +675,131 @@ class AutoSR2026Stage1:
 
                 self.state = RobotState.RECOVER_LOCALISATION
 
+            return
+
+        # -------------------------
+        # STACK OBJECT
+        # -------------------------
+        if self.state == RobotState.STACK_OBJECT:
+            if self.behavior is None:
+                self.behavior = StackObject()
+
+                self.behavior.start(
+                    config=CONFIG,
+                    lvl2=controller.lvl2,
+                    motion_backend=controller.motion_backend,
+                    distance_mm=self.stack_distance_mm,
+                    bearing_deg=self.stack_bearing_deg,
+                    target_id=self.stack_reference_id,
+                )
+
+            status = self.behavior.update(
+                lvl2=controller.lvl2,
+                motion_backend=controller.motion_backend,
+            )
+
+            if status.name == "SUCCEEDED":
+                delivered_id = self.last_collected_id
+
+                if delivered_id is not None:
+                    self.delivered_ids.add(
+                        delivered_id
+                    )
+
+                    if (
+                            self.delivered_kind is None
+                            and self.pending_pickup_kind is not None
+                    ):
+                        self.delivered_kind = (
+                            self.pending_pickup_kind
+                        )
+
+                        print(
+                            "[STRATEGY] first delivered kind="
+                            f"{self.delivered_kind}"
+                        )
+
+                    self.pending_pickup_kind = None
+
+                    print(
+                        f"Stacked id={delivered_id} "
+                        f"onto id={self.stack_reference_id} "
+                        f"(delivered_ids="
+                        f"{sorted(self.delivered_ids)})"
+                    )
+
+                self.stack_reference_id = None
+                self.stack_distance_mm = None
+                self.stack_bearing_deg = None
+
+                print(
+                    "StackObject complete — "
+                    "post-dropoff realign"
+                )
+
+                self.behavior = None
+                self.state = (
+                    RobotState.POST_DROPOFF_REALIGN
+                )
+
+
+            elif status.name == "FAILED":
+                object_released = bool(
+                    getattr(
+                        self.behavior,
+                        "object_released",
+                        False,
+                    )
+                )
+
+                if object_released:
+                    delivered_id = self.last_collected_id
+                    if delivered_id is not None:
+                        self.delivered_ids.add(
+                            delivered_id
+                        )
+                        if (
+                                self.delivered_kind is None
+                                and self.pending_pickup_kind is not None
+                        ):
+                            self.delivered_kind = (
+                                self.pending_pickup_kind
+                            )
+                            print(
+                                "[STRATEGY] first delivered kind="
+                                f"{self.delivered_kind}"
+                            )
+
+                        self.pending_pickup_kind = None
+
+                        print(
+                            "[STACK_OBJECT] "
+                            f"release succeeded for id={delivered_id}; "
+                            "post-release movement failed "
+                            "but object counts as delivered "
+                            f"(delivered_ids="
+                            f"{sorted(self.delivered_ids)})"
+
+                        )
+
+                    self.stack_reference_id = None
+                    self.stack_distance_mm = None
+                    self.stack_bearing_deg = None
+                    self.behavior = None
+                    self.state = (
+                        RobotState.POST_DROPOFF_REALIGN
+                    )
+
+                else:
+                    print(
+                        "StackObject failed before release — "
+                        "returning to search"
+                    )
+                    self.stack_reference_id = None
+                    self.stack_distance_mm = None
+                    self.stack_bearing_deg = None
+                    self.behavior = None
+                    self.state = RobotState.PREPARE_SEARCH
             return
 
         # -------------------------

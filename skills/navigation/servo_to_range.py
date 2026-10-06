@@ -73,6 +73,8 @@ class ServoToRange(Primitive):
         self.velocity_backend = VelocityMotionBackend(
             lvl2=lvl2,
             config=self.config,
+            localisation=localisation,
+            io=io,
         )
 
         self._last_result = None

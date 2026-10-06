@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Optional
 
 from skills.perception.marker_elevation import _marker_elevation
-from skills.perception.select_target import ApproachServoMethod
+from skills.perception.select_target_pickup import ApproachServoMethod
 from motion_backends.velocity import VelocityMotionBackend
 from navigation.command.velocity_arbiter import VelocityCommand
 from navigation.control.distance_angle_controller import (
@@ -85,6 +85,7 @@ class ApproachTargetServo(Primitive):
             kind: str,
             height_model,
             locked_target_id: Optional[int],
+            fixed_target_is_high: Optional[bool] = None,
             servo_method: ApproachServoMethod,
             pose_bearing_allowed: bool = False,
     ):
@@ -94,6 +95,12 @@ class ApproachTargetServo(Primitive):
         self.kind = kind
         self.height_model = height_model
         self.servo_method = servo_method
+
+        self.fixed_target_is_high = (
+            None
+            if fixed_target_is_high is None
+            else bool(fixed_target_is_high)
+        )
 
         self.pose_bearing_allowed = bool(
             pose_bearing_allowed
@@ -184,7 +191,14 @@ class ApproachTargetServo(Primitive):
     def approached_target_id(self) -> Optional[int]:
         return self.locked_target_id
 
-    def start(self, *, lvl2, **_):
+    def start(
+            self,
+            *,
+            lvl2,
+            localisation=None,
+            io=None,
+            **_,
+    ):
         self.range_bearing_controller.reset()
 
         if self.pose_bearing_controller is not None:
@@ -206,6 +220,8 @@ class ApproachTargetServo(Primitive):
         self.velocity_backend = VelocityMotionBackend(
             lvl2=lvl2,
             config=self.config,
+            localisation=localisation,
+            io=io,
         )
 
         self.status = PrimitiveStatus.RUNNING
@@ -215,7 +231,9 @@ class ApproachTargetServo(Primitive):
             f"kind={self.kind} "
             f"target_id={self.locked_target_id} "
             f"servo={self.servo_method.value} "
-            f"pose_allowed={self.pose_bearing_allowed}"
+            f"pose_allowed={self.pose_bearing_allowed} "
+        f"fixed_height="
+        f"{'AUTO' if self.fixed_target_is_high is None else ('HIGH' if self.fixed_target_is_high else 'LOW')}"
         )
 
         return self.status
@@ -228,128 +246,7 @@ class ApproachTargetServo(Primitive):
 
         return memory.get(self.locked_target_id)
 
-    def _get_terminal_visual_bearing_rad(
-            self,
-            perception,
-            *,
-            commit_distance_mm: float,
-            tolerance_mm: float,
-    ) -> Optional[float]:
-        """
-        Return the visual centre bearing of the locked object near
-        terminal pickup alignment.
 
-        All valid current observations of the locked object are first
-        transformed into the common canonical gripper frame:
-
-            +bearing = left / counter-clockwise
-
-        The object's horizontal visual centre is then defined by the
-        angular envelope of its visible faces:
-
-            rightmost = min(face bearings)
-            leftmost  = max(face bearings)
-            centre    = (rightmost + leftmost) / 2
-
-        This generalises naturally:
-
-            one visible face   -> that face bearing
-            two visible faces  -> their angular bisector
-            three+ faces       -> centre of the full visible envelope
-
-        Interior faces therefore do not bias the visual centre merely
-        because they become visible.
-
-        Before terminal alignment has latched, the envelope is used only
-        when at least one current face has reached the normal terminal
-        distance region. Once terminal alignment is active, range noise
-        cannot disable the visual-envelope bearing.
-        """
-
-        frame_memory = getattr(
-            perception,
-            "current_object_observations",
-            None,
-        )
-
-        if frame_memory is None:
-            return None
-
-        candidates = (
-            frame_memory
-            .get(self.kind, {})
-            .get(self.locked_target_id, [])
-        )
-
-        if not candidates:
-            return None
-
-        geometries = []
-
-        for observation in candidates:
-            try:
-                geometry = relative_target_from_gripper(
-                    observation=observation,
-                    config=self.config,
-                )
-            except (KeyError, TypeError, ValueError):
-                continue
-
-            geometries.append(
-                geometry
-            )
-
-        if not geometries:
-            return None
-
-        terminal_limit_m = (
-                (
-                        float(commit_distance_mm)
-                        + float(tolerance_mm)
-                )
-                / 1000.0
-        )
-
-        if (
-                not self._terminal_align_active
-                and not any(
-            geometry.distance_m <= terminal_limit_m
-            for geometry in geometries
-        )
-        ):
-            return None
-
-        bearings_rad = [
-            geometry.bearing_rad
-            for geometry in geometries
-        ]
-
-        rightmost_bearing_rad = min(
-            bearings_rad
-        )
-
-        leftmost_bearing_rad = max(
-            bearings_rad
-        )
-
-        centre_bearing_rad = (
-                                     rightmost_bearing_rad
-                                     + leftmost_bearing_rad
-                             ) / 2.0
-
-        print(
-            "[SERVO_APPROACH][TERMINAL_ENVELOPE] "
-            f"id={self.locked_target_id} "
-            f"faces={len(geometries)} "
-            f"right="
-            f"{math.degrees(rightmost_bearing_rad):+.2f}deg "
-            f"left="
-            f"{math.degrees(leftmost_bearing_rad):+.2f}deg "
-            f"centre="
-            f"{math.degrees(centre_bearing_rad):+.2f}deg"
-        )
-
-        return centre_bearing_rad
 
     def _get_locked_pose_face(self, perception):
         """
@@ -587,6 +484,32 @@ class ApproachTargetServo(Primitive):
 
         return self.pose_bearing_controller
 
+    def _height_is_resolved(self) -> bool:
+        return (
+                self.fixed_target_is_high is not None
+                or self.height_model.is_committed()
+        )
+
+    def _effective_target_is_high(self) -> bool:
+        if self.fixed_target_is_high is not None:
+            return self.fixed_target_is_high
+
+        return self.height_model.is_high()
+
+    def _handoff_target_is_high(self) -> bool:
+        if self.fixed_target_is_high is not None:
+            return self.fixed_target_is_high
+
+        latest_height = (
+            self.height_model.last_good_is_high()
+        )
+
+        return (
+            latest_height
+            if latest_height is not None
+            else self.height_model.is_high()
+        )
+
     def _update_height_model(
             self,
             *,
@@ -594,12 +517,17 @@ class ApproachTargetServo(Primitive):
             distance_mm: float,
             observation_timestamp: float,
     ):
+
+
         """
         Update HeightModel once per fresh camera observation.
 
         Uses the same height evidence and commit rules as
         Stage 1 ApproachTarget.
         """
+
+        if self.fixed_target_is_high is not None:
+            return
 
         # Do not count the same camera frame more than once.
         if self._last_height_timestamp == observation_timestamp:
@@ -661,14 +589,13 @@ class ApproachTargetServo(Primitive):
 
     def _commit_distance_mm(self) -> float:
         if (
-            self.height_model.is_committed()
-            and self.height_model.is_high()
+                self._height_is_resolved()
+                and self._effective_target_is_high()
         ):
             return float(
                 self.config.final_commit_distance_high_mm
             )
 
-        # UNKNOWN deliberately uses LOW geometry while approaching.
         return float(
             self.config.final_commit_distance_mm
         )
@@ -761,29 +688,14 @@ class ApproachTargetServo(Primitive):
             self.config.approach_target_servo_stop_tolerance_mm
         )
 
-        terminal_visual_bearing_rad = (
-            self._get_terminal_visual_bearing_rad(
-                perception,
-                commit_distance_mm=commit_distance_mm,
-                tolerance_mm=commit_tolerance_mm,
-            )
-        )
 
-        if terminal_visual_bearing_rad is not None:
-            bearing_rad = (
-                terminal_visual_bearing_rad
-            )
-
-            bearing_deg = -math.degrees(
-                bearing_rad
-            )
 
         # Same safety rule as Stage 1:
         # UNKNOWN may approach using LOW geometry,
         # but may not cross the LOW commit point.
         if (
-            distance_mm <= commit_distance_mm
-            and not self.height_model.is_committed()
+                distance_mm <= commit_distance_mm
+                and not self._height_is_resolved()
         ):
             print(
                 "[SERVO_APPROACH][HEIGHT] "
@@ -819,7 +731,7 @@ class ApproachTargetServo(Primitive):
         )
 
         terminal_region_reached = (
-                self.height_model.is_committed()
+                self._height_is_resolved()
                 and remaining_distance_mm <= commit_tolerance_mm
         )
 
@@ -863,14 +775,8 @@ class ApproachTargetServo(Primitive):
                 self.final_distance_mm = float(distance_mm)
                 self.final_bearing_deg = float(bearing_deg)
 
-                latest_height = (
-                    self.height_model.last_good_is_high()
-                )
-
                 self.target_is_high = (
-                    latest_height
-                    if latest_height is not None
-                    else self.height_model.is_high()
+                    self._handoff_target_is_high()
                 )
 
                 print(
@@ -884,7 +790,7 @@ class ApproachTargetServo(Primitive):
                 print(
                     "[SERVO_APPROACH][HANDOFF] "
                     f"approach_mode="
-                    f"{'HIGH' if self.height_model.is_high() else 'LOW'} "
+                    f"{'HIGH' if self._effective_target_is_high() else 'LOW'} "
                     f"pickup_height="
                     f"{'HIGH' if self.target_is_high else 'LOW'} "
                     f"dist={distance_mm:.0f}mm "

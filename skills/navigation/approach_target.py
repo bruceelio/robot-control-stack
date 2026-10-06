@@ -14,7 +14,7 @@ from primitives.motion import Drive, Rotate
 
 from skills.navigation.align_to_target import AlignToTarget
 from perception.robot_geometry import relative_target_from_gripper
-from skills.perception.reacquire_target import ReacquireTarget
+from skills.perception.reacquire_target_sweep import ReacquireTarget
 from skills.perception.select_target_utils import get_closest_target
 from skills.perception.marker_elevation import _marker_elevation
 

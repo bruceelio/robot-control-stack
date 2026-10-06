@@ -400,15 +400,13 @@ class Controller:
         )
 
         if pose_obs is not None:
-            '''
-            print(
-                f"[LOC][ACCEPT] src={pose_obs.source} "
-                f"x={pose_obs.x:.1f} y={pose_obs.y:.1f} "
-                f"hdg={'None' if pose_obs.heading is None else f'{math.degrees(pose_obs.heading):.1f}'} "
-                f"conf={pose_obs.confidence:.2f}"
+            self.localisation.accept(
+                pose_obs
             )
-            '''
-            self.localisation.accept(pose_obs)
+        else:
+            self.localisation.mark_unavailable(
+                timestamp=localisation_now_s,
+            )
 
         pose = self.localisation.pose
 

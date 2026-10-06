@@ -15,6 +15,13 @@ from perception.vision.detection_pipeline import (
 from vision.apriltag.reconcile import (
     reconcile_apriltag_markers,
 )
+from config.arena import (
+    SAMPLE_HALF_SIZE_M,
+)
+
+from perception.object_reconstruction import (
+    reconstruct_cube_centres,
+)
 
 # ==================================================
 # Configuration
@@ -293,6 +300,14 @@ def sense(
         now,
         cam_cal,
         camera_name=camera_name,
+    )
+
+    reconstruct_cube_centres(
+        perception=perception,
+        half_size_m=(
+            SAMPLE_HALF_SIZE_M
+        ),
+        debug=DEBUG,
     )
 
     # Log current seen markers left -> right (most negative bearing first)

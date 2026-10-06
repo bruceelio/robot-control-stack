@@ -119,14 +119,14 @@ class ReturnToBaseServo(Primitive):
                 }
             )
 
-        # Guides from which a delivered cube may replace
-        # the arena navigation target:
+        # Terminal route guides:
         #
         #   - the final guide
         #   - the guide immediately before it on either route
         #
-        # Derived from the zone-specific return routes rather
-        # than hard-coded arena marker IDs.
+        # Higher-level ReturnToBase owns terminal arbitration once
+        # this region is reached. These are derived from the selected
+        # route rather than hard-coded arena marker IDs.
         self.terminal_replacement_guide_ids = frozenset(
             guide_id
             for route in self.guide_routes
@@ -206,7 +206,7 @@ class ReturnToBaseServo(Primitive):
         self.desired_bearing_rad = 0.0
 
         self.failure_reason: Optional[str] = None
-        self.terminal_target_id: Optional[int] = None
+
 
         # Stage 2 return-guide perception recovery state.
         self.recovery_guide_id: Optional[int] = None
@@ -215,7 +215,7 @@ class ReturnToBaseServo(Primitive):
         self._guide_vision_grace = None
         self._active_guide_last_seen_s: Optional[float] = None
 
-        self.terminal_target_kind: Optional[str] = None
+
         self.final_guide_visible = False
         self.final_guide_approach_deg: Optional[float] = None
 
@@ -235,6 +235,91 @@ class ReturnToBaseServo(Primitive):
         return self.guide_routes[
             self.selected_route_index
         ]["guide_side"]
+
+    def observe_nominal_travel_bearing(
+        self,
+        *,
+        arena_observations,
+    ) -> Optional[float]:
+        """
+        Return the current nominal travel direction without
+        commanding any robot motion.
+
+        The result is a robot-frame bearing in canonical navigation
+        coordinates:
+
+            0 rad  = straight ahead
+            +rad   = left / counter-clockwise
+            -rad   = right / clockwise
+
+        Intermediate guides are navigation references rather than
+        point goals, so the returned direction is the guide-bearing
+        error relative to the configured guide offset.
+
+        The final guide is a direct point target, so its camera
+        bearing is returned relative to zero.
+
+        None means the current guide cannot provide a usable
+        navigation direction.
+        """
+
+        if (
+                self.selected_route_index is None
+                or not self.guide_ids
+        ):
+            return None
+
+        guide_id = self.active_guide_id
+
+        observation = next(
+            (
+                obs
+                for obs in (arena_observations or ())
+                if int(obs.get("id", -1))
+                == int(guide_id)
+            ),
+            None,
+        )
+
+        if observation is None:
+            return None
+
+        if guide_id == self.final_guide_id:
+            target = relative_target_from_camera(
+                observation=observation,
+            )
+
+            steering_bearing_rad = float(
+                target.bearing_rad
+            )
+
+            target_bearing_rad = (
+                FINAL_GUIDE_BEARING_RAD
+            )
+
+        else:
+            target = relative_target_from_base_link(
+                observation=observation,
+                config=self.config,
+            )
+
+            steering_bearing_rad = float(
+                target.bearing_rad
+            )
+
+            target_bearing_rad = float(
+                self.desired_bearing_rad
+            )
+
+        error_rad = (
+            steering_bearing_rad
+            - target_bearing_rad
+        )
+
+        return math.atan2(
+            math.sin(error_rad),
+            math.cos(error_rad),
+        )
 
     def observe_final_guide(
         self,
@@ -318,12 +403,21 @@ class ReturnToBaseServo(Primitive):
             approach_deg=approach_deg,
         )
 
-    def start(self, *, lvl2, **_):
+    def start(
+            self,
+            *,
+            lvl2,
+            localisation=None,
+            io=None,
+            **_,
+    ):
         self.controller.reset()
 
         self.velocity_backend = VelocityMotionBackend(
             lvl2=lvl2,
             config=self.config,
+            localisation=localisation,
+            io=io,
         )
 
         self.selected_route_index = None
@@ -331,8 +425,7 @@ class ReturnToBaseServo(Primitive):
         self.active_index = 0
         self.desired_bearing_rad = 0.0
         self.failure_reason = None
-        self.terminal_target_id = None
-        self.terminal_target_kind = None
+
         self.final_guide_visible = False
         self.final_guide_approach_deg = None
 
@@ -354,222 +447,7 @@ class ReturnToBaseServo(Primitive):
 
         return self.status
 
-    def _find_delivered_target(
-        self,
-        *,
-        perception,
-        delivered_ids,
-        now: float,
-    ):
-        """
-        Find the nearest currently-visible delivered cube.
 
-        This is only used when a terminal arena guide has
-        disappeared. Once selected, the cube id is latched.
-        """
-
-        if perception is None or not delivered_ids:
-            return None
-
-        delivered_ids = {
-            int(target_id)
-            for target_id in delivered_ids
-        }
-
-        max_age_s = float(
-            self.config.visible_max_age_s
-        )
-
-        candidates = []
-
-        for kind, memory in perception.objects.items():
-            for target_id in delivered_ids:
-
-                observation = memory.get(target_id)
-
-                if observation is None:
-                    continue
-
-                if (
-                    "distance" not in observation
-                    or "bearing" not in observation
-                ):
-                    continue
-
-                last_seen = float(
-                    observation.get("last_seen", 0.0)
-                )
-
-                if now - last_seen > max_age_s:
-                    continue
-
-                candidates.append(
-                    (
-                        float(observation["distance"]),
-                        str(kind),
-                        target_id,
-                        observation,
-                    )
-                )
-
-        if not candidates:
-            return None
-
-        return min(
-            candidates,
-            key=lambda item: item[0],
-        )
-
-    def _get_terminal_target(
-        self,
-        *,
-        perception,
-        now: float,
-    ):
-        """
-        Return the already-latched delivered cube if it is
-        still freshly visible.
-        """
-
-        if (
-            perception is None
-            or self.terminal_target_id is None
-            or self.terminal_target_kind is None
-        ):
-            return None
-
-        observation = perception.objects.get(
-            self.terminal_target_kind,
-            {},
-        ).get(
-            self.terminal_target_id
-        )
-
-        if observation is None:
-            return None
-
-        last_seen = float(
-            observation.get("last_seen", 0.0)
-        )
-
-        if (
-            now - last_seen
-            > float(self.config.visible_max_age_s)
-        ):
-            return None
-
-        return observation
-
-    def _update_terminal_target(
-        self,
-        *,
-        observation,
-        now: float,
-    ) -> PrimitiveStatus:
-        """
-        Servo directly toward a delivered cube.
-
-        Range and bearing are the cube's camera measurements.
-        Completion uses the LOW pickup commit distance.
-        """
-
-        target_geometry = relative_target_from_camera(
-            observation=observation,
-        )
-
-        distance_m = (
-            target_geometry.distance_m
-        )
-
-        bearing_rad = (
-            target_geometry.bearing_rad
-        )
-
-        # Legacy values retained for diagnostics only.
-        distance_mm = (
-                distance_m
-                * 1000.0
-        )
-
-        bearing_deg = -math.degrees(
-            bearing_rad
-        )
-
-        timestamp = float(
-            observation.get("last_seen", 0.0)
-        )
-
-        if (
-            now - timestamp
-            > float(self.config.visible_max_age_s)
-        ):
-            self.velocity_backend.stop()
-
-            print(
-                "[RETURN_BASE_SERVO][DELIVERED] "
-                f"id={self.terminal_target_id} stale"
-            )
-
-            self.status = PrimitiveStatus.RUNNING
-            return self.status
-
-        stop_distance_m = (
-                float(
-                    self.config.final_commit_distance_mm
-                )
-                / 1000.0
-        )
-
-        stop_distance_mm = (
-            stop_distance_m
-            * 1000.0
-        )
-
-        result = self.controller.update(
-            distance_m=distance_m,
-            target_distance_m=stop_distance_m,
-            angle_rad=bearing_rad,
-            target_angle_rad=0.0,
-            timestamp=timestamp,
-        )
-
-        command = VelocityCommand(
-            linear_x_mps=result.linear_mps,
-            angular_z_rps=result.angular_rps,
-            lateral_y_mps=0.0,
-            timestamp=timestamp,
-        )
-
-        self.velocity_backend.update(
-            command
-        )
-
-        if result.distance_reached:
-            self.velocity_backend.stop()
-
-            print(
-                "[RETURN_BASE_SERVO][DELIVERED] "
-                f"id={self.terminal_target_id} "
-                f"distance={distance_mm:.0f}mm "
-                f"target={stop_distance_mm:.0f}mm "
-                "-> complete"
-            )
-
-            self.status = PrimitiveStatus.SUCCEEDED
-            return self.status
-
-        print(
-            "[RETURN_BASE_SERVO][DELIVERED] "
-            f"id={self.terminal_target_id} "
-            f"distance={distance_mm:.0f}mm "
-            f"stop={stop_distance_mm:.0f}mm "
-            f"bearing={bearing_deg:+.1f}deg "
-            f"vx={command.linear_x_mps:.3f}m/s "
-            f"wz={command.angular_z_rps:+.3f}rad/s"
-        )
-
-        self.status = PrimitiveStatus.RUNNING
-        return self.status
 
     def update(
             self,
@@ -588,33 +466,7 @@ class ReturnToBaseServo(Primitive):
 
         now = time.time()
 
-        # --------------------------------------------------
-        # Latched delivered-cube terminal target
-        # --------------------------------------------------
 
-        if self.terminal_target_id is not None:
-
-            observation = self._get_terminal_target(
-                perception=perception,
-                now=now,
-            )
-
-            if observation is None:
-                self.velocity_backend.stop()
-
-                print(
-                    "[RETURN_BASE_SERVO][DELIVERED] "
-                    f"id={self.terminal_target_id} "
-                    "not visible"
-                )
-
-                self.status = PrimitiveStatus.RUNNING
-                return self.status
-
-            return self._update_terminal_target(
-                observation=observation,
-                now=now,
-            )
 
         all_guide_ids = {
             tag_id
@@ -808,40 +660,6 @@ class ReturnToBaseServo(Primitive):
             )
 
         if observation is None:
-
-            if guide_id in self.terminal_replacement_guide_ids:
-
-                candidate = self._find_delivered_target(
-                    perception=perception,
-                    delivered_ids=delivered_ids,
-                    now=now,
-                )
-
-                if candidate is not None:
-                    (
-                        _,
-                        kind,
-                        target_id,
-                        observation,
-                    ) = candidate
-
-                    self.terminal_target_id = target_id
-                    self.terminal_target_kind = kind
-
-                    # New physical target and new bearing setpoint:
-                    # discard controller history from the arena guide.
-                    self.controller.reset()
-
-                    print(
-                        "[RETURN_BASE_SERVO][TERMINAL_HANDOFF] "
-                        f"guide={guide_id} -> "
-                        f"delivered {kind} id={target_id}"
-                    )
-
-                    return self._update_terminal_target(
-                        observation=observation,
-                        now=now,
-                    )
 
             self.velocity_backend.stop()
 

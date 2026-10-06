@@ -1,21 +1,37 @@
 # autonomous/SR2026/approach_object.py
 
-import time
 import inspect
+import math
+import time
 
 from autonomous.SR2026.base import Behavior, BehaviorStatus
+from perception import get_visible_targets
 from perception.height_model import HeightModel
+from perception.providers.local_obstacle_field import (
+    local_obstacle_field_from_objects,
+)
+from perception.robot_geometry import (
+    relative_target_from_base_link,
+)
 from policies.vision_grace_period import VisionGracePeriod
 from primitives.base import PrimitiveStatus
 
 from skills.navigation.align_to_target import AlignToTarget
 from skills.navigation.approach_target import ApproachTarget
 from skills.navigation.approach_target_servo import ApproachTargetServo
+from skills.navigation.local_avoidance import (
+    LocalAvoidance,
+    LocalObstacleObservation,
+)
 from skills.perception.acquire_wall_geometry import AcquireWallGeometry
 from skills.perception.track_object import TrackObject
+from skills.perception.reacquire_target_bearing_reverse import (
+    ReacquireTargetBearingReverse,
+)
 
 from log_trace import next_run, trace
 
+SR2026_OBJECT_RADIUS_MM = 65.0
 
 class ApproachObject(Behavior):
 
@@ -27,6 +43,7 @@ class ApproachObject(Behavior):
         super().__init__()
 
         self.config = None
+        self.calibration = None
         self.kind = None
         self.elevation = None
 
@@ -65,6 +82,14 @@ class ApproachObject(Behavior):
         # APPROACH skill
         self._approach_skill = None
 
+        # Stage-2 local-avoidance supervisor.
+        self._local_avoidance = None
+        self._local_avoidance_active = False
+        self._local_avoidance_unavailable_logged = False
+
+        # Post-avoidance target recovery.
+        self._post_avoidance_reacquire = None
+
         # Active navigation stage during target approach.
         # 3 = localisation/path navigation   (future)
         # 2 = perception/servo navigation
@@ -100,6 +125,7 @@ class ApproachObject(Behavior):
             self,
             *,
             config,
+            calibration=None,
             selected_target=None,
             selected_kind=None,
             selected_elevation=None,
@@ -111,6 +137,7 @@ class ApproachObject(Behavior):
 
         print("[ACQUIRE_OBJECT] start")
         self.config = config
+        self.calibration = calibration
 
         # SelectTarget has already made the decision.
         self.target = selected_target
@@ -188,6 +215,14 @@ class ApproachObject(Behavior):
         self.wall_range_rays = ()
 
         self._approach_skill = None
+
+        self._local_avoidance = None
+        self._local_avoidance_active = False
+        self._local_avoidance_unavailable_logged = False
+
+        # Post-avoidance target recovery.
+        self._post_avoidance_reacquire = None
+
         self._navigation_stage = None
 
         # --- Vision settle / fresh observation gate reset ---
@@ -200,7 +235,16 @@ class ApproachObject(Behavior):
         self.status = BehaviorStatus.RUNNING
         return self.status
 
-    def update(self, *, lvl2, perception, localisation, motion_backend, **_):
+    def update(
+        self,
+        *,
+        lvl2,
+        perception,
+        localisation,
+        motion_backend,
+        io=None,
+        **_,
+    ):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
 
@@ -256,6 +300,8 @@ class ApproachObject(Behavior):
                 lvl2,
                 perception,
                 motion_backend,
+                io=io,
+                localisation=localisation,
             )
 
         return self.status
@@ -276,6 +322,12 @@ class ApproachObject(Behavior):
             motion_backend=motion_backend,
         )
         self._approach_skill = None
+
+        self._safe_stop(
+            self._post_avoidance_reacquire,
+            motion_backend=motion_backend,
+        )
+        self._post_avoidance_reacquire = None
 
         self.failure_reason = "target_lost"
         self.lost_target_id = self.locked_target_id
@@ -601,10 +653,605 @@ class ApproachObject(Behavior):
             pass
 
     # -------------------------
+    # Stage-2 local avoidance
+    # -------------------------
+
+    def _ensure_local_avoidance(self):
+        if self._local_avoidance is not None:
+            return self._local_avoidance
+
+        if self.calibration is None:
+            if not self._local_avoidance_unavailable_logged:
+                print(
+                    "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+                    "calibration unavailable -> disabled"
+                )
+                self._local_avoidance_unavailable_logged = True
+
+            return None
+
+        try:
+            camera_fov_deg = float(
+                self.calibration
+                .cameras["front"]
+                .meta
+                .fov_deg
+            )
+        except Exception:
+            if not self._local_avoidance_unavailable_logged:
+                print(
+                    "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+                    "front-camera FOV unavailable -> disabled"
+                )
+                self._local_avoidance_unavailable_logged = True
+
+            return None
+
+        if camera_fov_deg <= 0.0:
+            return None
+
+        self._local_avoidance = LocalAvoidance(
+            config=self.config,
+            field_fov_rad=math.radians(
+                camera_fov_deg
+            ),
+        )
+
+        return self._local_avoidance
+
+    def _visible_avoidance_objects(
+        self,
+        perception,
+    ):
+        objects = []
+
+        for kind in (
+            "acidic",
+            "basic",
+        ):
+            objects.extend(
+                get_visible_targets(
+                    perception,
+                    kind,
+                    max_age_s=float(
+                        self.config.visible_max_age_s
+                    ),
+                )
+            )
+
+        return objects
+
+    def _avoidance_goal(self):
+        snap = self.track
+
+        if (
+            snap is None
+            or not snap.visible_now
+            or snap.last_obs is None
+        ):
+            return None, None
+
+        target = relative_target_from_base_link(
+            observation=snap.last_obs,
+            config=self.config,
+        )
+
+        return (
+            float(target.distance_m) * 1000.0,
+            float(target.bearing_rad),
+        )
+
+    def _avoidance_observations(
+        self,
+        *,
+        visible_objects,
+    ):
+        observations = []
+
+        for obj in visible_objects:
+            try:
+                object_id = int(
+                    obj["id"]
+                )
+
+                obstacle = (
+                    relative_target_from_base_link(
+                        observation=obj,
+                        config=self.config,
+                    )
+                )
+
+                distance_mm = (
+                    float(
+                        obstacle.distance_m
+                    )
+                    * 1000.0
+                )
+
+                bearing_rad = float(
+                    obstacle.bearing_rad
+                )
+
+            except (
+                KeyError,
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+            if (
+                object_id
+                == self.locked_target_id
+            ):
+                continue
+
+            if distance_mm <= 0.0:
+                continue
+
+            observations.append(
+                LocalObstacleObservation(
+                    obstacle_id=object_id,
+                    distance_mm=distance_mm,
+                    bearing_rad=bearing_rad,
+                    radius_mm=(
+                        SR2026_OBJECT_RADIUS_MM
+                    ),
+                )
+            )
+
+        return tuple(
+            observations
+        )
+
+    def _update_local_avoidance(
+        self,
+        *,
+        avoidance,
+        visible_objects,
+        obstacle_observations,
+        goal_distance_mm,
+        goal_bearing_rad,
+        now_s,
+    ):
+        obstacle_range_limit_mm = (
+            goal_distance_mm
+            if goal_distance_mm is not None
+            else avoidance.goal_distance_mm
+        )
+
+        exclude_ids = (
+            ()
+            if self.locked_target_id is None
+            else (
+                self.locked_target_id,
+            )
+        )
+
+        obstacle_field = (
+            local_obstacle_field_from_objects(
+                config=self.config,
+                visible_objects=visible_objects,
+                field_fov_rad=(
+                    avoidance.field_fov_rad
+                ),
+                scan_sectors=(
+                    avoidance.scan_sectors
+                ),
+                clear_range_mm=(
+                    avoidance.lookahead_distance_mm
+                    * 1.5
+                ),
+                timestamp_s=now_s,
+                exclude_ids=exclude_ids,
+                default_obstacle_radius_mm=(
+                    SR2026_OBJECT_RADIUS_MM
+                ),
+                max_obstacle_distance_mm=(
+                    obstacle_range_limit_mm
+                ),
+            )
+        )
+
+        return avoidance.update(
+            now_s=now_s,
+            goal_distance_mm=(
+                goal_distance_mm
+            ),
+            goal_bearing_rad=(
+                goal_bearing_rad
+            ),
+            obstacle_observations=(
+                obstacle_observations
+            ),
+            obstacle_field=(
+                obstacle_field
+            ),
+        )
+
+    def _post_avoidance_reverse_limit_mm(self) -> float:
+        if (
+            self.height_model.is_committed()
+            and self.height_model.is_high()
+        ):
+            return float(
+                self.config.final_commit_distance_high_mm
+            )
+
+        # If avoidance caused loss before HeightModel committed,
+        # preserve the selected HIGH geometry.
+        if (
+            not self.height_model.is_committed()
+            and self.elevation == "high"
+        ):
+            return float(
+                self.config.final_commit_distance_high_mm
+            )
+
+        return float(
+            self.config.final_commit_distance_mm
+        )
+
+    def _handoff_after_local_avoidance(
+        self,
+        *,
+        avoidance,
+        lvl2,
+        motion_backend,
+        io,
+    ):
+        self._local_avoidance_active = False
+
+        # Always restart the nominal servo fresh after avoidance.
+        self._approach_skill = None
+
+        snap = self.track
+
+        target_fresh = (
+                snap is not None
+                and snap.visible_now
+                and snap.last_obs is not None
+                and snap.age_s is not None
+                and snap.age_s <= self._max_fresh_age_s
+        )
+
+        if target_fresh:
+            print(
+                "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+                "fresh target at handoff "
+                "-> ApproachTargetServo"
+            )
+
+            return self.status
+
+        # LocalAvoidance has propagated the local target geometry
+        # while the target was hidden. stop() does not discard it,
+        # so this is our best Stage-2 estimate of target direction.
+        expected_bearing_rad = (
+            avoidance.goal_bearing_rad
+        )
+
+        if (
+            expected_bearing_rad is None
+            or self.locked_target_id is None
+        ):
+            return self._fail_target_lost(
+                motion_backend=motion_backend,
+                reason=(
+                    "post_avoidance_target_missing_"
+                    "without_expected_bearing"
+                ),
+            )
+
+        reverse_limit_mm = (
+            self._post_avoidance_reverse_limit_mm()
+        )
+
+        print(
+            "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+            "target not fresh at handoff "
+            f"age={None if snap is None else snap.age_s} "
+            "-> bearing/reverse reacquire "
+            f"expected="
+            f"{math.degrees(expected_bearing_rad):+.1f}deg "
+            f"reverse_limit={reverse_limit_mm:.0f}mm"
+        )
+
+        self._post_avoidance_reacquire = (
+            ReacquireTargetBearingReverse(
+                config=self.config,
+                kind=self.kind,
+                target_id=self.locked_target_id,
+                expected_bearing_rad=(
+                    expected_bearing_rad
+                ),
+                reverse_limit_mm=(
+                    reverse_limit_mm
+                ),
+                max_age_s=float(
+                    self.config.visible_max_age_s
+                ),
+            )
+        )
+
+        self._post_avoidance_reacquire.start(
+            lvl2=lvl2,
+            motion_backend=motion_backend,
+            io=io,
+        )
+
+        print(
+            "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+            "target not visible at handoff "
+            "-> bearing/reverse reacquire "
+            f"expected="
+            f"{math.degrees(expected_bearing_rad):+.1f}deg "
+            f"reverse_limit={reverse_limit_mm:.0f}mm"
+        )
+
+        return self.status
+
+    def _update_post_avoidance_reacquire(
+        self,
+        *,
+        perception,
+        motion_backend,
+    ):
+        skill = self._post_avoidance_reacquire
+
+        if skill is None:
+            return self.status
+
+        st = skill.update(
+            perception=perception,
+            motion_backend=motion_backend,
+        )
+
+        if st == PrimitiveStatus.RUNNING:
+            return self.status
+
+        if st == PrimitiveStatus.FAILED:
+            reason = skill.failure_reason
+
+            self._post_avoidance_reacquire = None
+
+            return self._fail_target_lost(
+                motion_backend=motion_backend,
+                reason=(
+                    "post_avoidance_reacquire_failed:"
+                    f"{reason}"
+                ),
+            )
+
+        if skill.found_target is not None:
+            self.target = skill.found_target
+
+        print(
+            "[APPROACH_OBJECT][LOCAL_AVOIDANCE] "
+            "target reacquired "
+            "-> ApproachTargetServo"
+        )
+
+        self._post_avoidance_reacquire = None
+        self._approach_skill = None
+
+        return self.status
+
+    # -------------------------
     # Phase: APPROACHING (delegated)
     # -------------------------
 
-    def _approach(self, lvl2, perception, motion_backend):
+    def _approach(
+            self,
+            lvl2,
+            perception,
+            motion_backend,
+            *,
+            io=None,
+            localisation=None,
+    ):
+
+        if self._post_avoidance_reacquire is not None:
+            return self._update_post_avoidance_reacquire(
+                perception=perception,
+                motion_backend=motion_backend,
+            )
+
+        # --------------------------------------------------
+        # Stage-2 LocalAvoidance supervisor
+        # --------------------------------------------------
+
+        if (
+            self._navigation_stage == 2
+            and io is not None
+        ):
+            avoidance = (
+                self._ensure_local_avoidance()
+            )
+
+            if avoidance is not None:
+                now_local_s = float(
+                    io.time()
+                )
+
+                visible_objects = (
+                    self._visible_avoidance_objects(
+                        perception
+                    )
+                )
+
+                (
+                    goal_distance_mm,
+                    goal_bearing_rad,
+                ) = self._avoidance_goal()
+
+                obstacle_observations = (
+                    self._avoidance_observations(
+                        visible_objects=(
+                            visible_objects
+                        ),
+                    )
+                )
+
+                # ------------------------------------------
+                # LocalAvoidance currently owns motion.
+                # ------------------------------------------
+
+                if self._local_avoidance_active:
+
+                    avoidance_status = (
+                        self._update_local_avoidance(
+                            avoidance=avoidance,
+                            visible_objects=(
+                                visible_objects
+                            ),
+                            obstacle_observations=(
+                                obstacle_observations
+                            ),
+                            goal_distance_mm=(
+                                goal_distance_mm
+                            ),
+                            goal_bearing_rad=(
+                                goal_bearing_rad
+                            ),
+                            now_s=now_local_s,
+                        )
+                    )
+
+                    if (
+                        avoidance_status
+                        == PrimitiveStatus.RUNNING
+                    ):
+                        return self.status
+
+                    if (
+                        avoidance_status
+                        == PrimitiveStatus.FAILED
+                    ):
+                        print(
+                            "[APPROACH_OBJECT]"
+                            "[LOCAL_AVOIDANCE] "
+                            "FAILED "
+                            f"reason={avoidance.reason}"
+                        )
+
+                        self.failure_reason = (
+                            "local_avoidance_failed"
+                        )
+
+                        self._local_avoidance_active = False
+                        self.status = (
+                            BehaviorStatus.FAILED
+                        )
+
+                        return self.status
+
+                    return self._handoff_after_local_avoidance(
+                        avoidance=avoidance,
+                        lvl2=lvl2,
+                        motion_backend=motion_backend,
+                        io=io,
+                    )
+
+                # ------------------------------------------
+                # Nominal servo owns motion.
+                # Check whether it should be interrupted.
+                # ------------------------------------------
+
+                if (
+                    goal_distance_mm is not None
+                    and goal_bearing_rad is not None
+                    and avoidance.nominal_corridor_blocked(
+                        goal_distance_mm=(
+                            goal_distance_mm
+                        ),
+                        goal_bearing_rad=(
+                            goal_bearing_rad
+                        ),
+                        obstacle_observations=(
+                            obstacle_observations
+                        ),
+                    )
+                ):
+                    print(
+                        "[APPROACH_OBJECT]"
+                        "[LOCAL_AVOIDANCE] "
+                        "nominal corridor blocked "
+                        "-> takeover"
+                    )
+
+                    self._safe_stop(
+                        self._approach_skill,
+                        motion_backend=(
+                            motion_backend
+                        ),
+                    )
+
+                    self._approach_skill = None
+
+                    avoidance.start(
+                        lvl2=lvl2,
+                        calibration=self.calibration,
+                        now_s=now_local_s,
+                        localisation=localisation,
+                        io=io,
+                    )
+
+                    self._local_avoidance_active = True
+
+                    avoidance_status = (
+                        self._update_local_avoidance(
+                            avoidance=avoidance,
+                            visible_objects=(
+                                visible_objects
+                            ),
+                            obstacle_observations=(
+                                obstacle_observations
+                            ),
+                            goal_distance_mm=(
+                                goal_distance_mm
+                            ),
+                            goal_bearing_rad=(
+                                goal_bearing_rad
+                            ),
+                            now_s=now_local_s,
+                        )
+                    )
+
+                    if (
+                        avoidance_status
+                        == PrimitiveStatus.FAILED
+                    ):
+                        self.failure_reason = (
+                            "local_avoidance_failed"
+                        )
+
+                        self._local_avoidance_active = False
+                        self.status = (
+                            BehaviorStatus.FAILED
+                        )
+
+
+                    elif (
+
+                            avoidance_status
+
+                            == PrimitiveStatus.SUCCEEDED
+
+                    ):
+
+                        return self._handoff_after_local_avoidance(
+
+                            avoidance=avoidance,
+
+                            lvl2=lvl2,
+
+                            motion_backend=motion_backend,
+
+                            io=io,
+
+                        )
+
+                    return self.status
 
         if self._approach_skill is None:
 
@@ -643,6 +1290,8 @@ class ApproachObject(Behavior):
                 motion_backend=motion_backend,
                 lvl2=lvl2,
                 seed_target=self.target,
+                localisation=localisation,
+                io=io,
             )
 
         # NEW: camera settle gate
@@ -882,6 +1531,11 @@ class ApproachObject(Behavior):
             motion_backend=motion_backend,
         )
         self._safe_stop(
-            self._approach_skill,
+            self._local_avoidance,
+            motion_backend=motion_backend,
+        )
+
+        self._safe_stop(
+            self._post_avoidance_reacquire,
             motion_backend=motion_backend,
         )

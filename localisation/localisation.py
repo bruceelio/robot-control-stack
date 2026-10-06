@@ -260,6 +260,40 @@ class Localisation:
             for provider in self.providers:
                 provider.reseed(self.pose)
 
+    def mark_unavailable(
+            self,
+            *,
+            timestamp: float,
+    ) -> None:
+        """
+        No localisation provider currently supplies a usable
+        position or heading.
+
+        Invalidate the published pose without invalidating or
+        resetting the providers themselves.
+        """
+
+        if self.pose is None:
+            self.pose = Pose(
+                x=0.0,
+                y=0.0,
+                heading=None,
+                position_valid=False,
+                heading_valid=False,
+                source="none",
+                timestamp=float(timestamp),
+            )
+            return
+
+        self.pose = replace(
+            self.pose,
+            position_valid=False,
+            heading_valid=False,
+            source="none",
+            timestamp=float(timestamp),
+            covariance=None,
+        )
+
     def invalidate(self) -> None:
         """
         Controller-facing: mark pose invalid.
@@ -313,6 +347,37 @@ class Localisation:
                     angle_deg=float(angle_deg),
                     duration_s=float(duration_s),
                     now_s=float(now_s),
+                )
+
+    def observe_commanded_velocity(
+        self,
+        *,
+        linear_x_mps: float,
+        angular_z_rps: float,
+        now_s: float,
+    ) -> None:
+        """
+        Feed executed continuous commanded motion to propagation
+        providers which know how to use it.
+
+        Localisation itself does not decide validity here.
+        """
+
+        for provider in self.providers:
+            if hasattr(
+                provider,
+                "observe_velocity",
+            ):
+                provider.observe_velocity(
+                    linear_x_mps=float(
+                        linear_x_mps
+                    ),
+                    angular_z_rps=float(
+                        angular_z_rps
+                    ),
+                    now_s=float(
+                        now_s
+                    ),
                 )
 
     def apply_motion(self, *, drive_mm: float = 0.0, rotate_deg: float = 0.0) -> None:

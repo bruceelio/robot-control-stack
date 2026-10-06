@@ -1,4 +1,4 @@
-# skills/perception/select_target.py
+# skills/perception/select_target_pickup.py
 
 """
 SelectTarget skill.
