@@ -1,4 +1,5 @@
 # autonomous/SR2026/pickup_object.py
+
 """Final pickup following the vision-based approach handoff.
 
 LOW:
@@ -28,6 +29,8 @@ from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
 from primitives.motion import Drive
 from primitives.manipulation.grab import Grab
+from motion_backends.velocity import VelocityMotionBackend
+from navigation.command.velocity_arbiter import VelocityCommand
 
 
 from perception.providers.pickup_range_resolver import resolve_pickup_range
@@ -118,6 +121,10 @@ class PickupObject(Behavior):
         self._bumper_single_since_s = None
         self._bumper_correction_active = False
         self._bumper_correction_used = False
+        self._bumper_velocity_backend = None
+        self._bumper_velocity_active = False
+        self._bumper_nominal_wheel_mps = None
+        self._bumper_localisation = None
 
     def start(
         self,
@@ -166,6 +173,10 @@ class PickupObject(Behavior):
         self._bumper_single_since_s = None
         self._bumper_correction_active = False
         self._bumper_correction_used = False
+        self._bumper_velocity_backend = None
+        self._bumper_velocity_active = False
+        self._bumper_nominal_wheel_mps = None
+        self._bumper_localisation = None
 
         print(
             f"[[PICKUP_OBJECT]] start id={self.target_id} "
@@ -653,6 +664,150 @@ class PickupObject(Behavior):
 
         return abs(float(power))
 
+    def _ensure_bumper_velocity_backend(
+            self,
+            *,
+            lvl2,
+            motion_backend,
+    ):
+        if self._bumper_velocity_backend is not None:
+            return
+
+        calibration = getattr(
+            motion_backend,
+            "cal",
+            None,
+        )
+
+        if calibration is None:
+            raise RuntimeError(
+                "Pickup bumper velocity control requires "
+                "resolved motion calibration"
+            )
+
+        self._bumper_velocity_backend = VelocityMotionBackend(
+            lvl2=lvl2,
+            config=self.config,
+            calibration=calibration,
+            localisation=self._bumper_localisation,
+            io=self._bumper_io,
+        )
+
+    def _pickup_contact_wheel_speed_mps(
+            self,
+            *,
+            motion_backend,
+            nominal_power,
+    ):
+        """
+        Return the calibrated wheel speed corresponding to the same
+        nominal motor power used by the pickup timed drive.
+        """
+        cal = getattr(
+            motion_backend,
+            "cal",
+            None,
+        )
+
+        if cal is None:
+            raise RuntimeError(
+                "Pickup bumper velocity control requires "
+                "resolved motion calibration"
+            )
+
+        for power, velocity_mm_s in cal.drive_velocity_curve:
+            if math.isclose(
+                    abs(float(power)),
+                    abs(float(nominal_power)),
+                    rel_tol=1e-6,
+                    abs_tol=1e-6,
+            ):
+                return abs(float(velocity_mm_s)) / 1000.0
+
+        raise RuntimeError(
+            "Pickup bumper nominal power has no matching "
+            "DRIVE_VELOCITY_CURVE point: "
+            f"power={nominal_power}"
+        )
+
+    def _command_bumper_wheels(
+            self,
+            *,
+            left_scale,
+            right_scale,
+    ):
+        """
+        Express pickup contact steering as a canonical differential-drive
+        body velocity.
+
+        left_scale/right_scale:
+            1.0 = normal pickup wheel speed
+            0.0 = stopped wheel
+        """
+        backend = self._bumper_velocity_backend
+        wheel_mps = self._bumper_nominal_wheel_mps
+
+        if backend is None or wheel_mps is None:
+            raise RuntimeError(
+                "Pickup bumper velocity backend is not initialised"
+            )
+
+        left_mps = (
+                float(left_scale)
+                * float(wheel_mps)
+        )
+
+        right_mps = (
+                float(right_scale)
+                * float(wheel_mps)
+        )
+
+        linear_x_mps = (
+                               left_mps + right_mps
+                       ) / 2.0
+
+        track_width_m = (
+                float(self.config.drive_track_width_mm)
+                / 1000.0
+        )
+
+        angular_z_rps = (
+                                right_mps - left_mps
+                        ) / track_width_m
+
+        now_s = self._bumper_now()
+
+        backend.update(
+            VelocityCommand(
+                linear_x_mps=linear_x_mps,
+                angular_z_rps=angular_z_rps,
+                lateral_y_mps=0.0,
+                timestamp=now_s,
+            )
+        )
+
+        self._bumper_velocity_active = True
+
+    def _stop_bumper_velocity(self):
+        if (
+                not self._bumper_velocity_active
+                or self._bumper_velocity_backend is None
+        ):
+            return
+
+        now_s = self._bumper_now()
+
+        self._bumper_velocity_backend.update(
+            VelocityCommand(
+                linear_x_mps=0.0,
+                angular_z_rps=0.0,
+                lateral_y_mps=0.0,
+                timestamp=now_s,
+            )
+        )
+
+        self._bumper_velocity_active = False
+
     def _bumper_contact_control_sample(
         self,
         *,
@@ -685,9 +840,9 @@ class PickupObject(Behavior):
         # --------------------------------------------------
         if left is True and right is True:
             if self._bumper_correction_active:
-                lvl2.DRIVE_POWER(
-                    left_power=nominal_power,
-                    right_power=nominal_power,
+                self._command_bumper_wheels(
+                    left_scale=1.0,
+                    right_scale=1.0,
                 )
                 print(
                     "[PICKUP_BUMPER][EQUALISE] "
@@ -714,9 +869,9 @@ class PickupObject(Behavior):
 
         elif left is False and right is False:
             if self._bumper_correction_active:
-                lvl2.DRIVE_POWER(
-                    left_power=nominal_power,
-                    right_power=nominal_power,
+                self._command_bumper_wheels(
+                    left_scale=1.0,
+                    right_scale=1.0,
                 )
                 print(
                     "[PICKUP_BUMPER][STRAIGHT] "
@@ -732,9 +887,9 @@ class PickupObject(Behavior):
             # One or both sensor readings are unavailable.
             # Do not turn based on incomplete information.
             if self._bumper_correction_active:
-                lvl2.DRIVE_POWER(
-                    left_power=nominal_power,
-                    right_power=nominal_power,
+                self._command_bumper_wheels(
+                    left_scale=1.0,
+                    right_scale=1.0,
                 )
 
             self._bumper_correction_active = False
@@ -751,9 +906,9 @@ class PickupObject(Behavior):
             self._bumper_single_since_s = now_s
 
             if self._bumper_correction_active:
-                lvl2.DRIVE_POWER(
-                    left_power=nominal_power,
-                    right_power=nominal_power,
+                self._command_bumper_wheels(
+                    left_scale=1.0,
+                    right_scale=1.0,
                 )
                 self._bumper_correction_active = False
 
@@ -776,19 +931,23 @@ class PickupObject(Behavior):
         # Right bumper -> stop right wheel -> swing right.
         # Left bumper  -> stop left wheel  -> swing left.
         # --------------------------------------------------
+        if side == "right":
+            left_power = nominal_power
+            right_power = 0.0
+            left_scale = 1.0
+            right_scale = 0.0
+        else:
+            left_power = 0.0
+            right_power = nominal_power
+            left_scale = 0.0
+            right_scale = 1.0
+
+        self._command_bumper_wheels(
+            left_scale=left_scale,
+            right_scale=right_scale,
+        )
+
         if not self._bumper_correction_active:
-            if side == "right":
-                left_power = nominal_power
-                right_power = 0.0
-            else:
-                left_power = 0.0
-                right_power = nominal_power
-
-            lvl2.DRIVE_POWER(
-                left_power=left_power,
-                right_power=right_power,
-            )
-
             self._bumper_correction_active = True
             self._bumper_correction_used = True
 
@@ -834,9 +993,9 @@ class PickupObject(Behavior):
         # any remaining grace period expires.
         self._bumper_correction_active = False
 
-        lvl2.DRIVE_POWER(
-            left_power=nominal_power,
-            right_power=nominal_power,
+        self._command_bumper_wheels(
+            left_scale=1.0,
+            right_scale=1.0,
         )
 
         deadline_s = (
@@ -859,9 +1018,9 @@ class PickupObject(Behavior):
                         f"{self.LOW_BUMPER_SEAT_S:.2f}s"
                     )
 
-                    lvl2.DRIVE_POWER(
-                        left_power=nominal_power,
-                        right_power=nominal_power,
+                    self._command_bumper_wheels(
+                        left_scale=1.0,
+                        right_scale=1.0,
                     )
 
                     io.sleep(self.LOW_BUMPER_SEAT_S)
@@ -897,7 +1056,7 @@ class PickupObject(Behavior):
             )
 
         finally:
-            lvl2.DRIVE_STOP()
+            self._stop_bumper_velocity()
 
     def _start_commitment(self, motion_backend):
         self._drive = Drive(distance_mm=self.final_drive_mm)
@@ -925,6 +1084,18 @@ class PickupObject(Behavior):
         if bumper_pair_fitted:
             nominal_power = self._pickup_contact_power(
                 motion_backend
+            )
+
+            self._ensure_bumper_velocity_backend(
+                lvl2=lvl2,
+                motion_backend=motion_backend,
+            )
+
+            self._bumper_nominal_wheel_mps = (
+                self._pickup_contact_wheel_speed_mps(
+                    motion_backend=motion_backend,
+                    nominal_power=nominal_power,
+                )
             )
 
         previous_observer = None
@@ -963,6 +1134,15 @@ class PickupObject(Behavior):
         finally:
             if lvl2 is not None and any_bumper_fitted:
                 lvl2._timed_drive_observer = previous_observer
+
+        # Level2's blocking timed drive has physically stopped.
+
+        # If bumper steering took over during that drive, close the
+
+        # continuous commanded-velocity state at the same boundary.
+
+        if self._bumper_velocity_active:
+            self._stop_bumper_velocity()
 
         # Level2 has stopped the normal calibrated drive at this point.
         end_readings = self._sample_bumpers(
@@ -1155,16 +1335,20 @@ class PickupObject(Behavior):
             *,
             lvl2,
             motion_backend,
-            io=None,
+            io,
+            localisation=None,
             perception=None,
             **_,
     ):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
 
-        now_s = time.time()
+        now_s = float(io.time())
         if io is not None:
             self._bumper_io = io
+
+        if localisation is not None:
+            self._bumper_localisation = localisation
 
         if self._step in (
             "ALIGN_LOW",

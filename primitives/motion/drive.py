@@ -1,7 +1,7 @@
-# primitives/dead_reckoning/drive.py
+# primitives/motion/drive.py
 
 from primitives.base import Primitive, PrimitiveStatus
-import time
+
 
 class Drive(Primitive):
     def __init__(self, *, distance_mm):
@@ -15,10 +15,18 @@ class Drive(Primitive):
         )
 
         if duration_s > 0.0:
-            localisation = getattr(motion_backend, "localisation", None)
-            now_s = time.time()
+            localisation = getattr(
+                motion_backend,
+                "localisation",
+                None,
+            )
+            now_s = getattr(
+                motion_backend,
+                "now_s",
+                None,
+            )
 
-            if localisation is not None:
+            if localisation is not None and now_s is not None:
                 localisation.begin_commanded_drive(
                     distance_mm=distance_mm,
                     duration_s=duration_s,

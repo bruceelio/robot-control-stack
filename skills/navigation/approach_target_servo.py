@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
+
 
 from enum import Enum
 from typing import Optional
@@ -605,7 +605,7 @@ class ApproachTargetServo(Primitive):
             self.failure_reason = self.FAILURE_PERCEPTION
             return PrimitiveStatus.FAILED
 
-        now = time.time()
+        now = float(perception.io.time())
 
         target = self._get_locked_target(perception)
 

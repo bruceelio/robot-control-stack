@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
+
 
 from dataclasses import dataclass
 from typing import Optional, Sequence
@@ -447,13 +447,12 @@ class ReturnToBaseServo(Primitive):
 
         return self.status
 
-
-
     def update(
             self,
             *,
             arena_observations,
             observation_timestamp: float,
+            io,
             perception=None,
             delivered_ids=None,
             robot_pose=None,
@@ -464,9 +463,7 @@ class ReturnToBaseServo(Primitive):
             self.failure_reason = self.FAILURE_PERCEPTION
             return PrimitiveStatus.FAILED
 
-        now = time.time()
-
-
+        now = float(io.time())
 
         all_guide_ids = {
             tag_id

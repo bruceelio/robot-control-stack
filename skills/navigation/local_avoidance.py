@@ -503,6 +503,8 @@ class LocalAvoidance(Primitive):
                 lvl2=lvl2,
                 config=self.config,
                 calibration=calibration,
+                localisation=localisation,
+                io=io,
             )
         )
 

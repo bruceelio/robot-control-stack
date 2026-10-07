@@ -1,4 +1,4 @@
-# primitives/dead_reckoning/stop.py
+# primitives/motion/stop.py
 
 from primitives.base import Primitive, PrimitiveStatus
 

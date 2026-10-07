@@ -251,10 +251,12 @@ class AutoSR2026Stage1:
 
                 self.behavior.start(
                     exclude_ids=self.delivered_ids,
+                    now=float(controller.io.time()),
                 )
 
             status = self.behavior.update(
                 perception=controller.perception,
+                now=float(controller.io.time()),
             )
 
             if status.name == "SUCCEEDED":
@@ -434,6 +436,7 @@ class AutoSR2026Stage1:
                 lvl2=controller.lvl2,
                 motion_backend=controller.motion_backend,
                 io=controller.io,
+                localisation=controller.localisation,
                 perception=controller.perception,
             )
 
@@ -521,6 +524,7 @@ class AutoSR2026Stage1:
                 perception=controller.perception,
                 localisation=controller.localisation,
                 motion_backend=controller.motion_backend,
+                io=controller.io,
             )
 
             if status.name == "SUCCEEDED":

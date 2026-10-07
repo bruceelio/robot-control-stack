@@ -251,7 +251,7 @@ GRAB_DISTANCE_MM = 0.0   # not currently in code?
 # (1000,-60): will target high acidic
 # (250, -45); will targer low basic
 
-INIT_ESCAPE_DRIVE_MM = 350         # typical 250
+INIT_ESCAPE_DRIVE_MM = 1550         # typical 250
 INIT_ESCAPE_ROTATE_DEG = -45      # typical -45
 
 # -------------------------

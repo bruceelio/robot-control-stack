@@ -86,6 +86,11 @@ class Controller:
             camera_manager=self.camera_manager,
         )
 
+        if self.camera_manager is not None:
+            self.camera_manager.bind_clock(
+                self.io.time
+            )
+
         # Temporary Testing of Clock
 
         clock_start = self.io.time()
@@ -163,7 +168,7 @@ class Controller:
             (start_x, start_y),
             heading=start_heading,
             source="startup_config",
-            timestamp=time.time(),
+            timestamp=float(self.io.time()),
         )
         print(
             f"[LOC][START] zone={match_zone} slot={START_SLOT} "
@@ -350,7 +355,7 @@ class Controller:
     def _tick_impl(self):
         next_tick()
 
-        now_s = time.time()
+        now_s = float(self.io.time())
         self.encoder_manager.update(io=self.io, signals=self.signals)
 
         # Bind runtime context to backend
@@ -391,7 +396,7 @@ class Controller:
         # Localisation independently consumes Vision
         # ----------------------------------
 
-        localisation_now_s = time.time()
+        localisation_now_s = now_s
 
         pose_obs = self.localisation.estimate(
             io=self.io,

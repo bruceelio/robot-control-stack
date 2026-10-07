@@ -161,7 +161,7 @@ class GlobalObjectSearch(Behavior):
         # ---------------------------------
         found = self._find_eligible_object(
             perception=perception,
-            now=time.time(),
+            now=float(perception.io.time()),
         )
 
         # ---------------------------------

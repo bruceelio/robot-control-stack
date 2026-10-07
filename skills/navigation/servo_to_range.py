@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+
 
 from motion_backends.velocity import VelocityMotionBackend
 from navigation.control.range_only_controller import (
@@ -55,6 +55,7 @@ class ServoToRange(Primitive):
         self.controller = RangeOnlyController(params)
 
         self.velocity_backend = None
+        self._io = None
         self._last_result: RangeOnlyResult | None = None
 
     @property
@@ -62,13 +63,16 @@ class ServoToRange(Primitive):
         return self._last_result
 
     def start(
-        self,
-        *,
-        lvl2,
-        **_,
+            self,
+            *,
+            lvl2,
+            io,
+            localisation=None,
+            **_,
     ) -> PrimitiveStatus:
 
         self.controller.reset()
+        self._io = io
 
         self.velocity_backend = VelocityMotionBackend(
             lvl2=lvl2,
@@ -123,7 +127,7 @@ class ServoToRange(Primitive):
             linear_x_mps=result.linear_mps,
             angular_z_rps=0.0,
             lateral_y_mps=0.0,
-            timestamp=time.time(),
+            timestamp=float(self._io.time()),
         )
 
         self.velocity_backend.update(command)
@@ -141,8 +145,9 @@ class ServoToRange(Primitive):
 
         self.controller.reset()
         self.velocity_backend = None
-        self._last_result = None
 
+        self._last_result = None
+        self._io = None
         self.status = PrimitiveStatus.SUCCEEDED
         return self.status
 

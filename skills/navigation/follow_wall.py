@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+
 
 from motion_backends.velocity import VelocityMotionBackend
 from navigation.command.velocity_arbiter import VelocityCommand
@@ -86,7 +86,8 @@ class FollowWall(Primitive):
 
         self.velocity_backend = None
 
-        self._last_update_monotonic_s = None
+        self.io = None
+        self._last_update_s = None
         self._last_mode: WallFollowMode | None = None
         self._last_result: WallFollowResult | None = None
 
@@ -99,13 +100,22 @@ class FollowWall(Primitive):
         return self._last_result
 
     def start(
-        self,
-        *,
-        lvl2,
-        **_,
+            self,
+            *,
+            lvl2,
+            localisation=None,
+            io=None,
+            **_,
     ) -> PrimitiveStatus:
 
         self.controller.reset()
+
+        if io is None:
+            raise RuntimeError(
+                "FollowWall requires io for canonical timing"
+            )
+
+        self.io = io
 
         self.velocity_backend = VelocityMotionBackend(
             lvl2=lvl2,
@@ -114,7 +124,7 @@ class FollowWall(Primitive):
             io=io,
         )
 
-        self._last_update_monotonic_s = None
+        self._last_update_s = None
         self._last_mode = None
         self._last_result = None
 
@@ -140,22 +150,22 @@ class FollowWall(Primitive):
             self.status = PrimitiveStatus.FAILED
             return self.status
 
-        now_monotonic_s = time.monotonic()
+        now_s = float(
+            self.io.time()
+        )
 
-        if self._last_update_monotonic_s is None:
+        if self._last_update_s is None:
             # The distance-only controller does not use dt on
             # its first sample because no previous range exists.
             dt_s = 1.0
         else:
             dt_s = max(
-                now_monotonic_s
-                - self._last_update_monotonic_s,
+                now_s
+                - self._last_update_s,
                 1e-6,
             )
 
-        self._last_update_monotonic_s = (
-            now_monotonic_s
-        )
+        self._last_update_s = now_s
 
         result = self.controller.update(
             wall=wall,
@@ -197,7 +207,7 @@ class FollowWall(Primitive):
                 result.command.angular_z_rps
             ),
             lateral_y_mps=0.0,
-            timestamp=time.time(),
+            timestamp=now_s,
         )
 
         self.velocity_backend.update(
@@ -226,6 +236,7 @@ class FollowWall(Primitive):
 
         self.velocity_backend = None
 
-        self._last_update_monotonic_s = None
+        self._last_update_s = None
+        self.io = None
         self._last_mode = None
         self._last_result = None

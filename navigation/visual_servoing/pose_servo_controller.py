@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import math
-import time
+
 
 from config import CONFIG
 from navigation.command.velocity_arbiter import VelocityCommand
@@ -169,11 +169,8 @@ class PoseServoController:
             tag_id: int,
             observation: dict,
             target_pose: Pose2D,
-            timestamp: float | None = None,
+            timestamp: float,
     ) -> PoseServoResult:
-
-        if timestamp is None:
-            timestamp = time.time()
 
         tag_visibility = horizontal_tag_visibility(
             tag_id=tag_id,

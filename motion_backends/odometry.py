@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
+
 
 
 from navigation.odometry.base import OdometrySource
@@ -41,6 +41,7 @@ class OdometryMotionBackend:
             odometry: OdometrySource,
     ):
         self.lvl2 = lvl2
+        self.io = lvl2.io
         self.cfg = config
         self.cal = calibration
 
@@ -203,7 +204,7 @@ class OdometryMotionBackend:
 
         self.odometry.reset()
 
-        start_time = time.monotonic()
+        start_time = float(self.io.time())
         last_progress_time = start_time
         last_progress_mm = 0.0
 
@@ -227,7 +228,7 @@ class OdometryMotionBackend:
                 # towards the requested target.
                 progress_mm = direction * motion.forward_mm
 
-                now = time.monotonic()
+                now = float(self.io.time())
 
                 print(
                     f"[ODOMETRY] DRIVE "
@@ -272,7 +273,7 @@ class OdometryMotionBackend:
                         f"progress={progress_mm:.1f}mm"
                     )
 
-                time.sleep(0.01)
+                self.io.sleep(0.01)
 
         finally:
             self.stop()
@@ -316,7 +317,7 @@ class OdometryMotionBackend:
 
         self.odometry.reset()
 
-        start_time = time.monotonic()
+        start_time = float(self.io.time())
         last_progress_time = start_time
         last_progress_deg = 0.0
 
@@ -405,7 +406,7 @@ class OdometryMotionBackend:
                         f"progress={progress_deg:.1f}deg"
                     )
 
-                time.sleep(0.01)
+                self.io.sleep(0.01)
 
         finally:
             self.stop()

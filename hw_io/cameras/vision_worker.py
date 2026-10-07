@@ -54,7 +54,7 @@ def run_vision_worker(
     camera = None
     _publish_latest(output_queue, {
         "camera": camera_name,
-        "timestamp": time.time(),
+        "timestamp": time.monotonic(),
         "detections": [],
         "markers": [],
         "status": "worker_started",
@@ -72,10 +72,10 @@ def run_vision_worker(
 
         _publish_latest(output_queue, {
             "camera": camera_name,
-            "timestamp": time.time(),
+            "timestamp": time.monotonic(),
             "detections": [],
             "markers": [],
-            "status": "worker_started",
+            "status": "profile_resolved",
         })
 
         print(f"[VISION_WORKER] starting camera={camera_name}", flush=True)
@@ -95,7 +95,7 @@ def run_vision_worker(
         last_marker_ids = None
 
         while not stop_event.is_set():
-            timestamp = time.time()
+            timestamp = time.monotonic()
 
             try:
                 markers = camera.see()
@@ -139,7 +139,7 @@ def run_vision_worker(
                     last_status = "error"
                 vision_message = {
                     "camera": camera_name,
-                    "timestamp": time.time(),
+                    "timestamp": time.monotonic(),
                     "detections": [],
                     "markers": [],
                     "status": "error",

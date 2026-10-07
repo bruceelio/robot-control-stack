@@ -1,6 +1,6 @@
 # skills/manipulation/verify_grip.py
 
-import time
+
 from primitives.base import PrimitiveStatus
 
 
@@ -15,8 +15,11 @@ class VerifyGrip:
     def __init__(self):
         self._done_at = None
 
-    def start(self, *, settle_s=0.2, **_):
-        self._done_at = time.time() + float(settle_s)
+    def start(self, *, lvl2, settle_s=0.2, **_):
+        self._done_at = (
+                float(lvl2.io.time())
+                + float(settle_s)
+        )
         print("[VERIFY_GRIP] start")
         return PrimitiveStatus.RUNNING
 
@@ -24,7 +27,7 @@ class VerifyGrip:
         if self._done_at is None:
             return PrimitiveStatus.FAILED
 
-        if time.time() >= self._done_at:
+        if float(lvl2.io.time()) >= self._done_at:
             print("[VERIFY_GRIP] ok (stub)")
             return PrimitiveStatus.SUCCEEDED
 

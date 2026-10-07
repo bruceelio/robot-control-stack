@@ -40,10 +40,8 @@ When supplied, it is treated as ``required_kind``.
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 import math
-import time
+
 from enum import Enum
 
 from typing import Iterable, Optional
@@ -289,13 +287,9 @@ class SelectTarget:
         *,
         seed_target=None,
         exclude_ids=None,
-        now=None,
+        now,
         **_,
     ):
-
-        if now is None:
-            now = time.time()
-
         self._started_s = float(now)
 
         self._exclude_ids = self._normalise_exclude_ids(
@@ -323,13 +317,9 @@ class SelectTarget:
         self,
         *,
         perception=None,
-        now=None,
+        now,
         **_,
     ):
-
-        if now is None:
-            now = time.time()
-
         now = float(now)
 
         # Once selected, remain succeeded.

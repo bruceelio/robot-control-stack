@@ -1,6 +1,6 @@
 # autonomous/SR2026/recover_localisation.py
 
-import time
+
 from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.motion import Rotate
 from primitives.base import PrimitiveStatus
@@ -49,17 +49,18 @@ class RecoverLocalisation(Behavior):
         )
 
     def update(
-        self,
-        *,
-        motion_backend,
-        perception,
-        localisation,
-        **_
+            self,
+            *,
+            motion_backend,
+            perception,
+            localisation,
+            io,
+            **_
     ):
 
         # ---------- SETTLE PHASE ----------
         if self.settle_until is not None:
-            if time.monotonic() < self.settle_until:
+            if float(io.time()) < self.settle_until:
                 return self.status
 
             # settle complete — check for recovery
@@ -106,7 +107,7 @@ class RecoverLocalisation(Behavior):
 
         # begin settle phase
         self.settle_until = (
-            time.monotonic() + self.config.recover_settle_time
+            float(io.time()) + self.config.recover_settle_time
         )
         self.active_primitive = None
 

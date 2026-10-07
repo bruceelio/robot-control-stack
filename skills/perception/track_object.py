@@ -88,7 +88,8 @@ class TrackObject:
         """
         Args:
           perception_objects: either the full perception object (with `.objects`) or the objects mapping itself.
-          now_s: timestamp from the same clock domain as perception last_seen_s (usually time.time()).
+          now_s: timestamp from the same canonical robot clock domain
+          as perception last_seen_s (normally io.time()).
           locked_target_id: optional override; if provided will update internal locked_id.
           kind: optional override kind.
 

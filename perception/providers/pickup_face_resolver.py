@@ -9,7 +9,7 @@ latest_apriltag_observations list retains both observations instead.
 from __future__ import annotations
 
 import math
-import time
+
 
 from calibration import CALIBRATION
 
@@ -20,7 +20,7 @@ def resolve_pickup_faces(
     target_id: int,
     camera_name: str = "front",
     max_age_s: float,
-    now_s: float | None = None,
+    now_s: float,
 ) -> list[dict]:
     """Return corrected, same-camera face observations for one selected ID.
 
@@ -30,7 +30,7 @@ def resolve_pickup_faces(
     if perception is None or target_id is None:
         return []
 
-    now = time.time() if now_s is None else float(now_s)
+    now = float(now_s)
     cam = CALIBRATION.cameras[camera_name]
     results = []
 

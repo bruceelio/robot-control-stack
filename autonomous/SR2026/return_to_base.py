@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
+
 
 from autonomous.SR2026.base import Behavior, BehaviorStatus
 from calibration import CALIBRATION
@@ -909,11 +909,13 @@ class ReturnToBase(Behavior):
         }
 
     def _start_local_avoidance(
-        self,
-        *,
-        lvl2,
-        now_s: float,
-        preferred_bearing_rad: float,
+            self,
+            *,
+            lvl2,
+            localisation,
+            io,
+            now_s: float,
+            preferred_bearing_rad: float,
     ):
         if self.local_avoidance is None:
             print(
@@ -941,7 +943,9 @@ class ReturnToBase(Behavior):
         self.local_avoidance.start(
             lvl2=lvl2,
             calibration=self.calibration,
-            now_s=float(now_s),
+            now_s=now_s,
+            localisation=localisation,
+            io=io,
         )
 
         self._mode = MODE_LOCAL_AVOIDANCE
@@ -1579,6 +1583,8 @@ class ReturnToBase(Behavior):
             self,
             *,
             lvl2,
+            localisation,
+            io,
             wall: WallGeometry,
             final_approach_deg: float,
             parallel_error_deg: float,
@@ -1615,6 +1621,8 @@ class ReturnToBase(Behavior):
 
         self.follow_wall.start(
             lvl2=lvl2,
+            localisation=localisation,
+            io=io,
         )
 
         self._final_guide_edge_armed = False
@@ -1927,6 +1935,8 @@ class ReturnToBase(Behavior):
                 ):
                     return self._start_local_avoidance(
                         lvl2=lvl2,
+                        localisation=localisation,
+                        io=io,
                         now_s=float(
                             io.time()
                         ),
@@ -1938,6 +1948,7 @@ class ReturnToBase(Behavior):
         st = self.return_servo.update(
             arena_observations=arena_observations,
             observation_timestamp=observation_timestamp,
+            io=io,
             perception=perception,
             delivered_ids=delivered_ids,
             robot_pose=robot_pose,
@@ -2139,6 +2150,8 @@ class ReturnToBase(Behavior):
         self._start_wall_follow(
             lvl2=lvl2,
             wall=wall_geometry,
+            localisation=localisation,
+            io=io,
             final_approach_deg=(
                 final_state.approach_deg
             ),
@@ -2152,6 +2165,7 @@ class ReturnToBase(Behavior):
             *,
             lvl2,
             io,
+            localisation,
             perception,
             carried_target_id,
     ):
@@ -2405,7 +2419,9 @@ class ReturnToBase(Behavior):
             )
 
             self.stack_approach.start(
-                lvl2=lvl2
+                lvl2=lvl2,
+                localisation=localisation,
+                io=io,
             )
 
             print(
@@ -2541,7 +2557,7 @@ class ReturnToBase(Behavior):
             )
 
             self.guide_handoff_peek_settle_until = (
-                time.monotonic() + settle_s
+                    float(io.time()) + settle_s
             )
 
             print(
@@ -2552,8 +2568,8 @@ class ReturnToBase(Behavior):
             return self.status
 
         if (
-            time.monotonic()
-            < self.guide_handoff_peek_settle_until
+                float(io.time())
+                < self.guide_handoff_peek_settle_until
         ):
             return self.status
 
@@ -2771,8 +2787,6 @@ class ReturnToBase(Behavior):
         )
 
         return self.status
-
-
 
     def _update_wall_follow(
             self,
@@ -3044,6 +3058,7 @@ class ReturnToBase(Behavior):
             return self._update_stack_approach(
                 lvl2=lvl2,
                 io=io,
+                localisation=localisation,
                 perception=perception,
                 carried_target_id=(
                     carried_target_id
@@ -3070,9 +3085,7 @@ class ReturnToBase(Behavior):
 
         if self._mode == MODE_GUIDE_BACKOFF:
             return self._update_guide_backoff(
-                lvl2=lvl2,
                 motion_backend=motion_backend,
-                io=io,
                 robot_pose=robot_pose,
             )
 

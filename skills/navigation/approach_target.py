@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import time
+
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -232,7 +232,7 @@ class ApproachTarget(Primitive):
         return ("LOW", float(self.t.final_commit_distance_mm), float(self.t.final_approach_direct_range_mm))
 
     def start(self, *, motion_backend, lvl2=None, seed_target=None, **_):
-        now = time.time()
+        now = float(lvl2.io.time())
 
         self.active_primitive = None
         self.last_action = None
@@ -279,7 +279,7 @@ class ApproachTarget(Primitive):
         if lvl2 is None:
             raise RuntimeError("ApproachTarget.update called without lvl2")
 
-        now = time.time()
+        now = float(perception.io.time())
 
         if self.last_seen_time is None:
             self.last_seen_time = now
@@ -357,7 +357,9 @@ class ApproachTarget(Primitive):
 
                     self.active_primitive = Drive(distance_mm=drive_mm)
                     self.last_action = "drive"
-                    self.active_primitive.start(motion_backend=motion_backend)
+                    self.active_primitive.start(
+                        motion_backend=motion_backend,
+                    )
                     return PrimitiveStatus.RUNNING
 
                 if self.last_action == "drive":
@@ -464,7 +466,10 @@ class ApproachTarget(Primitive):
                         target_id=self.target_id,
                     )
                     self.last_action = "reacquire"
-                    self.active_primitive.start(motion_backend=motion_backend)
+                    self.active_primitive.start(
+                        motion_backend=motion_backend,
+                        io=perception.io,
+                    )
                     return PrimitiveStatus.RUNNING
 
                 return PrimitiveStatus.RUNNING
@@ -565,7 +570,9 @@ class ApproachTarget(Primitive):
                 self.bearing_consumed = True
 
                 self.active_primitive = Rotate(angle_deg=0.0)
-                self.active_primitive.start(motion_backend=motion_backend)
+                self.active_primitive.start(
+                    motion_backend=motion_backend,
+                )
                 return PrimitiveStatus.RUNNING
 
             elapsed = now - (self.last_seen_time or now)
@@ -579,7 +586,10 @@ class ApproachTarget(Primitive):
                 target_id=self.target_id,
             )
             self.last_action = "reacquire"
-            self.active_primitive.start(motion_backend=motion_backend)
+            self.active_primitive.start(
+                motion_backend=motion_backend,
+                io=perception.io,
+            )
             return PrimitiveStatus.RUNNING
 
         # Have a target

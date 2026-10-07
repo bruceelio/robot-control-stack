@@ -1,6 +1,6 @@
 # primitives/manipulation/shooter.py
 
-import time
+
 from primitives.base import Primitive, PrimitiveStatus
 
 
@@ -48,7 +48,7 @@ class Shooter(Primitive):
 
     def start(self, *, lvl2, **_):
         print(f"[Shooter] start target_rpm={self.target_rpm}")
-        self._start_time = time.time()
+        self._start_time = float(lvl2.io.time())
         self._at_speed_since = None
         self.measured_rpm = None
         self.power = 0.0
@@ -56,9 +56,10 @@ class Shooter(Primitive):
     def update(self, *, lvl2, signals, **_):
         if self._start_time is None:
             return PrimitiveStatus.FAILED
+        now = float(lvl2.io.time())
 
         if self.timeout_s is not None:
-            if time.time() - self._start_time > self.timeout_s:
+            if now - self._start_time > self.timeout_s:
                 self._stop(lvl2)
                 print("[Shooter] failed: timeout")
                 return PrimitiveStatus.FAILED
@@ -84,9 +85,9 @@ class Shooter(Primitive):
 
         if abs(error_rpm) <= self.tolerance_rpm:
             if self._at_speed_since is None:
-                self._at_speed_since = time.time()
+                self._at_speed_since = now
 
-            if time.time() - self._at_speed_since >= self.settle_time:
+            if now - self._at_speed_since >= self.settle_time:
                 return PrimitiveStatus.SUCCEEDED
         else:
             self._at_speed_since = None

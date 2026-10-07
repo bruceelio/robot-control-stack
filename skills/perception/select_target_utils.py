@@ -48,7 +48,7 @@ def get_closest_target(perception, kind, *, now=None, max_age_s: float = 0.35, e
     Expects perception.objects[kind] to be a dict of targets keyed by id.
     """
     if now is None:
-        now = time.time()
+        now = float(perception.io.time())
 
     if perception is None:
         return None

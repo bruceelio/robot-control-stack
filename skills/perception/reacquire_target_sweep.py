@@ -1,6 +1,6 @@
 # skills/perception/reacquire_target_sweep.py
 
-import time
+
 from typing import Optional
 
 from config import CONFIG
@@ -48,7 +48,7 @@ class ReacquireTarget(Primitive):
 
         self.found_target = None
 
-    def start(self, *, motion_backend, **_):
+    def start(self, *, motion_backend, io, **_):
         self._child = None
         self._settle_until = None
         self.found_target = None
@@ -57,7 +57,8 @@ class ReacquireTarget(Primitive):
         self._rel_deg = 0.0
 
         # NEW: start the reacquire-owned timer
-        self._start_time = time.time()
+        self._start_time = float(io.time())
+        self._io = io
 
         # Requested plan:
         #   +cap, then -step x4, then recenter to 0, then FAIL.
@@ -105,7 +106,7 @@ class ReacquireTarget(Primitive):
         return (now - self._start_time) > self.vision_loss_s
 
     def update(self, *, motion_backend, perception=None, **_):
-        now = time.time()
+        now = float(self._io.time())
 
         # NEW: hard deadline owned by reacquire. If exceeded, stop sweeping and recenter -> FAIL.
         if self._timed_out(now):
@@ -164,7 +165,7 @@ class ReacquireTarget(Primitive):
 
             # Rotate completed -> begin settle time
             self._child = None
-            self._settle_until = time.time() + max(0.0, self.settle_s)
+            self._settle_until = now + max(0.0, self.settle_s)
             return PrimitiveStatus.RUNNING
 
         # 3) Start next planned rotate

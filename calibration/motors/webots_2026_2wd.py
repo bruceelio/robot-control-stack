@@ -57,7 +57,7 @@ ROTATE_B_SMALL = -0.052
 
 ROTATE_POWER_LARGE = 0.4
 ROTATE_M_LARGE = 0.00503003
-ROTATE_B_LARGE = 0.029327
+ROTATE_B_LARGE = -0.0353
 
 # --------------------------------------------------
 # Drive velocity calibration

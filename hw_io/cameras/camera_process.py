@@ -1,4 +1,4 @@
-# checkout/cameras/camera_process.py
+# hw_io/cameras/camera_process.py
 
 from __future__ import annotations
 
@@ -24,8 +24,20 @@ class CameraProcessManager:
         self._stop_events: dict[str, Event] = {}
         self._processes: dict[str, Process] = {}
         self._latest: dict[str, dict] = {}
+        self._clock = None
+
+    def bind_clock(self, clock) -> None:
+        """
+        Bind the canonical robot clock used above the camera-process boundary.
+        """
+        self._clock = clock
 
     def start(self) -> None:
+        if self._clock is None:
+            raise RuntimeError(
+                "CameraProcessManager started without canonical clock"
+            )
+
         for camera_name in self.camera_names:
             if camera_name in self._processes:
                 continue
@@ -75,6 +87,40 @@ class CameraProcessManager:
                     break
 
             if latest is not None:
+                if self._clock is None:
+                    raise RuntimeError(
+                        "CameraProcessManager has no canonical clock"
+                    )
+
+                native_now = time.monotonic()
+
+                source_timestamp = float(
+                    latest.get(
+                        "timestamp",
+                        native_now,
+                    )
+                )
+
+                source_age_s = max(
+                    0.0,
+                    native_now - source_timestamp,
+                )
+
+                canonical_now = float(
+                    self._clock()
+                )
+
+                latest = dict(latest)
+
+                # Preserve the worker-native timestamp for diagnostics.
+                latest["source_timestamp"] = source_timestamp
+
+                # Everything leaving CameraProcessManager uses
+                # canonical robot time.
+                latest["timestamp"] = (
+                        canonical_now - source_age_s
+                )
+
                 self._latest[camera_name] = latest
 
     def get_latest(self, camera_name: str) -> dict | None:
@@ -85,11 +131,21 @@ class CameraProcessManager:
         self.poll()
         return dict(self._latest)
 
-    def get_fresh_messages(self, *, max_age_s: float, now: float | None = None) -> dict[str, dict]:
-        if now is None:
-            now = time.time()
-
+    def get_fresh_messages(
+        self,
+        *,
+        max_age_s: float,
+        now: float | None = None,
+    ) -> dict[str, dict]:
         self.poll()
+
+        if now is None:
+            if self._clock is None:
+                raise RuntimeError(
+                    "CameraProcessManager has no canonical clock"
+                )
+
+            now = float(self._clock())
 
         fresh = {}
         for camera_name, message in self._latest.items():

@@ -1,6 +1,5 @@
 # perception/perception.py
 
-import time
 import math
 import hashlib
 from calibration import CALIBRATION
@@ -72,7 +71,7 @@ def log_throttled(
     msg: str,
     *,
     key: str | None = None,
-    now: float | None = None,
+    now: float,
     min_interval_s: float = LOG_DEFAULT_INTERVAL_S,
     change_only: bool = False,
 ):
@@ -83,8 +82,7 @@ def log_throttled(
     """
     if not DEBUG:
         return
-    if now is None:
-        now = time.time()
+
     if key is None:
         key = tag  # stable default
     # fallback (still provides throttling if message repeats)
@@ -166,7 +164,7 @@ def sense(
     camera_name: str = PRIMARY_CAMERA,
     stop_robot=True,
 ):
-    now = time.time()
+    now = float(io.time())
     _FRAME_ORDER_BUFFER.clear()
 
     perception.current_object_observations = {
@@ -177,7 +175,7 @@ def sense(
     age_objects(perception)
 
     if stop_robot:
-        time.sleep(0.05)
+        io.sleep(0.05)
 
     # --------------------------------------------------
     # Camera selection & calibration
@@ -568,7 +566,7 @@ def get_visible_targets(perception: Perception, kind: str, *, now: float | None 
     not just anything still in memory.
     """
     if now is None:
-        now = time.time()
+        now = float(perception.io.time())
 
     targets = [
         t for t in perception.objects.get(kind, {}).values()

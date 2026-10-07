@@ -1,6 +1,6 @@
 # skills/navigation/backoff_scan.py
 
-import time
+
 from typing import Optional
 
 from config import CONFIG
@@ -45,6 +45,7 @@ class BackoffScan(Primitive):
         self.kind = kind
         self.target_id = int(target_id) if target_id is not None else None
         self.label = label
+        self._io = None
 
         # Policy from CONFIG (you added these to schema+resolve map)
         self.backoff_mm = float(CONFIG.backoff_scan_mm)
@@ -72,7 +73,8 @@ class BackoffScan(Primitive):
         self.found_target = None
 
     def start(self, *, motion_backend, **_):
-        now = time.time()
+        self._io = motion_backend.lvl2.io
+        now = float(self._io.time())
         self.status = PrimitiveStatus.RUNNING
 
         self._deadline = now + max(0.1, self.timeout_s)
@@ -134,7 +136,7 @@ class BackoffScan(Primitive):
         if self.status != PrimitiveStatus.RUNNING:
             return self.status
 
-        now = time.time()
+        now = float(self._io.time())
 
         # Hard timeout
         if self._deadline is not None and now > self._deadline:
@@ -170,7 +172,10 @@ class BackoffScan(Primitive):
             if st == PrimitiveStatus.SUCCEEDED:
                 self._child = None
                 self._phase = "SETTLE"
-                self._settle_until = time.time() + max(0.0, self.settle_s)
+                self._settle_until = now + max(
+                    0.0,
+                    self.settle_s,
+                )
                 return self.status
             if st == PrimitiveStatus.FAILED:
                 print(f"[{self.label}] backoff drive FAILED -> FAILED")
@@ -203,7 +208,10 @@ class BackoffScan(Primitive):
 
                 # rotate finished -> settle before next view/step
                 self._child = None
-                self._settle_until = time.time() + max(0.0, self.settle_s)
+                self._settle_until = now + max(
+                    0.0,
+                    self.settle_s,
+                )
                 return self.status
 
             # Start next rotate step

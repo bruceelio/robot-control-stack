@@ -100,14 +100,44 @@ class CommandedMotionProvider(PoseProvider):
         )
 
     def invalidate(self) -> None:
+        # Validity describes trust in the propagated pose. It must not
+        # stop commanded-motion integration or discard the current value.
         self._position_valid = False
         self._heading_valid = False
 
-        self._active = None
+    # --------------------------------------------------
+    # Dead-reckoning inclusion policy
+    # --------------------------------------------------
 
-        self._velocity_linear_x_mps = 0.0
-        self._velocity_angular_z_rps = 0.0
-        self._velocity_last_s = None
+    @staticmethod
+    def _include_drive_command(distance_mm: float) -> bool:
+        # No drive exclusion is currently calibrated. Keep this hook so
+        # robot-specific evidence can justify one later without coupling
+        # inclusion policy to the propagation code.
+        _ = float(distance_mm)
+        return True
+
+    @staticmethod
+    def _include_rotate_command(angle_deg: float) -> bool:
+        # Empirically, accumulating many very small commanded turns made
+        # dead reckoning worse than ignoring them.
+        return abs(float(angle_deg)) >= MIN_EFFECTIVE_ROTATE_DEG
+
+    @staticmethod
+    def _filter_velocity_command(
+        *,
+        linear_x_mps: float,
+        angular_z_rps: float,
+    ) -> tuple[float, float]:
+        # No continuous-velocity exclusion is currently calibrated.
+        #
+        # If one is added later, suppress an ignored component by returning
+        # zero for that component. Do not skip the observation entirely,
+        # otherwise a previous non-zero velocity could remain active.
+        return (
+            float(linear_x_mps),
+            float(angular_z_rps),
+        )
 
     # --------------------------------------------------
     # Motion input
@@ -116,6 +146,12 @@ class CommandedMotionProvider(PoseProvider):
     def begin_drive(self, *, distance_mm: float, duration_s: float, now_s: float):
         motion_now_s = self._motion_time(now_s)
         self._advance(motion_now_s)
+
+        if not self._include_drive_command(distance_mm):
+            print(
+                f"[CMD_MOTION][BEGIN_DRIVE] SUPPRESSED d={distance_mm:.1f}"
+            )
+            return
 
         self._active = _Segment(
             kind="drive",
@@ -134,7 +170,7 @@ class CommandedMotionProvider(PoseProvider):
         motion_now_s = self._motion_time(now_s)
         self._advance(motion_now_s)
 
-        if abs(angle_deg) < MIN_EFFECTIVE_ROTATE_DEG:
+        if not self._include_rotate_command(angle_deg):
             print(
                 f"[CMD_MOTION][BEGIN_ROTATE] SUPPRESSED a={angle_deg:.1f} "
                 f"(threshold={MIN_EFFECTIVE_ROTATE_DEG:.1f})"
@@ -171,12 +207,16 @@ class CommandedMotionProvider(PoseProvider):
 
         self._active = None
 
-        self._velocity_linear_x_mps = float(
-            linear_x_mps
+        (
+            effective_linear_x_mps,
+            effective_angular_z_rps,
+        ) = self._filter_velocity_command(
+            linear_x_mps=linear_x_mps,
+            angular_z_rps=angular_z_rps,
         )
-        self._velocity_angular_z_rps = float(
-            angular_z_rps
-        )
+
+        self._velocity_linear_x_mps = effective_linear_x_mps
+        self._velocity_angular_z_rps = effective_angular_z_rps
         self._velocity_last_s = now_s
 
     # --------------------------------------------------
@@ -185,9 +225,6 @@ class CommandedMotionProvider(PoseProvider):
 
     def _advance(self, now_s: float):
         if self._active is None:
-            return
-
-        if not self._position_valid:
             return
 
         seg = self._active
@@ -272,10 +309,7 @@ class CommandedMotionProvider(PoseProvider):
         # Heading propagation
         # ----------------------------------------------
 
-        if (
-            self._heading_valid
-            and self._heading is not None
-        ):
+        if self._heading is not None:
             old_heading = self._heading
 
             new_heading = self._wrap(
@@ -305,36 +339,29 @@ class CommandedMotionProvider(PoseProvider):
         # Position propagation
         # ----------------------------------------------
 
-        if abs(delta_distance_mm) > 0.0:
+        if (
+            abs(delta_distance_mm) > 0.0
+            and midpoint_heading is not None
+        ):
+            h = (
+                midpoint_heading
+                + DRIVE_HEADING_OFFSET_RAD
+            )
 
-            if (
-                self._position_valid
-                and midpoint_heading is not None
-            ):
-                h = (
-                    midpoint_heading
-                    + DRIVE_HEADING_OFFSET_RAD
-                )
+            self._x += (
+                delta_distance_mm
+                * math.cos(h)
+            )
 
-                self._x += (
-                    delta_distance_mm
-                    * math.cos(h)
-                )
+            self._y += (
+                DRIVE_Y_SIGN
+                * delta_distance_mm
+                * math.sin(h)
+            )
 
-                self._y += (
-                    DRIVE_Y_SIGN
-                    * delta_distance_mm
-                    * math.sin(h)
-                )
-
-                self._distance_since_reseed_mm += abs(
-                    delta_distance_mm
-                )
-
-            elif self._position_valid:
-                # We cannot propagate x/y through translation
-                # without a trustworthy heading.
-                self._position_valid = False
+            self._distance_since_reseed_mm += abs(
+                delta_distance_mm
+            )
 
         self._apply_validity_limits()
 
@@ -386,16 +413,14 @@ class CommandedMotionProvider(PoseProvider):
 
     def get_observation(self, now_s: float) -> PoseObservation | None:
         motion_now_s = self._motion_time(now_s)
-        self._advance(now_s)
+        self._advance(motion_now_s)
 
         # Continuous vx/wz propagation is advanced only by
         # observe_velocity(), which uses the canonical motion clock.
-
-        if (
-                not self._position_valid
-                and not self._heading_valid
-        ):
-            return None
+        #
+        # Return the current propagated values even after validity expires.
+        # The validity flags describe trust in those values; they do not
+        # control whether dead reckoning continues.
 
         age_s = max(0.0, motion_now_s - self._last_reseed_s)
 

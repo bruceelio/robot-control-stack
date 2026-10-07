@@ -222,15 +222,27 @@ class Localisation:
         Absolute observations reseed providers so propagated pose estimates
         continue from the corrected global pose.
         """
-        prev_heading = self.pose.heading if self.pose is not None else None
-        prev_heading_valid = self.pose.heading_valid if self.pose is not None else False
+        prev_heading = (
+            self.pose.heading
+            if self.pose is not None
+            else None
+        )
+
+        prev_heading_valid = (
+            self.pose.heading_valid
+            if self.pose is not None
+            else False
+        )
 
         if obs.heading is not None:
             heading = obs.heading
-            heading_valid = True
+            heading_valid = obs.heading_valid
         else:
             heading = prev_heading
-            heading_valid = prev_heading_valid and (heading is not None)
+            heading_valid = (
+                    prev_heading_valid
+                    and heading is not None
+            )
 
         # The observation covariance can describe the stored pose directly
         # only when the observation supplies the complete pose used here.
@@ -388,35 +400,51 @@ class Localisation:
         - Heading must be known to update x/y from drive.
         - If heading is unknown, forward dead_reckoning is not integrated.
         """
-        if self.pose is None or not self.pose.position_valid:
+        if self.pose is None:
             return
 
         x = self.pose.x
         y = self.pose.y
         heading = self.pose.heading
 
+        position_valid = self.pose.position_valid
+        heading_valid = self.pose.heading_valid
+
         if heading is not None:
-            heading = self._wrap_rad(heading + math.radians(rotate_deg))
+            heading = self._wrap_rad(
+                heading + math.radians(rotate_deg)
+            )
 
             if abs(drive_mm) > 0.0:
-                x += float(drive_mm) * math.cos(heading)
-                y += float(drive_mm) * math.sin(heading)
+                x += (
+                        float(drive_mm)
+                        * math.cos(heading)
+                )
+                y += (
+                        float(drive_mm)
+                        * math.sin(heading)
+                )
 
-            heading_valid = True
-        else:
-            heading_valid = False
+                # We can still propagate using an invalid heading,
+                # but the resulting position cannot become more valid.
+                if not heading_valid:
+                    position_valid = False
+
+        elif abs(drive_mm) > 0.0:
+            # Movement occurred but there is no heading value with
+            # which to propagate x/y.
+            position_valid = False
 
         self.pose = replace(
             self.pose,
             x=x,
             y=y,
             heading=heading,
-            position_valid=True,
-            heading_valid=heading_valid,
-
-            # Proper propagation would require a motion-model Jacobian
-            # and process noise. Until that exists, do not carry forward
-            # covariance which no longer describes the updated pose.
+            position_valid=position_valid,
+            heading_valid=(
+                    heading_valid
+                    and heading is not None
+            ),
             covariance=None,
         )
 

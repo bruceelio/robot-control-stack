@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+
 from typing import Any, Optional
 
 from primitives.base import Primitive, PrimitiveStatus
@@ -66,19 +66,16 @@ class SearchRotate(Primitive):
         self._child: Optional[Rotate] = None
         self._start_time: Optional[float] = None
         self._settle_until: Optional[float] = None
+        self._io = None
 
         self.found_item: Any = None
         self._status = PrimitiveStatus.RUNNING
 
-    def start(
-        self,
-        *,
-        motion_backend,
-        **_,
-    ):
+    def start(self, *, motion_backend, **_):
+        self._io = motion_backend.lvl2.io
         self._rotated_deg = 0.0
         self._child = None
-        self._start_time = time.time()
+        self._start_time = float(self._io.time())
         self._settle_until = None
 
         self.found_item = None
@@ -120,7 +117,7 @@ class SearchRotate(Primitive):
         if self._status != PrimitiveStatus.RUNNING:
             return self._status
 
-        now = time.time()
+        now = float(self._io.time())
 
         # -------------------------
         # Search condition satisfied
@@ -198,7 +195,7 @@ class SearchRotate(Primitive):
 
             if self.settle_s > 0.0:
                 self._settle_until = (
-                    time.time() + self.settle_s
+                        now + self.settle_s
                 )
 
             return self._status

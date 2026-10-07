@@ -2,7 +2,7 @@
 
 import inspect
 import math
-import time
+
 
 from autonomous.SR2026.base import Behavior, BehaviorStatus
 from perception import get_visible_targets
@@ -236,14 +236,14 @@ class ApproachObject(Behavior):
         return self.status
 
     def update(
-        self,
-        *,
-        lvl2,
-        perception,
-        localisation,
-        motion_backend,
-        io=None,
-        **_,
+            self,
+            *,
+            lvl2,
+            perception,
+            localisation,
+            motion_backend,
+            io,
+            **_,
     ):
         if self.status != BehaviorStatus.RUNNING:
             return self.status
@@ -265,7 +265,7 @@ class ApproachObject(Behavior):
         # Update tracker once per tick so all phases read the same truth.
         self.track = self._tracker.update(
             perception_objects=getattr(perception, "objects", perception),
-            now_s=time.time(),
+            now_s=float(io.time()),
             locked_target_id=self.locked_target_id,
             kind=self.kind,
         )
@@ -293,7 +293,11 @@ class ApproachObject(Behavior):
             )
 
         if self.phase == "ALIGN":
-            return self._align(lvl2, motion_backend)
+            return self._align(
+                lvl2,
+                motion_backend,
+                io,
+            )
 
         if self.phase == "APPROACHING":
             return self._approach(
@@ -555,7 +559,7 @@ class ApproachObject(Behavior):
     # Phase: ALIGN
     # -------------------------
 
-    def _align(self, lvl2, motion_backend):
+    def _align(self, lvl2, motion_backend, io):
         bearing = float(self.target["bearing"])
         self._navigation_stage = 1
 
@@ -597,7 +601,10 @@ class ApproachObject(Behavior):
         )
 
         # NEW: force a post-rotate camera settle gate
-        self._vision_settle_until = time.time() + float(self.config.camera_settle_time)
+        self._vision_settle_until = (
+                float(io.time())
+                + float(self.config.camera_settle_time)
+        )
         self._require_fresh_obs_after_settle = True
 
         # Optional but recommended: drop stale tracker state so we demand a fresh frame
@@ -1295,7 +1302,7 @@ class ApproachObject(Behavior):
             )
 
         # NEW: camera settle gate
-        now = time.time()
+        now = float(io.time())
         if self._require_fresh_obs_after_settle:
             if self._vision_settle_until is not None and now < self._vision_settle_until:
                 remaining = self._vision_settle_until - now
