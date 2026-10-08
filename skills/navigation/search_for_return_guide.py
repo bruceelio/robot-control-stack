@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional, Sequence
 
 from primitives.base import Primitive, PrimitiveStatus
@@ -110,37 +111,53 @@ class SearchForReturnGuide(Primitive):
         self.found_guide_id = None
 
         # Version 1 deliberately reuses the existing bounded-search
-        # parameters rather than introducing return-guide-specific
+        # angle rather than introducing return-guide-specific
         # configuration before testing shows that it is necessary.
+        #
+        # The sign of recover_max_sweep_deg selects search direction:
+        #   positive -> positive angular_z
+        #   negative -> negative angular_z
+        target_angle_deg = float(
+            getattr(
+                self.config,
+                "recover_max_sweep_deg",
+                180.0,
+            )
+        )
+
+        angular_speed_rad_s = abs(
+            float(
+                self.config.servoing_angular_max_rad_s
+            )
+        )
+
+        sweep_duration_s = (
+            math.radians(abs(target_angle_deg))
+            / angular_speed_rad_s
+            if angular_speed_rad_s > 0.0
+            else 0.0
+        )
+
+        configured_timeout_s = float(
+            getattr(
+                self.config,
+                "global_object_search_timeout_s",
+                8.0,
+            )
+        )
+
+        # The configured timeout remains a minimum policy value, but
+        # it must never terminate the continuous search before the
+        # requested sweep can complete.
+        timeout_s = max(
+            configured_timeout_s,
+            sweep_duration_s + 1.0,
+        )
+
         self._search = SearchRotate(
-            step_deg=float(
-                getattr(
-                    self.config,
-                    "recover_step_deg",
-                    15.0,
-                )
-            ),
-            max_deg=float(
-                getattr(
-                    self.config,
-                    "recover_max_sweep_deg",
-                    180.0,
-                )
-            ),
-            timeout_s=float(
-                getattr(
-                    self.config,
-                    "global_object_search_timeout_s",
-                    8.0,
-                )
-            ),
-            settle_s=float(
-                getattr(
-                    self.config,
-                    "recover_settle_time",
-                    0.5,
-                )
-            ),
+            target_angle_deg=target_angle_deg,
+            timeout_s=timeout_s,
+            config=self.config,
             label="RETURN_GUIDE_SEARCH",
         )
 

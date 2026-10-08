@@ -47,12 +47,6 @@ class Challenge(Enum):
     LIFT_VISION_SWEEP = auto()
     LOCAL_PLANNING = auto()
 
-class MatchZoneSource(Enum):
-    AUTO = "auto"
-    SR = "sr"
-    USB = "usb"
-    FIXED = "fixed"
-
 
 # ROBOT_PROFILE = RobotProfile.BOB_BOT
 # ROBOT_PROFILE = RobotProfile.ROB_BOT
@@ -122,12 +116,6 @@ DEFAULT_TARGET_ELEVATION = None
 # Match / Starting Zone
 # =========================
 
-# MATCH_ZONE_SOURCE = MatchZoneSource.AUTO
-# MATCH_ZONE_SOURCE = MatchZoneSource.SR       # Competition: use SR API robot.zone
-# MATCH_ZONE_SOURCE = MatchZoneSource.USB      # Home testing: read USB stick
-MATCH_ZONE_SOURCE = MatchZoneSource.FIXED    # Debugging: use MATCH_ZONE_FIXED
-
-MATCH_ZONE_FIXED = 0
 USB_MATCH_ZONE_FILE = "zone.txt"
 
 START_SLOT = 1  # 1: Simulation Start; 2:   ; 3: corner start diag run

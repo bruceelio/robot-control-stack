@@ -153,12 +153,11 @@ class Controller:
             if callable(set_clock):
                 set_clock(self.io.time)
 
-        if CONFIG.io.get("usb.match_zone") is not None:
-            match_zone = int(
-                self.io.usb["match_zone"].value
-            )
-        else:
-            match_zone = 0
+        match_zone = int(
+            self.io.usb["match_zone"].value
+        )
+
+        print(f"[MATCH_ZONE] zone={match_zone}")
 
         start_x, start_y, start_heading = get_start_pose(
             match_zone,

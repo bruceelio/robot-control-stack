@@ -1,11 +1,11 @@
 # skills/perception/reacquire_target_sweep.py
 
 
-from typing import Optional
+import math
 
 from config import CONFIG
 from primitives.base import Primitive, PrimitiveStatus
-from primitives.motion import Rotate
+from skills.navigation.search_sweep import SearchSweep
 from skills.perception.select_target_utils import get_closest_target
 
 
@@ -29,48 +29,94 @@ class ReacquireTarget(Primitive):
         self.max_sweep_deg = float(max_sweep_deg)
         self.max_age_s = float(max_age_s)
 
-        # Policy pulled directly from global config
-        self.settle_s = float(CONFIG.recover_settle_time)
         self.cap_rel_deg = float(cap_rel_deg)
 
-        # NEW: reacquire owns its own failure timing
-        # Add this to your config resolver as REACQUIRE_TARGET_VISION_LOSS (seconds)
-        self.vision_loss_s = float(getattr(CONFIG, "reacquire_target_vision_loss", 3.0))
+        self.vision_loss_s = float(
+            getattr(
+                CONFIG,
+                "reacquire_target_vision_loss",
+                3.0,
+            )
+        )
 
-        self._child: Optional[Rotate] = None
-        self._settle_until: Optional[float] = None
-
-        self._seq: list[float] = []
-        self._i = 0
-        self._rel_deg = 0.0
-
-        self._start_time: Optional[float] = None
+        self._io = None
+        self._sweep: SearchSweep | None = None
+        self._sweep_started = False
 
         self.found_target = None
 
-    def start(self, *, motion_backend, io, **_):
-        self._child = None
-        self._settle_until = None
-        self.found_target = None
-
-        self._i = 0
-        self._rel_deg = 0.0
-
-        # NEW: start the reacquire-owned timer
-        self._start_time = float(io.time())
+    def start(
+            self,
+            *,
+            motion_backend,
+            io,
+            **_,
+    ):
         self._io = io
+        self._sweep = None
+        self._sweep_started = False
+        self.found_target = None
 
-        # Requested plan:
-        #   +cap, then -step x4, then recenter to 0, then FAIL.
-        cap = min(self.cap_rel_deg, 2.0 * self.step_deg)
+        cap = min(
+            abs(self.cap_rel_deg),
+            2.0 * abs(self.step_deg),
+        )
 
-        self._seq = [
+        if cap < 1e-6:
+            print(
+                "[REACQUIRE] "
+                "invalid sweep cap -> FAILED"
+            )
+            return PrimitiveStatus.FAILED
+
+        angles_deg = (
             +cap,
-            -self.step_deg,
-            -self.step_deg,
-            -self.step_deg,
-            -self.step_deg,
-        ]
+            -(2.0 * cap),
+            +cap,
+        )
+
+        angular_speed_rad_s = abs(
+            float(
+                CONFIG.servoing_angular_max_rad_s
+            )
+        )
+
+        timeout_s = self.vision_loss_s
+
+        if (
+                timeout_s > 0.0
+                and angular_speed_rad_s > 0.0
+        ):
+            sweep_duration_s = (
+                    math.radians(
+                        sum(
+                            abs(angle)
+                            for angle in angles_deg
+                        )
+                    )
+                    / angular_speed_rad_s
+            )
+
+            timeout_s = max(
+                timeout_s,
+                sweep_duration_s + 1.0,
+            )
+
+        self._sweep = SearchSweep(
+            angles_deg=angles_deg,
+            timeout_s=timeout_s,
+            config=CONFIG,
+            label="REACQUIRE_SWEEP",
+        )
+
+        print(
+            "[REACQUIRE] "
+            f"continuous sweep "
+            f"cap={cap:.1f}deg "
+            f"timeout={timeout_s:.2f}s"
+        )
+
+        return PrimitiveStatus.RUNNING
 
     def _try_reacquire(self, *, perception, now: float):
         if perception is None:
@@ -97,119 +143,91 @@ class ReacquireTarget(Primitive):
             max_age_s=self.max_age_s,
         )
 
-    def _timed_out(self, now: float) -> bool:
-        if self._start_time is None:
-            return False
-        # 0 or negative -> "no timeout"
-        if self.vision_loss_s <= 0.0:
-            return False
-        return (now - self._start_time) > self.vision_loss_s
-
-    def update(self, *, motion_backend, perception=None, **_):
-        now = float(self._io.time())
-
-        # NEW: hard deadline owned by reacquire. If exceeded, stop sweeping and recenter -> FAIL.
-        if self._timed_out(now):
-            # stop any active child rotate
-            if self._child is not None:
-                try:
-                    self._child.stop(motion_backend=motion_backend)
-                except TypeError:
-                    self._child.stop()
-                self._child = None
-
-            self._settle_until = None
-            self._i = len(self._seq)  # skip remaining plan
-
-            print(
-                f"[REACQUIRE] timeout {now - (self._start_time or now):.2f}s"
-                f" > {self.vision_loss_s:.2f}s -> recenter then FAIL"
-            )
-
-            if abs(self._rel_deg) > 1e-3:
-                angle = -self._rel_deg
-                self._rel_deg = 0.0
-                self._child = Rotate(angle_deg=angle)
-                self._child.start(motion_backend=motion_backend)
-                return PrimitiveStatus.RUNNING
-
-            return PrimitiveStatus.FAILED
-
-        # 0) Settling: wait for camera to stabilize
-        if self._settle_until is not None:
-            if now < self._settle_until:
-                return PrimitiveStatus.RUNNING
-
-            # settle finished — allow immediate reacquire before any further dead_reckoning
-            self._settle_until = None
-            t = self._try_reacquire(perception=perception, now=now)
-            if t is not None:
-                self.found_target = t
-                return PrimitiveStatus.SUCCEEDED
-
-        # 1) If not currently rotating, check if target is visible now
-        if self._child is None:
-            t = self._try_reacquire(perception=perception, now=now)
-            if t is not None:
-                self.found_target = t
-                return PrimitiveStatus.SUCCEEDED
-
-        # 2) If rotating, advance rotate primitive
-        if self._child is not None:
-            st = self._child.update(motion_backend=motion_backend)
-            if st == PrimitiveStatus.RUNNING:
-                return PrimitiveStatus.RUNNING
-            if st == PrimitiveStatus.FAILED:
-                self._child = None
-                return PrimitiveStatus.FAILED
-
-            # Rotate completed -> begin settle time
-            self._child = None
-            self._settle_until = now + max(0.0, self.settle_s)
-            return PrimitiveStatus.RUNNING
-
-        # 3) Start next planned rotate
-        if self._i >= len(self._seq):
-            print("[REACQUIRE] complete -> FAILED (recentering)")
-
-            if abs(self._rel_deg) > 1e-3:
-                angle = -self._rel_deg
-                self._rel_deg = 0.0
-                self._child = Rotate(angle_deg=angle)
-                self._child.start(motion_backend=motion_backend)
-                return PrimitiveStatus.RUNNING
-
-            print("[REACQUIRE] recenter complete -> FAILED")
-            return PrimitiveStatus.FAILED
-
-        angle = float(self._seq[self._i])
-
-        self._i += 1
-        n = len(self._seq)
-
-        self._rel_deg += angle
-
-        print(
-            f"[REACQUIRE] step {self._i}/{n} "
-            f"rotate={angle:+.1f}deg settle={self.settle_s:.2f}s "
-            f"rel={self._rel_deg:+.1f}deg"
+    def update(
+            self,
+            *,
+            motion_backend,
+            perception=None,
+            **_,
+    ):
+        now = float(
+            self._io.time()
         )
 
-        self._child = Rotate(angle_deg=angle)
-        self._child.start(motion_backend=motion_backend)
-        return PrimitiveStatus.RUNNING
+        target = self._try_reacquire(
+            perception=perception,
+            now=now,
+        )
 
-    def stop(self, *, motion_backend=None):
-        if self._child is not None:
-            try:
-                if motion_backend is not None:
-                    self._child.stop(motion_backend=motion_backend)
-                else:
-                    self._child.stop()
-            except Exception:
-                pass
+        # Preserve the old fast path:
+        # do not start search motion if the target is already visible.
+        if (
+                not self._sweep_started
+                and target is not None
+        ):
+            self.found_target = target
 
-        self._child = None
-        self._settle_until = None
-        self._start_time = None
+            print(
+                "[REACQUIRE] "
+                "target already visible -> SUCCEEDED"
+            )
+
+            return PrimitiveStatus.SUCCEEDED
+
+        if self._sweep is None:
+            print(
+                "[REACQUIRE] "
+                "missing sweep -> FAILED"
+            )
+            return PrimitiveStatus.FAILED
+
+        if not self._sweep_started:
+            st = self._sweep.start(
+                motion_backend=motion_backend,
+            )
+
+            self._sweep_started = True
+
+            if st == PrimitiveStatus.FAILED:
+                return PrimitiveStatus.FAILED
+
+            return PrimitiveStatus.RUNNING
+
+        st = self._sweep.update(
+            motion_backend=motion_backend,
+            found_item=target,
+        )
+
+        if st == PrimitiveStatus.SUCCEEDED:
+            self.found_target = (
+                self._sweep.found_item
+            )
+
+            print(
+                "[REACQUIRE] "
+                "target reacquired -> SUCCEEDED"
+            )
+
+            return PrimitiveStatus.SUCCEEDED
+
+        if st == PrimitiveStatus.FAILED:
+            print(
+                "[REACQUIRE] "
+                "sweep complete -> FAILED"
+            )
+
+        return st
+
+    def stop(
+            self,
+            *,
+            motion_backend=None,
+    ):
+        if self._sweep is not None:
+            self._sweep.stop(
+                motion_backend=motion_backend,
+            )
+
+        self._sweep = None
+        self._sweep_started = False
 

@@ -1,11 +1,13 @@
 # skills/navigation/backoff_scan.py
 
+import math
 
 from typing import Optional
 
 from config import CONFIG
 from primitives.base import Primitive, PrimitiveStatus
-from primitives.motion import Drive, Rotate
+from primitives.motion import Drive
+from skills.navigation.search_sweep import SearchSweep
 from skills.perception.select_target_utils import get_closest_target
 
 
@@ -16,14 +18,13 @@ class BackoffScan(Primitive):
     Flow:
       1) Drive backwards (CONFIG.backoff_scan_mm)
       2) Settle (CONFIG.recover_settle_time)
-      3) Scan by rotating across +/- cap in step increments, with settle between each rotate
-      4) Final rotate recenters back to 0 (sequence includes this)
+      3) Continuously sweep from centre -> +cap -> -cap -> centre
+      4) Stop immediately if the target is seen during the sweep
       5) If still not found: FAILED (caller escalates to GlobalRecovery)
 
     Config:
       - backoff_scan_mm
       - backoff_scan_cap_deg
-      - backoff_scan_step_deg
       - backoff_scan_timeout_s
       - recover_settle_time
 
@@ -50,64 +51,98 @@ class BackoffScan(Primitive):
         # Policy from CONFIG (you added these to schema+resolve map)
         self.backoff_mm = float(CONFIG.backoff_scan_mm)
         self.cap_rel_deg = float(CONFIG.backoff_scan_cap_deg)
-        self.step_deg = float(CONFIG.backoff_scan_step_deg)
+
         self.timeout_s = float(CONFIG.backoff_scan_timeout_s)
 
-        # settle between views/steps
+        # settle after the backoff translation
         self.settle_s = float(getattr(CONFIG, "recover_settle_time", 0.5))
 
         # how fresh a detection must be to count
         self.max_age_s = float(max_age_s) if max_age_s is not None else float(getattr(CONFIG, "vision_loss_timeout_s", 0.5))
 
         # internal state
-        self._deadline: Optional[float] = None
+
         self._phase = "BACKOFF"  # BACKOFF -> SETTLE -> SCAN -> DONE
         self._child: Optional[Primitive] = None
 
         self._settle_until: Optional[float] = None
 
-        self._seq: list[float] = []
-        self._i = 0
-        self._rel_deg = 0.0
+        self._sweep: SearchSweep | None = None
+        self._sweep_started = False
 
         self.found_target = None
 
     def start(self, *, motion_backend, **_):
         self._io = motion_backend.lvl2.io
-        now = float(self._io.time())
+
         self.status = PrimitiveStatus.RUNNING
 
-        self._deadline = now + max(0.1, self.timeout_s)
         self._phase = "BACKOFF"
         self._child = None
 
         self._settle_until = None
 
-        self._i = 0
-        self._rel_deg = 0.0
+        self._sweep = None
+        self._sweep_started = False
         self.found_target = None
 
-        # Build scan sequence: +cap, then -step repeated to reach -cap, then +cap to recenter.
-        cap = abs(self.cap_rel_deg)
-        step = abs(self.step_deg)
+        cap = abs(
+            self.cap_rel_deg
+        )
 
-        if step < 1e-6 or cap < 1e-6:
-            print(f"[{self.label}] invalid cap/step (cap={cap}, step={step}) -> FAILED")
+        if cap < 1e-6:
+            print(
+                f"[{self.label}] "
+                f"invalid cap={cap} -> FAILED"
+            )
             self.status = PrimitiveStatus.FAILED
-            return
+            return self.status
 
-        # From +cap down to -cap in -step increments:
-        # n_down = (2*cap)/step  (e.g. 120/20=6)
-        n_down = int(round((2.0 * cap) / step))
-        n_down = max(1, n_down)
+        angles_deg = (
+            +cap,
+            -(2.0 * cap),
+            +cap,
+        )
 
-        self._seq = [cap] + ([-step] * n_down) + [cap]  # last +cap returns to ~0
+        angular_speed_rad_s = abs(
+            float(
+                CONFIG.servoing_angular_max_rad_s
+            )
+        )
+
+        sweep_timeout_s = self.timeout_s
+
+        if angular_speed_rad_s > 0.0:
+            sweep_timeout_s = max(
+                sweep_timeout_s,
+                (
+                        math.radians(
+                            sum(
+                                abs(angle)
+                                for angle in angles_deg
+                            )
+                        )
+                        / angular_speed_rad_s
+                        + 1.0
+                ),
+            )
+
+        self._sweep = SearchSweep(
+            angles_deg=angles_deg,
+            timeout_s=sweep_timeout_s,
+            config=CONFIG,
+            label=f"{self.label}][SWEEP",
+        )
 
         print(
-            f"[{self.label}] start backoff_mm={self.backoff_mm:.0f} "
-            f"cap={cap:.1f} step={step:.1f} settle={self.settle_s:.2f} "
-            f"timeout={self.timeout_s:.2f} seq_len={len(self._seq)}"
+            f"[{self.label}] start "
+            f"backoff_mm={self.backoff_mm:.0f} "
+            f"cap={cap:.1f} "
+            f"settle={self.settle_s:.2f} "
+            f"sweep_timeout={sweep_timeout_s:.2f}"
         )
+
+        return self.status
 
     # -------------------------
     # Perception check
@@ -138,12 +173,6 @@ class BackoffScan(Primitive):
 
         now = float(self._io.time())
 
-        # Hard timeout
-        if self._deadline is not None and now > self._deadline:
-            print(f"[{self.label}] timeout -> FAILED")
-            self.status = PrimitiveStatus.FAILED
-            return self.status
-
         # If we are in a settle window, wait it out
         if self._settle_until is not None:
             if now < self._settle_until:
@@ -151,12 +180,27 @@ class BackoffScan(Primitive):
             self._settle_until = None
             # after settle, fall through to reassess / next step
 
-        # If not rotating/driving right now, check for target visibility
-        if self._child is None:
-            t = self._try_found(perception=perception, now=now)
+        # Outside the active sweep, check for target visibility.
+        # During SCAN, SearchSweep must receive found_item so that it
+        # can stop the active SearchRotate before succeeding.
+        if (
+                self._phase != "SCAN"
+                and self._child is None
+        ):
+            t = self._try_found(
+                perception=perception,
+                now=now,
+            )
+
             if t is not None:
                 self.found_target = t
-                print(f"[{self.label}] found -> SUCCEEDED id={t.get('id', 'N/A')}")
+
+                print(
+                    f"[{self.label}] "
+                    f"found -> SUCCEEDED "
+                    f"id={t.get('id', 'N/A')}"
+                )
+
                 self.status = PrimitiveStatus.SUCCEEDED
                 return self.status
 
@@ -165,10 +209,17 @@ class BackoffScan(Primitive):
         # -----------------
         if self._phase == "BACKOFF":
             if self._child is None:
-                self._child = Drive(distance_mm=-self.backoff_mm)
-                self._child.start(motion_backend=motion_backend)
+                self._child = Drive(
+                    distance_mm=-self.backoff_mm
+                )
 
-            st = self._child.update(motion_backend=motion_backend)
+                self._child.start(
+                    motion_backend=motion_backend
+                )
+
+            st = self._child.update(
+                motion_backend=motion_backend
+            )
             if st == PrimitiveStatus.SUCCEEDED:
                 self._child = None
                 self._phase = "SETTLE"
@@ -195,53 +246,99 @@ class BackoffScan(Primitive):
         # Phase: SCAN
         # -----------------
         if self._phase == "SCAN":
-            # Continue active rotate
-            if self._child is not None:
-                st = self._child.update(motion_backend=motion_backend)
-                if st == PrimitiveStatus.RUNNING:
-                    return self.status
-                if st == PrimitiveStatus.FAILED:
-                    print(f"[{self.label}] rotate primitive FAILED -> FAILED")
-                    self._child = None
-                    self.status = PrimitiveStatus.FAILED
-                    return self.status
-
-                # rotate finished -> settle before next view/step
-                self._child = None
-                self._settle_until = now + max(
-                    0.0,
-                    self.settle_s,
+            if self._sweep is None:
+                print(
+                    f"[{self.label}] "
+                    "missing sweep -> FAILED"
                 )
-                return self.status
-
-            # Start next rotate step
-            if self._i >= len(self._seq):
-                print(f"[{self.label}] complete -> FAILED (handoff to global recovery)")
                 self.status = PrimitiveStatus.FAILED
                 return self.status
 
-            angle = float(self._seq[self._i])
-            self._i += 1
-            n = len(self._seq)
-
-            self._rel_deg += angle
-
-            print(
-                f"[{self.label}] step {self._i}/{n} "
-                f"rotate={angle:+.1f}deg settle={self.settle_s:.2f}s "
-                f"rel={self._rel_deg:+.1f}deg"
+            target = self._try_found(
+                perception=perception,
+                now=now,
             )
 
-            self._child = Rotate(angle_deg=angle)
-            self._child.start(motion_backend=motion_backend)
+            # Preserve the fast path before starting rotation.
+            if (
+                not self._sweep_started
+                and target is not None
+            ):
+                self.found_target = target
+
+                print(
+                    f"[{self.label}] "
+                    f"found -> SUCCEEDED "
+                    f"id={target.get('id', 'N/A')}"
+                )
+
+                self.status = PrimitiveStatus.SUCCEEDED
+                return self.status
+
+            if not self._sweep_started:
+                st = self._sweep.start(
+                    motion_backend=motion_backend,
+                )
+
+                self._sweep_started = True
+
+                if st == PrimitiveStatus.FAILED:
+                    self.status = PrimitiveStatus.FAILED
+
+                return self.status
+
+            st = self._sweep.update(
+                motion_backend=motion_backend,
+                found_item=target,
+            )
+
+            if st == PrimitiveStatus.RUNNING:
+                return self.status
+
+            if st == PrimitiveStatus.SUCCEEDED:
+                self.found_target = (
+                    self._sweep.found_item
+                )
+
+                print(
+                    f"[{self.label}] "
+                    f"found -> SUCCEEDED "
+                    f"id="
+                    f"{self.found_target.get('id', 'N/A')}"
+                )
+
+                self.status = PrimitiveStatus.SUCCEEDED
+                return self.status
+
+            print(
+                f"[{self.label}] "
+                "sweep complete -> FAILED "
+                "(handoff to global recovery)"
+            )
+
+            self.status = PrimitiveStatus.FAILED
             return self.status
 
-        # Fallback
-        return self.status
-
-    def stop(self):
+    def stop(
+            self,
+            *,
+            motion_backend=None,
+    ):
         if self._child is not None:
-            self._child.stop()
+            try:
+                self._child.stop(
+                    motion_backend=motion_backend,
+                )
+            except TypeError:
+                self._child.stop()
+
+        if self._sweep is not None:
+            self._sweep.stop(
+                motion_backend=motion_backend,
+            )
+
         self._child = None
+        self._sweep = None
+        self._sweep_started = False
         self._settle_until = None
-        self._deadline = None
+

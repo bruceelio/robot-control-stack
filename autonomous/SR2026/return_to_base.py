@@ -29,6 +29,7 @@ from skills.navigation.local_avoidance import (
 from skills.navigation.search_for_return_guide import (
     SearchForReturnGuide,
 )
+from skills.navigation.search_rotate import SearchRotate
 from skills.navigation.return_to_base_servo import (
     FINAL_GUIDE_DIRECT_APPROACH_MAX_DEG,
     ReturnToBaseServo,
@@ -304,7 +305,7 @@ class ReturnToBase(Behavior):
         self._stack_local_avoidance_active = False
 
         self.guide_handoff_peek = None
-        self.guide_handoff_peek_settle_until = None
+
         self.guide_handoff_current_id = None
         self.guide_handoff_required_id = None
         self.guide_handoff_side = None
@@ -390,7 +391,7 @@ class ReturnToBase(Behavior):
         self._stack_local_avoidance_active = False
 
         self.guide_handoff_peek = None
-        self.guide_handoff_peek_settle_until = None
+
         self.guide_handoff_current_id = None
         self.guide_handoff_required_id = None
         self.guide_handoff_side = None
@@ -1367,14 +1368,44 @@ class ReturnToBase(Behavior):
             required_guide_id
         )
         self.guide_handoff_side = guide_side
-        self.guide_handoff_peek_settle_until = None
-
-        self.guide_handoff_peek = Rotate(
-            angle_deg=angle_deg,
+        angular_speed_rad_s = abs(
+            float(
+                self.config.servoing_angular_max_rad_s
+            )
         )
-        self.guide_handoff_peek.start(
+
+        timeout_s = 0.0
+
+        if angular_speed_rad_s > 0.0:
+            timeout_s = (
+                    math.radians(
+                        abs(angle_deg)
+                    )
+                    / angular_speed_rad_s
+                    + 1.0
+            )
+
+        self.guide_handoff_peek = SearchRotate(
+            target_angle_deg=angle_deg,
+            timeout_s=timeout_s,
+            config=self.config,
+            label="RETURN_GUIDE_HANDOFF_PEEK",
+        )
+
+        st = self.guide_handoff_peek.start(
             motion_backend=motion_backend,
         )
+
+        if st == PrimitiveStatus.FAILED:
+            print(
+                "[RETURN_TO_BASE][RECOVERY] "
+                "handoff peek search failed to start "
+                "-> backoff"
+            )
+
+            return self._start_guide_backoff(
+                motion_backend=motion_backend,
+            )
 
         self._mode = MODE_GUIDE_HANDOFF_PEEK
         self._mode_started = True
@@ -1384,7 +1415,7 @@ class ReturnToBase(Behavior):
             f"guide_handoff current={self.guide_handoff_current_id} "
             f"next={self.guide_handoff_required_id} "
             f"side={guide_side} "
-            f"-> peek {angle_deg:+.1f}deg"
+            f"-> search {angle_deg:+.1f}deg"
         )
 
         return self.status
@@ -1404,7 +1435,7 @@ class ReturnToBase(Behavior):
             )
 
         self.guide_handoff_peek = None
-        self.guide_handoff_peek_settle_until = None
+
 
         self.return_servo = None
         self.return_guide_search = None
@@ -2521,8 +2552,8 @@ class ReturnToBase(Behavior):
             arena_observations,
     ):
         if (
-            self.guide_handoff_peek is None
-            or self.guide_handoff_required_id is None
+                self.guide_handoff_peek is None
+                or self.guide_handoff_required_id is None
         ):
             print(
                 "[RETURN_TO_BASE][RECOVERY] "
@@ -2531,8 +2562,23 @@ class ReturnToBase(Behavior):
             self.status = BehaviorStatus.FAILED
             return self.status
 
+        required_id = int(
+            self.guide_handoff_required_id
+        )
+
+        found = next(
+            (
+                obs
+                for obs in (arena_observations or ())
+                if int(obs.get("id", -1))
+                   == required_id
+            ),
+            None,
+        )
+
         st = self.guide_handoff_peek.update(
             motion_backend=motion_backend,
+            found_item=found,
         )
 
         if st == PrimitiveStatus.RUNNING:
@@ -2541,74 +2587,35 @@ class ReturnToBase(Behavior):
         if st == PrimitiveStatus.FAILED:
             print(
                 "[RETURN_TO_BASE][RECOVERY] "
-                "handoff peek rotate FAILED -> backoff"
+                "handoff peek search exhausted "
+                "-> backoff"
             )
+
             return self._start_guide_backoff(
                 motion_backend=motion_backend,
             )
 
-        if self.guide_handoff_peek_settle_until is None:
-            settle_s = float(
-                getattr(
-                    self.config,
-                    "recover_settle_time",
-                    0.5,
-                )
-            )
-
-            self.guide_handoff_peek_settle_until = (
-                    float(io.time()) + settle_s
-            )
-
-            print(
-                "[RETURN_TO_BASE][RECOVERY] "
-                f"handoff peek complete "
-                f"-> settle {settle_s:.2f}s"
-            )
-            return self.status
-
-        if (
-                float(io.time())
-                < self.guide_handoff_peek_settle_until
-        ):
-            return self.status
-
-        required_id = int(
-            self.guide_handoff_required_id
+        print(
+            "[RETURN_TO_BASE][RECOVERY] "
+            f"guide={required_id} visible during peek "
+            "-> restart ReturnToBaseServo"
         )
 
-        found = any(
-            int(obs.get("id", -1)) == required_id
-            for obs in (arena_observations or ())
+        self.guide_handoff_peek = None
+        self.guide_handoff_current_id = None
+        self.guide_handoff_required_id = None
+        self.guide_handoff_side = None
+
+        self.return_servo = None
+        self._mode_started = False
+
+        self._start_return_servo(
+            lvl2=lvl2,
+            localisation=localisation,
+            io=io,
         )
 
-        if found:
-            print(
-                "[RETURN_TO_BASE][RECOVERY] "
-                f"guide={required_id} visible after peek "
-                "-> restart ReturnToBaseServo"
-            )
-
-            self.guide_handoff_peek = None
-            self.guide_handoff_peek_settle_until = None
-            self.guide_handoff_current_id = None
-            self.guide_handoff_required_id = None
-            self.guide_handoff_side = None
-
-            self.return_servo = None
-            self._mode_started = False
-
-            self._start_return_servo(
-                lvl2=lvl2,
-                localisation=localisation,
-                io=io,
-            )
-
-            return self.status
-
-        return self._start_guide_backoff(
-            motion_backend=motion_backend,
-        )
+        return self.status
 
     def _update_guide_backoff(
         self,

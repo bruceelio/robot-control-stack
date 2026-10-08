@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+import math
 
 from autonomous.SR2026.base import Behavior, BehaviorStatus
 from primitives.base import PrimitiveStatus
@@ -92,35 +92,44 @@ class GlobalObjectSearch(Behavior):
         #
         # GlobalObjectSearch owns the strategy decision;
         # SearchRotate only performs the requested motion pattern.
+        target_angle_deg = float(
+            getattr(
+                self.config,
+                "recover_max_sweep_deg",
+                180.0,
+            )
+        )
+
+        angular_speed_rad_s = abs(
+            float(
+                self.config.servoing_angular_max_rad_s
+            )
+        )
+
+        timeout_s = float(
+            getattr(
+                self.config,
+                "global_object_search_timeout_s",
+                8.0,
+            )
+        )
+
+        if angular_speed_rad_s > 0.0:
+            timeout_s = max(
+                timeout_s,
+                (
+                        math.radians(
+                            abs(target_angle_deg)
+                        )
+                        / angular_speed_rad_s
+                        + 1.0
+                ),
+            )
+
         self._search = SearchRotate(
-            step_deg=float(
-                getattr(
-                    self.config,
-                    "recover_step_deg",
-                    15.0,
-                )
-            ),
-            max_deg=float(
-                getattr(
-                    self.config,
-                    "recover_max_sweep_deg",
-                    180.0,
-                )
-            ),
-            timeout_s=float(
-                getattr(
-                    self.config,
-                    "global_object_search_timeout_s",
-                    8.0,
-                )
-            ),
-            settle_s=float(
-                getattr(
-                    self.config,
-                    "recover_settle_time",
-                    0.5,
-                )
-            ),
+            target_angle_deg=target_angle_deg,
+            timeout_s=timeout_s,
+            config=self.config,
             label="GLOBAL_OBJECT_SEARCH",
         )
 
